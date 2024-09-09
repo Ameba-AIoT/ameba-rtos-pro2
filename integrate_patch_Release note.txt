@@ -5,166 +5,22 @@ We recommand the flow items:
 2,  Try not to modify the .c and .h files in default SDK. If you are obliged to do this, add your own marco between your code, and it will make it easier for you to merge Patch
 	a) If the .c and .h files in Patch are not modified in your project, just copy and paste
 	b) If the .c and .h files in Patch are modified in your project, use compare tool to only merge the difference which are not changed by yourself
-	
+
+Note:
+	This patch is use for synchronizing the final stable 9.6c SDK
+
 Full Patch:
 	sdk-ameba_v9.6b.zip
 	9.6b_patch_integrated_240227_1df5fc15.zip
+	9.6b_patch_integrated_240527_95ca5843.zip
 		
 Critical Patch List:
 
-Git 231107_c2083854 to Git 240227_1df5fc15:
-single patch list:
-
-    9.6b_patch_fixed_wps_hardfault_issue_(v01).zip
-    9.6b_patch_connection_scan_list_&_candidate_example_(v01).zip
-    9.6b_patch_reduce_irq_disable_time_in_video_init_process_(v01).zip
-    9.6b_patch_video_rate_control_4_steps_(v04).zip
-    9.6b_patch_usb_ecm_priority_(v01).zip
-    9.6b_patch_update_lib_pmc_(v01).zip
-    9.6b_patch_fix_crypto_random_seed_(v01).zip
-    9.6b_patch_fixed_overflow_wifi_set_idle_roaming_time_(v01).zip
-    9.6b_patch_fixed_overflow_wifi_set_idle_roaming_time_(v01).zip
-    9.6b_patch_add_ps_command_(v01).zip
-    9.6b_patch_fix_disable_CONFIG_VIDEO_APPLICATION_compile_error_(v01).zip
-    9.6b_patch_update_support_user_define_flash_speed_(v01).zip
-    9.6b_patch_usb_ecm_priority_(v02).zip
-    9.6b_patch_set_isp_min_fps_as_the_auto_rate_control_fps_upbound_(v01).zip
-    9.6b_patch_add_api_for_new_video_heap_calculation_(v01).zip
-    9.6b_patch_usb_ecm_cable_status_(v01).zip
-    9.6b_patch_add_the_missing_example_in_video_example_(v01).zip
-    9.6b_patch_modify_the_audio_module_when_the_rx_output_is_not_needed_(v01).zip
-    9.6b_patch_fix_wrong_location_for_preallocated_fcs_video_heap_(v01).zip
-    9.6b_patch_correct_the_log_in_module_httpfs_(v01).zip
-    9.6b_patch_candidate_routers_example_(v01).zip
-    9.6b_patch_add_lwip_2.1.3_(v01).zip
-    9.6b_patch_mbedtls_2.28.1_add_gcm_alt_(v01).zip
-    9.6b_patch_isp_init_retention_(v01).zip
-    9.6b_patch_add_api_to_get_ASP_run_time_status_(v01).zip
-
-
-    9.6b_patch_usbh_ecm_relative_modify_(v01).zip
-    9.6b_patch_wpa3_transition_force_wpa2_CCMP_&_GCMP_showing_(v01).zip
-    9.6b_patch_isp_init_parameters_mode_(v01).zip
-    9.6b_patch_improve_tx_iqk_for_tx_evm_(v01).zip
-    9.6b_patch__rts_issue_(v01).zip
-    9.6b_patch_fix_the_error_to_get_wrong_ASP_run_time_status_(v01).zip
-    9.6b_patch_correct_the_hdr_heap_size_of_encode_type_based_heap_api_(v01).zip
-    9.6b_patch_move_function_call_of_boottime_information_(v01).zip
-    9.6b_patch_update_support_user_define_flash_speed_(v02).zip
-    9.6b_patch_fast_scan_retry_setting_(v01).zip
-    9.6b_patch_fix_secure_fault_when_log_service_add_table_without_console_init_(v01).zip
-    9.6b_patch_ support_build_on_MACOS_arm64_intel_(v01).zip
-    9.6b_patch_update_elf2bin_1.4_(v01).zip
-    9.6b_patch_combine_tz_ntz_encrypt_config_(v01).zip
-    9.6b_patch_video_extract_nalu_payload_info_(v01).zip
-    9.6b_patch_update_the_vqe_3.0.3_version_(v01).zip
-    9.6b_patch_add_mbedtls_3.5.0_(v01).zip
-    9.6b_patch_fix_issue_of_disable_privacy_mask_(v01).zip
-    9.6b_patch_fix_watchdog_interrupt_mode_in_TZ_(v01).zip
-    9.6b_patch_update_the_vqe_3.0.3_version_(v02).zip
-    9.6b_patch_usbh_ecm_connection_mode_(v01).zip
-    9.6b_patch_null1_resend_limit_3_times_(v01).zip
-    9.6b_patch_update_vqe_3.0.5_version_(v01).zip
-    9.6b_patch_fix_lwip_2.1.3_compile_error_(v01).zip
-    9.6b_patch_usbh_ecm_bulk_out_retrigger_(v01).zip
-    9.6b_patch_base_station_feature_and_example_(v01).zip
-    9.6b_patch_fix_wrong_encryption_index_lookup_(v01).zip
-    9.6b_patch_refine_rssi_(v01).zip
-    9.6b_patch_usbh_ecm_connection_mode_(v02).zip
-    9.6b_patch_fix_wrong_encryption_index_lookup_(v02).zip
-    9.6b_patch_fix_the_danger_of_setting_invalid_value_in_vqe_3.0.5_(v01).zip
-    9.6b_patch_ensure_suspend_rx_flow_continuity_(v01).zip
-    9.6b_patch_fix_issue_of_disable_privacy_mask_(v02).zip
-    9.6b_patch_fix_invalid_memory_access_when_using_vqe3.0.5_(v01).zip
-    9.6b_patch_support_user_load_model_binary_from_any_filesystem_(v01).zip
-    9.6b_patch_increase_chances_of_receiving_tcp_ka_ack_(v01).zip
-    9.6b_patch_increase_chances_of_receiving_tcp_ka_ack_(v02).zip
-    9.6b_patch_usbh_ecm_rename_(v01).zip
-    9.6b_patch_update_mmf_example_readme_(v01).zip
-    9.6b_patch_fix_video_timestamp_calculation_error_(v01).zip
-    9.6b_patch_dhcp_renew_limit_wakeup_(v01).zip
-    9.6b_patch_fix_suspend_fail_by_ensure_to_get_correct_reg_status_(v01).zip
-    9.6b_patch_increase_chances_of_receiving_tcp_ka_ack_(v03).zip
-    9.6b_patch_usbh_modify_ecm_init_flow_(v01).zip
-    9.6b_patch_usbh_modify_ecm_init_flow_(v02).zip
-    9.6b_patch_update_the_vqe_3.0.9_version_(v01).zip
-    9.6b_patch_update_the_vqe_3.0.9_version_(v02).zip
-    9.6b_patch_usbh_ecm_dhcp_status_(v02).zip
-    9.6b_patch_update_audio_test_tool_(v01).zip
-    9.6b_patch_reduce_code_size_in_audio_module_(v01).zip
-    9.6b_patch_usbh_ecm_different_connect_mode_(v01).zip
-    9.6b_patch_reverse_memory_when_fcs_allocate_video_memory_(v01).zip
-    9.6b_patch_usbh_ecm_modify_bulk_out_flow_(v01).zip
-    9.6b_patch_modify_tcp_ka_mechanism_(v01).zip
-    9.6b_patch_fcs_data_save_to_retention_(v01).zip
-    9.6b_patch_support_nn_model_signing_and_validation_(v01).zip
-        
-
-other commit list:
-
-    Fix D-cut TX IQK for TX EVM
-    Fix D-cut 5G TX IQK for TX EVM
-    modify mode configuration for isp initialization
-    update example tcp_protocol_layer_wowlan
-    load model improvement
-    Update BT normal & mp patch and change vendor command
-    fix mqtt example connection failed
-    fix mqtt example connection failed
-    fixed 5g roaming issue to match arlo setting(rssi_delta) for exmaple_wifi_roaming_plus
-    fix osd 1bpp buffer length settings
-    update privacy mask configuration
-    reduce osd code size
-    set min/max fps fail
-    public sensor_service
-    adjust file system configuration and partition table
-    add return value for isp_ctrl and update osd example
-    update sensor driver
-    eip support 64x32 acceleration
-    update example for keep wowlan wdt setting
-    fix input port resource not recycle when pause
-    Change the contents of printf
-    update new readme.txt for wifi_roaming_client_plus and wifi_roaming_plus
-    update readme.txt of sqlite and fmp4 example
-    Update the readme.txt for the USB and the video example
-    modify rtsp init delay
-    fix freertos posix clock
-    rate control fine tune
-    delete unused header file with GPL license
-    disable crc checksum for NBG file
-    enable encoder reference frame compression
-    integrate auto-ir function into sensor service
-    update readme for privacy mask and bayer capture example
-    sync fcs encoder option with normal mode
-    fix nn unchecked return value
-    fix fmp4 unchecked return value
-    fix coverity
-    fix coverity issues
-    fix coverity issue, missing return statement
-    support nn model decryption in abstraction layer
-    fix coverity issue, remove unused value
-    fix coverity issues in modules
-    fix coverity issues in mmf rtsp codec
-    fix potential double free
-    fix repeatedly release jpeg buffer
-    fix siso is not avaliable on non output module
-    fixed ATCMD conflict with BTCMD and modify the api about wifi_get_channel
-    fix video alignment
-    add crop function for jpeg
-
-qc test commit list: (9.6b_patch_integrated_240227_1df5fc15_extra_modification.diff)
-    fix wpa3 connection hardfault in TZ.
-    fix nand pfw init
-    update example readme
-    fix kvs producer incorrect aac type
-    fix nn joint test incorrect face feature output size
-    remove abandoned littlefs example
-    update qr_code_scanner example readme
-    fix hardfault in TZ project about example_wifi_roaming_plus
-    fix webrtc restart not working
-    fix same color label for registered face
-    update ssl_download example readme
-    update fatfs example readme
-    limit width and height of jpeg over rtp to 2040
-    update ssl_download example readme
-    correct implicit declaration of function
-    modify the auto rate control problem
+qc test commit list: (9.6b_patch_integrated_240527_95ca5843.diff)
+    fix sdk for TZ build
+    fix compiler error for cdc snapshot example
+    add new security ENUM for WIFI scanning to get more detailed security information
+    fix the fwfs crash problem with nand flash
+    fix connect status and modify the deinit flow
+    fix iperf hang up and enable/disable concurrent mode hardfault issue in trustzone
+    modify the auto rate control lower boundem

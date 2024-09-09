@@ -44,27 +44,50 @@ static void print_wifi_setting(const char *ifname, rtw_wifi_setting_t *pSetting)
 
 	switch (pSetting->security_type) {
 	case RTW_SECURITY_OPEN:
-		printf("\n\r	SECURITY => OPEN");
+		printf("\n\r  SECURITY => OPEN");
 		break;
 	case RTW_SECURITY_WEP_PSK:
-		printf("\n\r	SECURITY => WEP");
+		printf("\n\r  SECURITY => WEP");
 		printf("\n\r KEY INDEX => %d", pSetting->key_idx);
 		break;
 	case RTW_SECURITY_WPA_TKIP_PSK:
+		printf("\n\r  SECURITY => WPA TKIP");
+		break;
 	case RTW_SECURITY_WPA2_TKIP_PSK:
-		printf("\n\r	SECURITY => TKIP");
+		printf("\n\r  SECURITY => WPA2 TKIP");
 		break;
 	case RTW_SECURITY_WPA_AES_PSK:
+		printf("\n\r  SECURITY => WPA AES");
+		break;
+	case RTW_SECURITY_WPA_MIXED_PSK:
+		printf("\n\r  SECURITY => WPA Mixed");
+		break;
 	case RTW_SECURITY_WPA2_AES_PSK:
+		printf("\n\r  SECURITY => WPA2 AES");
+		break;
+	case RTW_SECURITY_WPA2_MIXED_PSK:
+		printf("\n\r  SECURITY => WPA2 Mixed");
+		break;
+	case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
+		printf("\n\r  SECURITY => WPA/WPA2 TKIP");
+		break;
+	case RTW_SECURITY_WPA_WPA2_AES_PSK:
+		printf("\n\r  SECURITY => WPA/WPA2 AES");
+		break;
+	case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
+		printf("\n\r  SECURITY => WPA/WPA2 Mixed");
+		break;
 	case RTW_SECURITY_WPA3_AES_PSK:
+		printf("\n\r  SECURITY => WPA3 AES");
+		break;
 	case RTW_SECURITY_WPA2_WPA3_MIXED:
-		printf("\n\r	SECURITY => AES");
+		printf("\n\r  SECURITY => WPA2/WPA3 AES");
 		break;
 	case RTW_SECURITY_WPA3_GCMP_PSK:
 		printf("\n\r  SECURITY => GCMP");
 		break;
 	default:
-		printf("\n\r	SECURITY => UNKNOWN");
+		printf("\n\r  SECURITY => UNKNOWN");
 	}
 
 	printf("\n\r	PASSWORD => %s", pSetting->password);

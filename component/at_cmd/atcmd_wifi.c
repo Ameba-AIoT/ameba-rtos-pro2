@@ -202,10 +202,13 @@ static void print_scan_result(rtw_scan_result_t *record)
 			  (record->security == RTW_SECURITY_WEP_PSK) ? "WEP" :
 			  (record->security == RTW_SECURITY_WPA_TKIP_PSK) ? "WPA TKIP" :
 			  (record->security == RTW_SECURITY_WPA_AES_PSK) ? "WPA AES" :
+			  (record->security == RTW_SECURITY_WPA_MIXED_PSK) ? "WPA Mixed" :
 			  (record->security == RTW_SECURITY_WPA2_AES_PSK) ? "WPA2 AES" :
 			  (record->security == RTW_SECURITY_WPA2_TKIP_PSK) ? "WPA2 TKIP" :
 			  (record->security == RTW_SECURITY_WPA2_MIXED_PSK) ? "WPA2 Mixed" :
-			  (record->security == RTW_SECURITY_WPA_WPA2_MIXED) ? "WPA/WPA2 AES" :
+			  (record->security == RTW_SECURITY_WPA_WPA2_TKIP_PSK) ? "WPA/WPA2 TKIP" :
+			  (record->security == RTW_SECURITY_WPA_WPA2_AES_PSK) ? "WPA/WPA2 AES" :
+			  (record->security == RTW_SECURITY_WPA_WPA2_MIXED_PSK) ? "WPA/WPA2 Mixed" :
 			  (record->security == RTW_SECURITY_WPA2_ENTERPRISE) ? "WPA2 Enterprise" :
 			  (record->security == RTW_SECURITY_WPA_WPA2_ENTERPRISE) ? "WPA/WPA2 Enterprise" :
 #ifdef CONFIG_SAE_SUPPORT
@@ -225,15 +228,18 @@ static void print_scan_result(rtw_scan_result_t *record)
 				 (record->security == RTW_SECURITY_WEP_PSK) ? "WEP" :
 				 (record->security == RTW_SECURITY_WPA_TKIP_PSK) ? "WPA TKIP" :
 				 (record->security == RTW_SECURITY_WPA_AES_PSK) ? "WPA AES" :
+				 (record->security == RTW_SECURITY_WPA_MIXED_PSK) ? "WPA Mixed" :
 				 (record->security == RTW_SECURITY_WPA2_AES_PSK) ? "WPA2 AES" :
 				 (record->security == RTW_SECURITY_WPA2_TKIP_PSK) ? "WPA2 TKIP" :
 				 (record->security == RTW_SECURITY_WPA2_MIXED_PSK) ? "WPA2 Mixed" :
-				 (record->security == RTW_SECURITY_WPA_WPA2_MIXED) ? "WPA/WPA2 AES" :
+				 (record->security == RTW_SECURITY_WPA_WPA2_TKIP_PSK) ? "WPA/WPA2 TKIP" :
+				 (record->security == RTW_SECURITY_WPA_WPA2_AES_PSK) ? "WPA/WPA2 AES" :
+				 (record->security == RTW_SECURITY_WPA_WPA2_MIXED_PSK) ? "WPA/WPA2 Mixed" :
 				 (record->security == RTW_SECURITY_WPA2_ENTERPRISE) ? "WPA2 Enterprise" :
 				 (record->security == RTW_SECURITY_WPA_WPA2_ENTERPRISE) ? "WPA/WPA2 Enterprise" :
 #ifdef CONFIG_SAE_SUPPORT
 				 (record->security == RTW_SECURITY_WPA3_AES_PSK) ? "WPA3-SAE AES" :
-				 (record->security == RTW_SECURITY_WPA3_GCMP_PSK) ? "WPA3-SAE GCMP AES" :
+				 (record->security == RTW_SECURITY_WPA3_GCMP_PSK) ? "WPA3-SAE GCMP" :
 				 (record->security == RTW_SECURITY_WPA2_WPA3_MIXED) ? "WPA2/WPA3-SAE AES" :
 #endif
 				 "Unknown");
@@ -360,17 +366,47 @@ static void print_wifi_setting(const char *ifname, rtw_wifi_setting_t *pSetting)
 #endif
 		RTW_API_INFO("\n\r  SECURITY => WPA AES");
 		break;
+	case RTW_SECURITY_WPA_MIXED_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+		at_printf("WPA MIX,");
+#endif
+		RTW_API_INFO("\n\r  SECURITY => WPA Mixed");
+		break;
 	case RTW_SECURITY_WPA2_AES_PSK:
 #if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
 		at_printf("WPA2 AES,");
 #endif
 		RTW_API_INFO("\n\r  SECURITY => WPA2 AES");
 		break;
+	case RTW_SECURITY_WPA2_MIXED_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+		at_printf("WPA2 Mixd,");
+#endif
+		RTW_API_INFO("\n\r  SECURITY => WPA2 Mixed");
+		break;
+	case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+		at_printf("WPA/WPA2 TKIP,");
+#endif
+		RTW_API_INFO("\n\r  SECURITY => WPA/WPA2 TKIP");
+		break;
+	case RTW_SECURITY_WPA_WPA2_AES_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+		at_printf("WPA/WPA2 AES,");
+#endif
+		RTW_API_INFO("\n\r  SECURITY => WPA/WPA2 AES");
+		break;
+	case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+		at_printf("WPA/WPA2 Mixd,");
+#endif
+		RTW_API_INFO("\n\r  SECURITY => WPA/WPA2 Mixed");
+		break;
 	case RTW_SECURITY_WPA3_AES_PSK:
 #if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
-		at_printf("WPA3 AES,");
+		at_printf("WPA3 SAE AES,");
 #endif
-		RTW_API_INFO("\n\r  SECURITY => WPA3 AES");
+		RTW_API_INFO("\n\r  SECURITY => WPA3 SAE AES");
 		break;
 	case RTW_SECURITY_WPA3_GCMP_PSK:
 #if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)

@@ -318,10 +318,13 @@ int wifi_connect(rtw_network_info_t *connect_param, unsigned char block)
 		  (connect_param->password_len <  RTW_MIN_PSK_LEN)) &&
 		 ((connect_param->security_type == RTW_SECURITY_WPA_TKIP_PSK) ||
 		  (connect_param->security_type == RTW_SECURITY_WPA_AES_PSK) ||
+		  (connect_param->security_type == RTW_SECURITY_WPA_MIXED_PSK) ||
 		  (connect_param->security_type == RTW_SECURITY_WPA2_AES_PSK) ||
 		  (connect_param->security_type == RTW_SECURITY_WPA2_TKIP_PSK) ||
 		  (connect_param->security_type == RTW_SECURITY_WPA2_MIXED_PSK) ||
-		  (connect_param->security_type == RTW_SECURITY_WPA_WPA2_MIXED) ||
+		  (connect_param->security_type == RTW_SECURITY_WPA_WPA2_TKIP_PSK) ||
+		  (connect_param->security_type == RTW_SECURITY_WPA_WPA2_AES_PSK) ||
+		  (connect_param->security_type == RTW_SECURITY_WPA_WPA2_MIXED_PSK) ||
 #ifdef CONFIG_SAE_SUPPORT
 		  (connect_param->security_type == RTW_SECURITY_WPA3_AES_PSK) ||
 		  (connect_param->security_type == RTW_SECURITY_WPA2_WPA3_MIXED) ||

@@ -1,4 +1,5 @@
 sdk-ameba-v9.6b_20231123
 9.6b_patch_integrated_240227_1df5fc15
+9.6b_patch_integrated_240527_95ca5843
 
     Current revision number is 1d16cae877aaaae96754921ee55cf36ff848266d

@@ -961,6 +961,7 @@ void cmd_tcp(int argc, char **argv)
 							vPortFree(tcp_server_buffer);
 							tcp_server_buffer = NULL;
 						}
+						rtw_mutex_free(&tptest_log_mutex);
 						printf("\n\rTCP server stopped!\n");
 						vTaskDelete(g_tcp_server_task);
 						g_tcp_server_task = NULL;
@@ -1172,6 +1173,7 @@ void cmd_udp(int argc, char **argv)
 							vPortFree(udp_server_buffer);
 							udp_server_buffer = NULL;
 						}
+						rtw_mutex_free(&tptest_log_mutex);
 						printf("\n\rUDP server stopped!\n");
 						vTaskDelete(g_udp_server_task);
 						g_udp_server_task = NULL;

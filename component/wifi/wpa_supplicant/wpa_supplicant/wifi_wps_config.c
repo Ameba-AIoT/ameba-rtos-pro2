@@ -325,9 +325,17 @@ void wps_check_and_show_connection_info(void)
 		printf("\n\r KEY INDEX => %d", setting.key_idx);
 		break;
 	case RTW_SECURITY_WPA_TKIP_PSK:
+	case RTW_SECURITY_WPA2_TKIP_PSK:
+	case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
 		printf("\n\r	SECURITY => TKIP");
 		break;
+	case RTW_SECURITY_WPA_MIXED_PSK:
+	case RTW_SECURITY_WPA2_MIXED_PSK:
+		printf("\n\r	SECURITY => MIXED");
+		break;
+	case RTW_SECURITY_WPA_AES_PSK:
 	case RTW_SECURITY_WPA2_AES_PSK:
+	case RTW_SECURITY_WPA_WPA2_AES_PSK:
 		printf("\n\r	SECURITY => AES");
 		break;
 	default:
@@ -358,7 +366,10 @@ static void wps_config_wifi_setting(rtw_network_info_t *wifi, struct dev_credent
 			wifi->security_type = RTW_SECURITY_WPA2_TKIP_PSK;
 		}
 	} else if (dev_cred->auth_type & (WPS_AUTH_TYPE_WPA_PERSONAL | WPS_AUTH_TYPE_WPA_ENTERPRISE)) {
-		if (dev_cred->encr_type & WPS_ENCR_TYPE_AES) {
+		if ((dev_cred->encr_type & WPS_ENCR_TYPE_AES) && (dev_cred->encr_type & WPS_ENCR_TYPE_TKIP)) {
+			printf("\r\nsecurity_type = RTW_SECURITY_WPA_MIXED_PSK\n");
+			wifi->security_type = RTW_SECURITY_WPA_MIXED_PSK;
+		} else if (dev_cred->encr_type & WPS_ENCR_TYPE_AES) {
 			printf("\r\nsecurity_type = RTW_SECURITY_WPA_AES_PSK\n");
 			wifi->security_type = RTW_SECURITY_WPA_AES_PSK;
 		} else if (dev_cred->encr_type & WPS_ENCR_TYPE_TKIP) {
@@ -1027,7 +1038,9 @@ int wps_start(u16 wps_config, char *pin, u8 channel, char *ssid)
 				cur_security = RTW_SECURITY_WPA2_TKIP_PSK;
 			}
 		} else if (dev_cred[cur_index].auth_type & (WPS_AUTH_TYPE_WPA_PERSONAL | WPS_AUTH_TYPE_WPA_ENTERPRISE)) {
-			if (dev_cred[cur_index].encr_type & WPS_ENCR_TYPE_AES) {
+			if ((dev_cred[cur_index].encr_type & WPS_ENCR_TYPE_AES) && (dev_cred[cur_index].encr_type & WPS_ENCR_TYPE_TKIP)) {
+				cur_security = RTW_SECURITY_WPA_MIXED_PSK;
+			} else if (dev_cred[cur_index].encr_type & WPS_ENCR_TYPE_AES) {
 				cur_security = RTW_SECURITY_WPA_AES_PSK;
 			} else if (dev_cred[cur_index].encr_type & WPS_ENCR_TYPE_TKIP) {
 				cur_security = RTW_SECURITY_WPA_TKIP_PSK;

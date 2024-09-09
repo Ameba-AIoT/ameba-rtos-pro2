@@ -26,31 +26,19 @@ unsigned int snap_checksum = 0;
 
 ////////////////////////YUV SNAPSHOT//////////////////////////////////////////
 #include "module_video.h"
-#include "mmf2_pro2_video_config.h"
+//#include "mmf2_pro2_video_config.h"
 #include "sensor.h"
 
 #define V1_CHANNEL 0
-#define V1_RESOLUTION VIDEO_FHD//VIDEO_VGA
 #define V1_FPS 5
 #define V1_GOP 5
 #define V1_BPS 2*1024*1024
 #define V1_RCMODE 2 // 1: CBR, 2: VBR
 
 #ifdef JPEG_MODE
-#define VIDEO_TYPE VIDEO_JPEG
+#define VIDEO_TYPE 0x02//VIDEO_JPEG
 #else
 #define VIDEO_TYPE VIDEO_NV12
-#endif
-
-#if V1_RESOLUTION == VIDEO_VGA
-#define V1_WIDTH	640
-#define V1_HEIGHT	480
-#elif V1_RESOLUTION == VIDEO_HD
-#define V1_WIDTH	1280
-#define V1_HEIGHT	720
-#elif V1_RESOLUTION == VIDEO_FHD
-#define V1_WIDTH	1920
-#define V1_HEIGHT	1080
 #endif
 
 struct yuv_snapshot_context {
@@ -92,9 +80,6 @@ static void yuv_output_cb(void *param1, void  *param2, uint32_t arg)
 static video_params_t video_v1_params = {
 	.stream_id = V1_CHANNEL,
 	.type = VIDEO_TYPE,
-	.resolution = V1_RESOLUTION,
-	.width = V1_WIDTH,
-	.height = V1_HEIGHT,
 	.bps = V1_BPS,
 	.fps = V1_FPS,
 	.gop = V1_GOP,
@@ -109,7 +94,7 @@ static void yuv_snapshot_init(void *ctx)
 	int iq_addr, sensor_addr;
 	isp_info_t info;
 
-	int voe_heap_size = video_buf_calc(1, V1_WIDTH, V1_HEIGHT, V1_BPS, 1,
+	int voe_heap_size = video_buf_calc(1, video_v1_params.width, video_v1_params.height, V1_BPS, 1,
 									   0, 0, 0, 0, 0,
 									   0, 0, 0, 0, 0,
 									   0, 0, 0);
@@ -519,6 +504,10 @@ void example_cdc_snapshot_thread(void *param)
 	/////////////////snapshot///////////
 	yuv_ctx = malloc(sizeof(struct yuv_snapshot_context));
 	memset(yuv_ctx, 0, sizeof(struct yuv_snapshot_context));
+	video_v1_params.width = sensor_params[USE_SENSOR].sensor_width;
+	video_v1_params.height = sensor_params[USE_SENSOR].sensor_height;
+	video_v1_params.fps = sensor_params[USE_SENSOR].sensor_fps;
+	video_v1_params.gop = sensor_params[USE_SENSOR].sensor_fps;
 	yuv_snapshot_init(yuv_ctx);
 #ifdef JPEG_MODE
 	jpeg_snapshot_start(yuv_ctx);

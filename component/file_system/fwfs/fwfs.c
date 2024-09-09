@@ -369,10 +369,10 @@ void nand_pfw_init(void)
 		fci->page_per_blk = 64;
 	}
 
-	if (fci->spare_size < 32 || fci->spare_size > 224) {
+	/* if (fci->spare_size < 32 || fci->spare_size > 224) {
 		fci->spare_size = 32;
-	}
-	snand_spare_size = fci->spare_size;
+	} */
+	//snand_spare_size = fci->spare_size; //Work around to fix the issue that it will assign the wrong size form firmware.
 
 	memcpy(&g_partition.fci, fci, sizeof(nand_fci_t));
 	//pfw_dump_mem(&g_partition.fci, sizeof(nand_fci_t));

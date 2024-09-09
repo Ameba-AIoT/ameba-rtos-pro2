@@ -471,8 +471,15 @@ static void SC_show_wifi_setting(const char *ifname, rtw_wifi_setting_t *pSettin
 		printf("\n\r KEY INDEX => %d", pSetting->key_idx);
 		break;
 	case RTW_SECURITY_WPA_TKIP_PSK:
+	case RTW_SECURITY_WPA2_TKIP_PSK:
+	case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
 		printf("\n\r	SECURITY => TKIP");
 		break;
+	case RTW_SECURITY_WPA_MIXED_PSK:
+	case RTW_SECURITY_WPA2_MIXED_PSK:
+		printf("\n\r	SECURITY => MIXED");
+		break;
+	case RTW_SECURITY_WPA_AES_PSK:
 	case RTW_SECURITY_WPA2_AES_PSK:
 		printf("\n\r	SECURITY => AES");
 		break;

@@ -88,15 +88,14 @@ int video_get_cb_fps(int chn)
 }
 static int video_rate_control_check_fps(int fps)
 {
-	int isp_min_fps = 0;
 	int isp_max_fps = 0;
-	isp_get_min_fps(&isp_min_fps);
 	isp_get_max_fps(&isp_max_fps);
 	if (isp_max_fps > 0 && isp_max_fps < fps) {
 		return isp_max_fps;
 	}
-	if (isp_min_fps > 0 && isp_min_fps > fps) {
-		return isp_min_fps;
+	// Since the min fps of VOE is not related to the isp min fps, user only needs to prevent the fps is 0
+	if (fps <= 0) {
+		return 1;
 	}
 	return fps;
 }

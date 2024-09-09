@@ -3,6 +3,7 @@ PLease refer to this document for the compile environment of the SDK.
 
 ## Application Notes
 [Application Notes](https://github.com/Ameba-AIoT/ameba-rtos-pro2/blob/main/doc/AN0700%20Realtek%20AmebaPro2%20application%20note.en.pdf)
+[Application Notes Online](https://ameba-rtos-pro2-doc.readthedocs.io/en/latest/index.html)
 
 ## msys64_v10_3 tools
 [msys64_v10_3](https://github.com/Ameba-AIoT/ameba-tool-rtos-pro2/releases/tag/msys64_v10_3)

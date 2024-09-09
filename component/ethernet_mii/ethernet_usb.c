@@ -279,8 +279,7 @@ bool ecm_off(void)
 
 void ecm_deinit_resoure(void)
 {
-	rtw_mutex_free(&mii_tx_mutex);
-	rtw_mutex_free(&mii_link_mutex);
+
 	rtw_free_sema(&ecm_attach_sema);
 	rtw_free_sema(&ecm_detach_sema);
 	rtw_delete_task(&task_ecm_attach);
@@ -437,7 +436,7 @@ void rltk_mii_recv(struct eth_drv_sg *sg_list, int sg_len)
 
 s8 rltk_mii_send(struct eth_drv_sg *sg_list, int sg_len, int total_len)
 {
-	rtw_mutex_get(&mii_tx_mutex);
+
 	int ret = 0;
 	struct eth_drv_sg *last_sg;
 	usb_send_packet *tx_packet = usbh_ecm_send_get_buf();
@@ -454,7 +453,7 @@ s8 rltk_mii_send(struct eth_drv_sg *sg_list, int sg_len, int total_len)
 	} else {
 		ret = -1;
 	}
-	rtw_mutex_put(&mii_tx_mutex);
+
 	return ret;
 }
 
@@ -465,8 +464,6 @@ void usbh_ecm_thread(void *param)
 	bool status = false;
 	lwip_status = 0;
 	lwip_dhcp_status = -1;
-	rtw_mutex_init(&mii_tx_mutex);
-	rtw_mutex_init(&mii_link_mutex);
 	rtw_init_sema(&ecm_attach_sema, 0);
 	rtw_init_sema(&ecm_detach_sema, 0);
 #ifdef ECM_STATIC_IP_TEST
@@ -516,8 +513,6 @@ void usbh_ecm_thread(void *param)
 EXIT_FAIL_DETACH:
 	rtw_delete_task(&task_ecm_attach);
 EXIT_FAIL_ATTACH:
-	rtw_mutex_free(&mii_tx_mutex);
-	rtw_mutex_free(&mii_link_mutex);
 	rtw_free_sema(&ecm_attach_sema);
 	rtw_free_sema(&ecm_detach_sema);
 EXIT:

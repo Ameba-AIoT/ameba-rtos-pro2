@@ -1,0 +1,597 @@
+ component/at_cmd/atcmd_wifi.c                      |  46 ++++++++++++++++++---
+ .../example/bt_config/bt_config_wifi_lib.c         |   5 ++-
+ component/ethernet_mii/ethernet_usb.c              |  11 ++---
+ .../usb_cdc_snapshot/example_usb_cdc_snapshot.c    |  25 ++++-------
+ .../example_wifi_roaming_client_plus.c             |   7 +++-
+ .../wifi_roaming_plus/example_wifi_roaming_plus.c  |  19 +++++++++
+ .../example/wlan_scenario/example_wlan_scenario.c  |  33 ++++++++++++---
+ component/file_system/fwfs/fwfs.c                  |   6 +--
+ component/media/mmfv2/module_video.c               |   7 ++--
+ component/network/iperf/iperf.c                    |   2 +
+ component/wifi/api/wifi_conf.c                     |   5 ++-
+ component/wifi/driver/include/wifi_constants.h     |   7 +++-
+ component/wifi/wifi_config/wifi_simple_config.c    |   7 ++++
+ .../wifi/wifi_fast_connect/wifi_fast_connect.c     |  10 +++++
+ .../wpa_supplicant/wifi_wps_config.c               |  17 +++++++-
+ .../GCC-RELEASE/application/application.cmake      |   2 +
+ .../GCC-RELEASE/application/output/libsoc_ns.a     | Bin 796242 -> 797548 bytes
+ .../GCC-RELEASE/application/output/libusbd.a       | Bin 2930436 -> 2934496 bytes
+ .../GCC-RELEASE/application/output/libwlan.a       | Bin 18909948 -> 18948674 bytes
+ 19 files changed, 159 insertions(+), 50 deletions(-)
+
+diff --git a/component/at_cmd/atcmd_wifi.c b/component/at_cmd/atcmd_wifi.c
+index e16770ec..f0544168 100644
+--- a/component/at_cmd/atcmd_wifi.c
++++ b/component/at_cmd/atcmd_wifi.c
+@@ -202,10 +202,13 @@ static void print_scan_result(rtw_scan_result_t *record)
+ 			  (record->security == RTW_SECURITY_WEP_PSK) ? "WEP" :
+ 			  (record->security == RTW_SECURITY_WPA_TKIP_PSK) ? "WPA TKIP" :
+ 			  (record->security == RTW_SECURITY_WPA_AES_PSK) ? "WPA AES" :
++			  (record->security == RTW_SECURITY_WPA_MIXED_PSK) ? "WPA Mixed" :
+ 			  (record->security == RTW_SECURITY_WPA2_AES_PSK) ? "WPA2 AES" :
+ 			  (record->security == RTW_SECURITY_WPA2_TKIP_PSK) ? "WPA2 TKIP" :
+ 			  (record->security == RTW_SECURITY_WPA2_MIXED_PSK) ? "WPA2 Mixed" :
+-			  (record->security == RTW_SECURITY_WPA_WPA2_MIXED) ? "WPA/WPA2 AES" :
++			  (record->security == RTW_SECURITY_WPA_WPA2_TKIP_PSK) ? "WPA/WPA2 TKIP" :
++			  (record->security == RTW_SECURITY_WPA_WPA2_AES_PSK) ? "WPA/WPA2 AES" :
++			  (record->security == RTW_SECURITY_WPA_WPA2_MIXED_PSK) ? "WPA/WPA2 Mixed" :
+ 			  (record->security == RTW_SECURITY_WPA2_ENTERPRISE) ? "WPA2 Enterprise" :
+ 			  (record->security == RTW_SECURITY_WPA_WPA2_ENTERPRISE) ? "WPA/WPA2 Enterprise" :
+ #ifdef CONFIG_SAE_SUPPORT
+@@ -225,15 +228,18 @@ static void print_scan_result(rtw_scan_result_t *record)
+ 				 (record->security == RTW_SECURITY_WEP_PSK) ? "WEP" :
+ 				 (record->security == RTW_SECURITY_WPA_TKIP_PSK) ? "WPA TKIP" :
+ 				 (record->security == RTW_SECURITY_WPA_AES_PSK) ? "WPA AES" :
++				 (record->security == RTW_SECURITY_WPA_MIXED_PSK) ? "WPA Mixed" :
+ 				 (record->security == RTW_SECURITY_WPA2_AES_PSK) ? "WPA2 AES" :
+ 				 (record->security == RTW_SECURITY_WPA2_TKIP_PSK) ? "WPA2 TKIP" :
+ 				 (record->security == RTW_SECURITY_WPA2_MIXED_PSK) ? "WPA2 Mixed" :
+-				 (record->security == RTW_SECURITY_WPA_WPA2_MIXED) ? "WPA/WPA2 AES" :
++				 (record->security == RTW_SECURITY_WPA_WPA2_TKIP_PSK) ? "WPA/WPA2 TKIP" :
++				 (record->security == RTW_SECURITY_WPA_WPA2_AES_PSK) ? "WPA/WPA2 AES" :
++				 (record->security == RTW_SECURITY_WPA_WPA2_MIXED_PSK) ? "WPA/WPA2 Mixed" :
+ 				 (record->security == RTW_SECURITY_WPA2_ENTERPRISE) ? "WPA2 Enterprise" :
+ 				 (record->security == RTW_SECURITY_WPA_WPA2_ENTERPRISE) ? "WPA/WPA2 Enterprise" :
+ #ifdef CONFIG_SAE_SUPPORT
+ 				 (record->security == RTW_SECURITY_WPA3_AES_PSK) ? "WPA3-SAE AES" :
+-				 (record->security == RTW_SECURITY_WPA3_GCMP_PSK) ? "WPA3-SAE GCMP AES" :
++				 (record->security == RTW_SECURITY_WPA3_GCMP_PSK) ? "WPA3-SAE GCMP" :
+ 				 (record->security == RTW_SECURITY_WPA2_WPA3_MIXED) ? "WPA2/WPA3-SAE AES" :
+ #endif
+ 				 "Unknown");
+@@ -360,17 +366,47 @@ static void print_wifi_setting(const char *ifname, rtw_wifi_setting_t *pSetting)
+ #endif
+ 		RTW_API_INFO("\n\r  SECURITY => WPA AES");
+ 		break;
++	case RTW_SECURITY_WPA_MIXED_PSK:
++#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
++		at_printf("WPA MIX,");
++#endif
++		RTW_API_INFO("\n\r  SECURITY => WPA Mixed");
++		break;
+ 	case RTW_SECURITY_WPA2_AES_PSK:
+ #if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+ 		at_printf("WPA2 AES,");
+ #endif
+ 		RTW_API_INFO("\n\r  SECURITY => WPA2 AES");
+ 		break;
++	case RTW_SECURITY_WPA2_MIXED_PSK:
++#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
++		at_printf("WPA2 Mixd,");
++#endif
++		RTW_API_INFO("\n\r  SECURITY => WPA2 Mixed");
++		break;
++	case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
++#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
++		at_printf("WPA/WPA2 TKIP,");
++#endif
++		RTW_API_INFO("\n\r  SECURITY => WPA/WPA2 TKIP");
++		break;
++	case RTW_SECURITY_WPA_WPA2_AES_PSK:
++#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
++		at_printf("WPA/WPA2 AES,");
++#endif
++		RTW_API_INFO("\n\r  SECURITY => WPA/WPA2 AES");
++		break;
++	case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
++#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
++		at_printf("WPA/WPA2 Mixd,");
++#endif
++		RTW_API_INFO("\n\r  SECURITY => WPA/WPA2 Mixed");
++		break;
+ 	case RTW_SECURITY_WPA3_AES_PSK:
+ #if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+-		at_printf("WPA3 AES,");
++		at_printf("WPA3 SAE AES,");
+ #endif
+-		RTW_API_INFO("\n\r  SECURITY => WPA3 AES");
++		RTW_API_INFO("\n\r  SECURITY => WPA3 SAE AES");
+ 		break;
+ 	case RTW_SECURITY_WPA3_GCMP_PSK:
+ #if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+diff --git a/component/bluetooth/rtk_stack/example/bt_config/bt_config_wifi_lib.c b/component/bluetooth/rtk_stack/example/bt_config/bt_config_wifi_lib.c
+index 364c96b5..67dc4fe4 100644
+--- a/component/bluetooth/rtk_stack/example/bt_config/bt_config_wifi_lib.c
++++ b/component/bluetooth/rtk_stack/example/bt_config/bt_config_wifi_lib.c
+@@ -153,10 +153,13 @@ BC_APP_security_t BC_translate_security_to_app(rtw_security_t user_security)
+ 			break;
+ 		case RTW_SECURITY_WPA_TKIP_PSK:
+ 		case RTW_SECURITY_WPA_AES_PSK:
++		case RTW_SECURITY_WPA_MIXED_PSK:
+ 		case RTW_SECURITY_WPA2_AES_PSK:
+ 		case RTW_SECURITY_WPA2_TKIP_PSK:
+ 		case RTW_SECURITY_WPA2_MIXED_PSK:
+-		case RTW_SECURITY_WPA_WPA2_MIXED:
++		case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
++		case RTW_SECURITY_WPA_WPA2_AES_PSK:
++		case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
+ 		case RTW_SECURITY_WPA3_AES_PSK:
+ 		case RTW_SECURITY_WPA3_GCMP_PSK:
+ 		case RTW_SECURITY_WPA2_WPA3_MIXED:		  
+diff --git a/component/ethernet_mii/ethernet_usb.c b/component/ethernet_mii/ethernet_usb.c
+index bd000806..640757ad 100644
+--- a/component/ethernet_mii/ethernet_usb.c
++++ b/component/ethernet_mii/ethernet_usb.c
+@@ -279,8 +279,7 @@ bool ecm_off(void)
+ 
+ void ecm_deinit_resoure(void)
+ {
+-	rtw_mutex_free(&mii_tx_mutex);
+-	rtw_mutex_free(&mii_link_mutex);
++
+ 	rtw_free_sema(&ecm_attach_sema);
+ 	rtw_free_sema(&ecm_detach_sema);
+ 	rtw_delete_task(&task_ecm_attach);
+@@ -437,7 +436,7 @@ void rltk_mii_recv(struct eth_drv_sg *sg_list, int sg_len)
+ 
+ s8 rltk_mii_send(struct eth_drv_sg *sg_list, int sg_len, int total_len)
+ {
+-	rtw_mutex_get(&mii_tx_mutex);
++
+ 	int ret = 0;
+ 	struct eth_drv_sg *last_sg;
+ 	usb_send_packet *tx_packet = usbh_ecm_send_get_buf();
+@@ -454,7 +453,7 @@ s8 rltk_mii_send(struct eth_drv_sg *sg_list, int sg_len, int total_len)
+ 	} else {
+ 		ret = -1;
+ 	}
+-	rtw_mutex_put(&mii_tx_mutex);
++
+ 	return ret;
+ }
+ 
+@@ -465,8 +464,6 @@ void usbh_ecm_thread(void *param)
+ 	bool status = false;
+ 	lwip_status = 0;
+ 	lwip_dhcp_status = -1;
+-	rtw_mutex_init(&mii_tx_mutex);
+-	rtw_mutex_init(&mii_link_mutex);
+ 	rtw_init_sema(&ecm_attach_sema, 0);
+ 	rtw_init_sema(&ecm_detach_sema, 0);
+ #ifdef ECM_STATIC_IP_TEST
+@@ -516,8 +513,6 @@ void usbh_ecm_thread(void *param)
+ EXIT_FAIL_DETACH:
+ 	rtw_delete_task(&task_ecm_attach);
+ EXIT_FAIL_ATTACH:
+-	rtw_mutex_free(&mii_tx_mutex);
+-	rtw_mutex_free(&mii_link_mutex);
+ 	rtw_free_sema(&ecm_attach_sema);
+ 	rtw_free_sema(&ecm_detach_sema);
+ EXIT:
+diff --git a/component/example/usb_cdc_snapshot/example_usb_cdc_snapshot.c b/component/example/usb_cdc_snapshot/example_usb_cdc_snapshot.c
+index f7a6d35b..f17fd28a 100644
+--- a/component/example/usb_cdc_snapshot/example_usb_cdc_snapshot.c
++++ b/component/example/usb_cdc_snapshot/example_usb_cdc_snapshot.c
+@@ -26,33 +26,21 @@ unsigned int snap_checksum = 0;
+ 
+ ////////////////////////YUV SNAPSHOT//////////////////////////////////////////
+ #include "module_video.h"
+-#include "mmf2_pro2_video_config.h"
++//#include "mmf2_pro2_video_config.h"
+ #include "sensor.h"
+ 
+ #define V1_CHANNEL 0
+-#define V1_RESOLUTION VIDEO_FHD//VIDEO_VGA
+ #define V1_FPS 5
+ #define V1_GOP 5
+ #define V1_BPS 2*1024*1024
+ #define V1_RCMODE 2 // 1: CBR, 2: VBR
+ 
+ #ifdef JPEG_MODE
+-#define VIDEO_TYPE VIDEO_JPEG
++#define VIDEO_TYPE 0x02//VIDEO_JPEG
+ #else
+ #define VIDEO_TYPE VIDEO_NV12
+ #endif
+ 
+-#if V1_RESOLUTION == VIDEO_VGA
+-#define V1_WIDTH	640
+-#define V1_HEIGHT	480
+-#elif V1_RESOLUTION == VIDEO_HD
+-#define V1_WIDTH	1280
+-#define V1_HEIGHT	720
+-#elif V1_RESOLUTION == VIDEO_FHD
+-#define V1_WIDTH	1920
+-#define V1_HEIGHT	1080
+-#endif
+-
+ struct yuv_snapshot_context {
+ 	uint8_t snap_flag;
+ 	_sema snapshot_sema;
+@@ -92,9 +80,6 @@ static void yuv_output_cb(void *param1, void  *param2, uint32_t arg)
+ static video_params_t video_v1_params = {
+ 	.stream_id = V1_CHANNEL,
+ 	.type = VIDEO_TYPE,
+-	.resolution = V1_RESOLUTION,
+-	.width = V1_WIDTH,
+-	.height = V1_HEIGHT,
+ 	.bps = V1_BPS,
+ 	.fps = V1_FPS,
+ 	.gop = V1_GOP,
+@@ -109,7 +94,7 @@ static void yuv_snapshot_init(void *ctx)
+ 	int iq_addr, sensor_addr;
+ 	isp_info_t info;
+ 
+-	int voe_heap_size = video_buf_calc(1, V1_WIDTH, V1_HEIGHT, V1_BPS, 1,
++	int voe_heap_size = video_buf_calc(1, video_v1_params.width, video_v1_params.height, V1_BPS, 1,
+ 									   0, 0, 0, 0, 0,
+ 									   0, 0, 0, 0, 0,
+ 									   0, 0, 0);
+@@ -519,6 +504,10 @@ void example_cdc_snapshot_thread(void *param)
+ 	/////////////////snapshot///////////
+ 	yuv_ctx = malloc(sizeof(struct yuv_snapshot_context));
+ 	memset(yuv_ctx, 0, sizeof(struct yuv_snapshot_context));
++	video_v1_params.width = sensor_params[USE_SENSOR].sensor_width;
++	video_v1_params.height = sensor_params[USE_SENSOR].sensor_height;
++	video_v1_params.fps = sensor_params[USE_SENSOR].sensor_fps;
++	video_v1_params.gop = sensor_params[USE_SENSOR].sensor_fps;
+ 	yuv_snapshot_init(yuv_ctx);
+ #ifdef JPEG_MODE
+ 	jpeg_snapshot_start(yuv_ctx);
+diff --git a/component/example/wifi_roaming_client_plus/example_wifi_roaming_client_plus.c b/component/example/wifi_roaming_client_plus/example_wifi_roaming_client_plus.c
+index bb187842..1979620e 100644
+--- a/component/example/wifi_roaming_client_plus/example_wifi_roaming_client_plus.c
++++ b/component/example/wifi_roaming_client_plus/example_wifi_roaming_client_plus.c
+@@ -170,8 +170,13 @@ static int wlan_roaming_connect(struct wlan_fast_reconnect *data)
+ 		break;
+ 	case RTW_SECURITY_WPA_TKIP_PSK:
+ 	case RTW_SECURITY_WPA_AES_PSK:
+-	case RTW_SECURITY_WPA2_AES_PSK:
++	case RTW_SECURITY_WPA_MIXED_PSK:
+ 	case RTW_SECURITY_WPA2_TKIP_PSK:
++	case RTW_SECURITY_WPA2_AES_PSK:
++	case RTW_SECURITY_WPA2_MIXED_PSK:
++	case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
++	case RTW_SECURITY_WPA_WPA2_AES_PSK:
++	case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
+ #ifdef CONFIG_SAE_SUPPORT
+ 	case RTW_SECURITY_WPA3_AES_PSK:
+ 	case RTW_SECURITY_WPA3_GCMP_PSK:
+diff --git a/component/example/wifi_roaming_plus/example_wifi_roaming_plus.c b/component/example/wifi_roaming_plus/example_wifi_roaming_plus.c
+index e62047c7..4824a01a 100644
+--- a/component/example/wifi_roaming_plus/example_wifi_roaming_plus.c
++++ b/component/example/wifi_roaming_plus/example_wifi_roaming_plus.c
+@@ -195,7 +195,14 @@ WIFI_RETRY_LOOP:
+ 		wifi.key_id = key_id;
+ 		break;
+ 	case RTW_SECURITY_WPA_TKIP_PSK:
++	case RTW_SECURITY_WPA_AES_PSK:
++	case RTW_SECURITY_WPA_MIXED_PSK:
++	case RTW_SECURITY_WPA2_TKIP_PSK:
+ 	case RTW_SECURITY_WPA2_AES_PSK:
++	case RTW_SECURITY_WPA2_MIXED_PSK:
++	case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
++	case RTW_SECURITY_WPA_WPA2_AES_PSK:
++	case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
+ #ifdef CONFIG_SAE_SUPPORT
+ 	case RTW_SECURITY_WPA3_AES_PSK:
+ 	case RTW_SECURITY_WPA3_GCMP_PSK:
+@@ -382,7 +389,14 @@ int  wifi_write_ap_info_to_flash(unsigned int offer_ip, unsigned int server_ip)
+ 		fast_connect_info.security_type = RTW_SECURITY_WEP_PSK;
+ 		break;
+ 	case RTW_SECURITY_WPA_TKIP_PSK:
++	case RTW_SECURITY_WPA_AES_PSK:
++	case RTW_SECURITY_WPA_MIXED_PSK:
++	case RTW_SECURITY_WPA2_TKIP_PSK:
+ 	case RTW_SECURITY_WPA2_AES_PSK:
++	case RTW_SECURITY_WPA2_MIXED_PSK:
++	case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
++	case RTW_SECURITY_WPA_WPA2_AES_PSK:
++	case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
+ #ifdef CONFIG_SAE_SUPPORT
+ 	case RTW_SECURITY_WPA3_AES_PSK:
+ 	case RTW_SECURITY_WPA3_GCMP_PSK:
+@@ -1253,8 +1267,13 @@ void bandsteering_task(void *param)
+ 	switch (security_type) {
+ 	case RTW_SECURITY_WPA_TKIP_PSK:
+ 	case RTW_SECURITY_WPA_AES_PSK:
++	case RTW_SECURITY_WPA_MIXED_PSK:
+ 	case RTW_SECURITY_WPA2_AES_PSK:
+ 	case RTW_SECURITY_WPA2_TKIP_PSK:
++	case RTW_SECURITY_WPA2_MIXED_PSK:
++	case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
++	case RTW_SECURITY_WPA_WPA2_AES_PSK:
++	case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
+ #ifdef CONFIG_SAE_SUPPORT
+ 	case RTW_SECURITY_WPA3_AES_PSK:
+ 	case RTW_SECURITY_WPA3_GCMP_PSK:
+diff --git a/component/example/wlan_scenario/example_wlan_scenario.c b/component/example/wlan_scenario/example_wlan_scenario.c
+index f7e2eb7c..7a6642a0 100644
+--- a/component/example/wlan_scenario/example_wlan_scenario.c
++++ b/component/example/wlan_scenario/example_wlan_scenario.c
+@@ -44,27 +44,50 @@ static void print_wifi_setting(const char *ifname, rtw_wifi_setting_t *pSetting)
+ 
+ 	switch (pSetting->security_type) {
+ 	case RTW_SECURITY_OPEN:
+-		printf("\n\r	SECURITY => OPEN");
++		printf("\n\r  SECURITY => OPEN");
+ 		break;
+ 	case RTW_SECURITY_WEP_PSK:
+-		printf("\n\r	SECURITY => WEP");
++		printf("\n\r  SECURITY => WEP");
+ 		printf("\n\r KEY INDEX => %d", pSetting->key_idx);
+ 		break;
+ 	case RTW_SECURITY_WPA_TKIP_PSK:
++		printf("\n\r  SECURITY => WPA TKIP");
++		break;
+ 	case RTW_SECURITY_WPA2_TKIP_PSK:
+-		printf("\n\r	SECURITY => TKIP");
++		printf("\n\r  SECURITY => WPA2 TKIP");
+ 		break;
+ 	case RTW_SECURITY_WPA_AES_PSK:
++		printf("\n\r  SECURITY => WPA AES");
++		break;
++	case RTW_SECURITY_WPA_MIXED_PSK:
++		printf("\n\r  SECURITY => WPA Mixed");
++		break;
+ 	case RTW_SECURITY_WPA2_AES_PSK:
++		printf("\n\r  SECURITY => WPA2 AES");
++		break;
++	case RTW_SECURITY_WPA2_MIXED_PSK:
++		printf("\n\r  SECURITY => WPA2 Mixed");
++		break;
++	case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
++		printf("\n\r  SECURITY => WPA/WPA2 TKIP");
++		break;
++	case RTW_SECURITY_WPA_WPA2_AES_PSK:
++		printf("\n\r  SECURITY => WPA/WPA2 AES");
++		break;
++	case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
++		printf("\n\r  SECURITY => WPA/WPA2 Mixed");
++		break;
+ 	case RTW_SECURITY_WPA3_AES_PSK:
++		printf("\n\r  SECURITY => WPA3 AES");
++		break;
+ 	case RTW_SECURITY_WPA2_WPA3_MIXED:
+-		printf("\n\r	SECURITY => AES");
++		printf("\n\r  SECURITY => WPA2/WPA3 AES");
+ 		break;
+ 	case RTW_SECURITY_WPA3_GCMP_PSK:
+ 		printf("\n\r  SECURITY => GCMP");
+ 		break;
+ 	default:
+-		printf("\n\r	SECURITY => UNKNOWN");
++		printf("\n\r  SECURITY => UNKNOWN");
+ 	}
+ 
+ 	printf("\n\r	PASSWORD => %s", pSetting->password);
+diff --git a/component/file_system/fwfs/fwfs.c b/component/file_system/fwfs/fwfs.c
+index 62856ac6..8cb4d4cc 100644
+--- a/component/file_system/fwfs/fwfs.c
++++ b/component/file_system/fwfs/fwfs.c
+@@ -369,10 +369,10 @@ void nand_pfw_init(void)
+ 		fci->page_per_blk = 64;
+ 	}
+ 
+-	if (fci->spare_size < 32 || fci->spare_size > 224) {
++	/* if (fci->spare_size < 32 || fci->spare_size > 224) {
+ 		fci->spare_size = 32;
+-	}
+-	snand_spare_size = fci->spare_size;
++	} */
++	//snand_spare_size = fci->spare_size; //Work around to fix the issue that it will assign the wrong size form firmware.
+ 
+ 	memcpy(&g_partition.fci, fci, sizeof(nand_fci_t));
+ 	//pfw_dump_mem(&g_partition.fci, sizeof(nand_fci_t));
+diff --git a/component/media/mmfv2/module_video.c b/component/media/mmfv2/module_video.c
+index e40a6ae4..aebdcfe6 100644
+--- a/component/media/mmfv2/module_video.c
++++ b/component/media/mmfv2/module_video.c
+@@ -88,15 +88,14 @@ int video_get_cb_fps(int chn)
+ }
+ static int video_rate_control_check_fps(int fps)
+ {
+-	int isp_min_fps = 0;
+ 	int isp_max_fps = 0;
+-	isp_get_min_fps(&isp_min_fps);
+ 	isp_get_max_fps(&isp_max_fps);
+ 	if (isp_max_fps > 0 && isp_max_fps < fps) {
+ 		return isp_max_fps;
+ 	}
+-	if (isp_min_fps > 0 && isp_min_fps > fps) {
+-		return isp_min_fps;
++	// Since the min fps of VOE is not related to the isp min fps, user only needs to prevent the fps is 0
++	if (fps <= 0) {
++		return 1;
+ 	}
+ 	return fps;
+ }
+diff --git a/component/network/iperf/iperf.c b/component/network/iperf/iperf.c
+index 257c144a..74eb821d 100644
+--- a/component/network/iperf/iperf.c
++++ b/component/network/iperf/iperf.c
+@@ -961,6 +961,7 @@ void cmd_tcp(int argc, char **argv)
+ 							vPortFree(tcp_server_buffer);
+ 							tcp_server_buffer = NULL;
+ 						}
++						rtw_mutex_free(&tptest_log_mutex);
+ 						printf("\n\rTCP server stopped!\n");
+ 						vTaskDelete(g_tcp_server_task);
+ 						g_tcp_server_task = NULL;
+@@ -1172,6 +1173,7 @@ void cmd_udp(int argc, char **argv)
+ 							vPortFree(udp_server_buffer);
+ 							udp_server_buffer = NULL;
+ 						}
++						rtw_mutex_free(&tptest_log_mutex);
+ 						printf("\n\rUDP server stopped!\n");
+ 						vTaskDelete(g_udp_server_task);
+ 						g_udp_server_task = NULL;
+diff --git a/component/wifi/api/wifi_conf.c b/component/wifi/api/wifi_conf.c
+index 20b6613d..92427462 100644
+--- a/component/wifi/api/wifi_conf.c
++++ b/component/wifi/api/wifi_conf.c
+@@ -318,10 +318,13 @@ int wifi_connect(rtw_network_info_t *connect_param, unsigned char block)
+ 		  (connect_param->password_len <  RTW_MIN_PSK_LEN)) &&
+ 		 ((connect_param->security_type == RTW_SECURITY_WPA_TKIP_PSK) ||
+ 		  (connect_param->security_type == RTW_SECURITY_WPA_AES_PSK) ||
++		  (connect_param->security_type == RTW_SECURITY_WPA_MIXED_PSK) ||
+ 		  (connect_param->security_type == RTW_SECURITY_WPA2_AES_PSK) ||
+ 		  (connect_param->security_type == RTW_SECURITY_WPA2_TKIP_PSK) ||
+ 		  (connect_param->security_type == RTW_SECURITY_WPA2_MIXED_PSK) ||
+-		  (connect_param->security_type == RTW_SECURITY_WPA_WPA2_MIXED) ||
++		  (connect_param->security_type == RTW_SECURITY_WPA_WPA2_TKIP_PSK) ||
++		  (connect_param->security_type == RTW_SECURITY_WPA_WPA2_AES_PSK) ||
++		  (connect_param->security_type == RTW_SECURITY_WPA_WPA2_MIXED_PSK) ||
+ #ifdef CONFIG_SAE_SUPPORT
+ 		  (connect_param->security_type == RTW_SECURITY_WPA3_AES_PSK) ||
+ 		  (connect_param->security_type == RTW_SECURITY_WPA2_WPA3_MIXED) ||
+diff --git a/component/wifi/driver/include/wifi_constants.h b/component/wifi/driver/include/wifi_constants.h
+index e65b0774..f6417194 100644
+--- a/component/wifi/driver/include/wifi_constants.h
++++ b/component/wifi/driver/include/wifi_constants.h
+@@ -183,11 +183,14 @@ typedef enum {
+ 	RTW_SECURITY_WEP_SHARED     = (WEP_ENABLED | SHARED_ENABLED),                   /**< WEP Security with shared authentication */
+ 	RTW_SECURITY_WPA_TKIP_PSK   = (WPA_SECURITY  | TKIP_ENABLED),                   /**< WPA Security with TKIP                  */
+ 	RTW_SECURITY_WPA_AES_PSK    = (WPA_SECURITY  | AES_ENABLED),                    /**< WPA Security with AES                   */
++	RTW_SECURITY_WPA_MIXED_PSK  = (WPA_SECURITY | AES_ENABLED | TKIP_ENABLED),      /**< WPA Security with AES & TKIP            */
+ 	RTW_SECURITY_WPA2_AES_PSK   = (WPA2_SECURITY | AES_ENABLED),                    /**< WPA2 Security with AES                  */
+ 	RTW_SECURITY_WPA2_TKIP_PSK  = (WPA2_SECURITY | TKIP_ENABLED),                   /**< WPA2 Security with TKIP                 */
+ 	RTW_SECURITY_WPA2_MIXED_PSK = (WPA2_SECURITY | AES_ENABLED | TKIP_ENABLED),     /**< WPA2 Security with AES & TKIP           */
+-	RTW_SECURITY_WPA_WPA2_MIXED = (WPA_SECURITY  | WPA2_SECURITY),                  /**< WPA/WPA2 Security                       */
+-	RTW_SECURITY_WPA2_AES_CMAC = (WPA2_SECURITY | AES_CMAC_ENABLED),                /**< WPA2 Security with AES and Management Frame Protection*/
++	RTW_SECURITY_WPA_WPA2_TKIP_PSK = (WPA_SECURITY  | WPA2_SECURITY | TKIP_ENABLED),  /**< WPA/WPA2 Security with TKIP           */
++	RTW_SECURITY_WPA_WPA2_AES_PSK = (WPA_SECURITY  | WPA2_SECURITY | AES_ENABLED),    /**< WPA/WPA2 Security with AES            */
++	RTW_SECURITY_WPA_WPA2_MIXED_PSK = (WPA_SECURITY  | WPA2_SECURITY | TKIP_ENABLED | AES_ENABLED),  /**< WPA/WPA2 Security with AES & TKIP      */
++	RTW_SECURITY_WPA2_AES_CMAC = (WPA2_SECURITY | AES_CMAC_ENABLED),                 /**< WPA2 Security with AES and Management Frame Protection */
+ 	RTW_SECURITY_WPA2_ENTERPRISE = (WPA2_SECURITY | ENTERPRISE_ENABLED),            /**< WPA2 Security with 802.1X authentication>*/
+ 	RTW_SECURITY_WPA_WPA2_ENTERPRISE = (WPA_SECURITY | WPA2_SECURITY | ENTERPRISE_ENABLED), /** <WPA/WPA2 Security with 802.1X authentication>*/
+ 
+diff --git a/component/wifi/wifi_config/wifi_simple_config.c b/component/wifi/wifi_config/wifi_simple_config.c
+index 5c98177d..a0680893 100644
+--- a/component/wifi/wifi_config/wifi_simple_config.c
++++ b/component/wifi/wifi_config/wifi_simple_config.c
+@@ -471,8 +471,15 @@ static void SC_show_wifi_setting(const char *ifname, rtw_wifi_setting_t *pSettin
+ 		printf("\n\r KEY INDEX => %d", pSetting->key_idx);
+ 		break;
+ 	case RTW_SECURITY_WPA_TKIP_PSK:
++	case RTW_SECURITY_WPA2_TKIP_PSK:
++	case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
+ 		printf("\n\r	SECURITY => TKIP");
+ 		break;
++	case RTW_SECURITY_WPA_MIXED_PSK:
++	case RTW_SECURITY_WPA2_MIXED_PSK:
++		printf("\n\r	SECURITY => MIXED");
++		break;
++	case RTW_SECURITY_WPA_AES_PSK:
+ 	case RTW_SECURITY_WPA2_AES_PSK:
+ 		printf("\n\r	SECURITY => AES");
+ 		break;
+diff --git a/component/wifi/wifi_fast_connect/wifi_fast_connect.c b/component/wifi/wifi_fast_connect/wifi_fast_connect.c
+index 17e013b9..8f506a00 100644
+--- a/component/wifi/wifi_fast_connect/wifi_fast_connect.c
++++ b/component/wifi/wifi_fast_connect/wifi_fast_connect.c
+@@ -152,8 +152,13 @@ int write_fast_connect_data_to_flash(unsigned int offer_ip, unsigned int server_
+ 		break;
+ 	case RTW_SECURITY_WPA_TKIP_PSK:
+ 	case RTW_SECURITY_WPA_AES_PSK:
++	case RTW_SECURITY_WPA_MIXED_PSK:
+ 	case RTW_SECURITY_WPA2_AES_PSK:
+ 	case RTW_SECURITY_WPA2_TKIP_PSK:
++	case RTW_SECURITY_WPA2_MIXED_PSK:
++	case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
++	case RTW_SECURITY_WPA_WPA2_AES_PSK:
++	case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
+ #ifdef CONFIG_SAE_SUPPORT
+ 	case RTW_SECURITY_WPA3_AES_PSK:
+ 	case RTW_SECURITY_WPA2_WPA3_MIXED:
+@@ -357,8 +362,13 @@ WIFI_RETRY_LOOP:
+ 			break;
+ 		case RTW_SECURITY_WPA_TKIP_PSK:
+ 		case RTW_SECURITY_WPA_AES_PSK:
++		case RTW_SECURITY_WPA_MIXED_PSK:
+ 		case RTW_SECURITY_WPA2_AES_PSK:
+ 		case RTW_SECURITY_WPA2_TKIP_PSK:
++		case RTW_SECURITY_WPA2_MIXED_PSK:
++		case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
++		case RTW_SECURITY_WPA_WPA2_AES_PSK:
++		case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
+ #ifdef CONFIG_SAE_SUPPORT
+ 		case RTW_SECURITY_WPA3_AES_PSK:
+ 		case RTW_SECURITY_WPA2_WPA3_MIXED:
+diff --git a/component/wifi/wpa_supplicant/wpa_supplicant/wifi_wps_config.c b/component/wifi/wpa_supplicant/wpa_supplicant/wifi_wps_config.c
+index dc3298f6..ad60b694 100644
+--- a/component/wifi/wpa_supplicant/wpa_supplicant/wifi_wps_config.c
++++ b/component/wifi/wpa_supplicant/wpa_supplicant/wifi_wps_config.c
+@@ -325,9 +325,17 @@ void wps_check_and_show_connection_info(void)
+ 		printf("\n\r KEY INDEX => %d", setting.key_idx);
+ 		break;
+ 	case RTW_SECURITY_WPA_TKIP_PSK:
++	case RTW_SECURITY_WPA2_TKIP_PSK:
++	case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
+ 		printf("\n\r	SECURITY => TKIP");
+ 		break;
++	case RTW_SECURITY_WPA_MIXED_PSK:
++	case RTW_SECURITY_WPA2_MIXED_PSK:
++		printf("\n\r	SECURITY => MIXED");
++		break;
++	case RTW_SECURITY_WPA_AES_PSK:
+ 	case RTW_SECURITY_WPA2_AES_PSK:
++	case RTW_SECURITY_WPA_WPA2_AES_PSK:
+ 		printf("\n\r	SECURITY => AES");
+ 		break;
+ 	default:
+@@ -358,7 +366,10 @@ static void wps_config_wifi_setting(rtw_network_info_t *wifi, struct dev_credent
+ 			wifi->security_type = RTW_SECURITY_WPA2_TKIP_PSK;
+ 		}
+ 	} else if (dev_cred->auth_type & (WPS_AUTH_TYPE_WPA_PERSONAL | WPS_AUTH_TYPE_WPA_ENTERPRISE)) {
+-		if (dev_cred->encr_type & WPS_ENCR_TYPE_AES) {
++		if ((dev_cred->encr_type & WPS_ENCR_TYPE_AES) && (dev_cred->encr_type & WPS_ENCR_TYPE_TKIP)) {
++			printf("\r\nsecurity_type = RTW_SECURITY_WPA_MIXED_PSK\n");
++			wifi->security_type = RTW_SECURITY_WPA_MIXED_PSK;
++		} else if (dev_cred->encr_type & WPS_ENCR_TYPE_AES) {
+ 			printf("\r\nsecurity_type = RTW_SECURITY_WPA_AES_PSK\n");
+ 			wifi->security_type = RTW_SECURITY_WPA_AES_PSK;
+ 		} else if (dev_cred->encr_type & WPS_ENCR_TYPE_TKIP) {
+@@ -1027,7 +1038,9 @@ int wps_start(u16 wps_config, char *pin, u8 channel, char *ssid)
+ 				cur_security = RTW_SECURITY_WPA2_TKIP_PSK;
+ 			}
+ 		} else if (dev_cred[cur_index].auth_type & (WPS_AUTH_TYPE_WPA_PERSONAL | WPS_AUTH_TYPE_WPA_ENTERPRISE)) {
+-			if (dev_cred[cur_index].encr_type & WPS_ENCR_TYPE_AES) {
++			if ((dev_cred[cur_index].encr_type & WPS_ENCR_TYPE_AES) && (dev_cred[cur_index].encr_type & WPS_ENCR_TYPE_TKIP)) {
++				cur_security = RTW_SECURITY_WPA_MIXED_PSK;
++			} else if (dev_cred[cur_index].encr_type & WPS_ENCR_TYPE_AES) {
+ 				cur_security = RTW_SECURITY_WPA_AES_PSK;
+ 			} else if (dev_cred[cur_index].encr_type & WPS_ENCR_TYPE_TKIP) {
+ 				cur_security = RTW_SECURITY_WPA_TKIP_PSK;
+diff --git a/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/application.cmake b/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/application.cmake
+index a2c98feb..72206a4c 100644
+--- a/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/application.cmake
++++ b/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/application.cmake
+@@ -1068,6 +1068,8 @@ target_link_options(
+ 	"LINKER:SHELL:-wrap,hal_sys_get_chip_id"
+ 	"LINKER:SHELL:-wrap,hal_sys_get_video_img_ld_offset"
+ 	"LINKER:SHELL:-wrap,hal_sys_cust_pws_val_ctrl"
++	"LINKER:SHELL:-wrap,hal_32k_s1_sel"
++	"LINKER:SHELL:-wrap,hal_xtal_divider_enable"	
+ 	
+ )
+ endif()
+diff --git a/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/output/libsoc_ns.a b/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/output/libsoc_ns.a
+index 93ea1c20..b010e24c 100644
+Binary files a/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/output/libsoc_ns.a and b/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/output/libsoc_ns.a differ
+diff --git a/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/output/libusbd.a b/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/output/libusbd.a
+index def04c99..c521fae3 100644
+Binary files a/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/output/libusbd.a and b/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/output/libusbd.a differ
+diff --git a/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/output/libwlan.a b/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/output/libwlan.a
+index fd183fbe..1ba4380f 100644
+Binary files a/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/output/libwlan.a and b/project/realtek_amebapro2_v0_example/GCC-RELEASE/application/output/libwlan.a differ
