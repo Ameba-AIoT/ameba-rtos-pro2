@@ -62,6 +62,11 @@ list(
 )
 
 list(
+	APPEND webrtc_netio_func_rename_flag
+	wss_client_close=webrtc_wss_client_close
+)
+
+list(
 	APPEND webrtc_kvs_string_rename_flag
 	strnchr=webrtc_strnchr
 )
