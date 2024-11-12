@@ -2222,13 +2222,13 @@ void memcpy32(void *dst, void *src, int len)
 {
 	__asm(
 		"		push {r0-r12}				\n"
-		"myloop:							\n"
+		"1:									\n"
 		"		ldmia   r1!, {r4-r11}		\n"
 		"		PLD [r1, #0]				\n"
 		"		stmia   r0!, {r4-r11}		\n"
 		"		PLD [r0, #0]				\n"
 		"		subs    r2, r2, #32			\n"
-		"		BGT   myloop				\n"
+		"		BGT   1b					\n"
 		"		pop {r0-r12}				\n"
 		"		bx lr						\n"
 	);
