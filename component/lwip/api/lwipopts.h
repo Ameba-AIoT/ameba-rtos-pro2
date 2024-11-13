@@ -505,9 +505,7 @@ Certain platform allows computing and verifying the IP, UDP, TCP and ICMP checks
 #define LWIP_AUTOIP                     1
 #define TCPIP_THREAD_NAME              "TCP_IP"
 
-#define SNTP_RECV_TIMEOUT               3000
-#define LWIP_NETIF_LOOPBACK             1
-#define LWIP_IPV6                       1
+#define LWIP_IPV6                       0
 #if LWIP_IPV6
 #undef  MEMP_NUM_SYS_TIMEOUT
 #define MEMP_NUM_SYS_TIMEOUT            13
