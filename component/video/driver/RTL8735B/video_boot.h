@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include "fw_img_export.h"
 
+#define BOOTLOADER_VOE_LOG_EN   0
+
 // USE_NEW_HEAP_ALLOCATE
 #define ENABLE_HDR_MD_BUF   600*1024
 
@@ -64,6 +66,13 @@
 
 #define VIDEO_BOOT_META_REV_BUF  0x1000
 
+typedef struct video_boot_roi_s {
+	uint32_t xmin;
+	uint32_t ymin;
+	uint32_t xmax;
+	uint32_t ymax;
+} video_boot_roi_t;
+
 typedef struct video_boot_param_s {
 	uint32_t stream_id;
 	uint32_t type;
@@ -82,12 +91,7 @@ typedef struct video_boot_param_s {
 	uint32_t use_static_addr;
 	uint32_t fcs;
 	uint32_t use_roi;
-	struct video_boot_roi_s {
-		uint32_t xmin;
-		uint32_t ymin;
-		uint32_t xmax;
-		uint32_t ymax;
-	} roi;
+	video_boot_roi_t roi;
 	uint32_t level;
 	uint32_t profile;
 	uint32_t cavlc;
@@ -194,6 +198,8 @@ typedef struct video_boot_stream_cfg {
 	uint32_t extra_fcs_meta_enable_extend;
 	uint32_t extra_fcs_meta_extend_offset;
 	uint32_t extra_fcs_meta_extend_total_size;
+	uint32_t voe_scale_up_en;
+	video_boot_roi_t voe_scale_up_roi;
 } video_boot_stream_t;
 
 void video_boot_setup_slot_num(int stream_id, int slot_number);

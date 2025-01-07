@@ -35,37 +35,74 @@ This scenario is intended for a templete for ai glass scenario
 
 4. \component\video\driver\RTL8735B\video_user_boot.c
 - open flag ISP_CONTROL_TEST for the isp pre-setting
+
 - modify the following setting in the video_boot_stream (other keeping the same)
-	.video_params[STREAM_V1].width  = 176,
-	.video_params[STREAM_V1].height = 144,
-	.video_params[STREAM_V1].bps = 1024 * 1024,
-	.video_params[STREAM_V1].fps = 15,
-	.video_params[STREAM_V1].gop = 15,
-
-	.video_params[STREAM_V2].width = sensor_params[USE_SENSOR].sensor_width,
-	.video_params[STREAM_V2].height = sensor_params[USE_SENSOR].sensor_height,
-	.video_params[STREAM_V2].bps = 2 * 1024 * 1024,
-	.video_params[STREAM_V2].fps = sensor_params[USE_SENSOR].sensor_fps,
-	.video_params[STREAM_V2].gop = sensor_params[USE_SENSOR].sensor_fps,
-	.video_params[STREAM_V2].rc_mode = 2,
-	.video_snapshot[STREAM_V2] = 1,
-
-	.video_params[STREAM_V4].fcs = 0,
-
+	//video channel 0
 	.video_enable[STREAM_V1] = 1,
+	.video_snapshot[STREAM_V1] = 0,
+	.video_drop_frame[STREAM_V1] = 0,
+	.video_params[STREAM_V1] = {
+		.stream_id = STREAM_ID_V1,
+		.type = CODEC_H264,
+		.resolution = 0,
+		.width  = 176,
+		.height = 144,
+		.bps = 1024 * 1024,
+		.fps = 15,
+		.gop = 15,
+		.rc_mode = 2,
+		.minQp = 25,
+		.maxQp = 48,
+		.jpeg_qlevel = 0,
+		.rotation = 0,
+		.out_buf_size = V1_ENC_BUF_SIZE,
+		.out_rsvd_size = 0,
+		.direct_output = 0,
+		.use_static_addr = 0,
+		.fcs = 1 //Enable the fcs for channel 0
+	},
+
+	//video channel 1
 	.video_enable[STREAM_V2] = 1,
-	.video_enable[STREAM_V3] = 0,
+	.video_snapshot[STREAM_V2] = 1,
+	.video_drop_frame[STREAM_V2] = 0,
+	.video_params[STREAM_V2] = {
+		.stream_id = STREAM_ID_V2,
+		.type = CODEC_H264,
+		.resolution = 0,
+		.width = sensor_params[USE_SENSOR].sensor_width,
+		.height = sensor_params[USE_SENSOR].sensor_height,
+		.bps = 2 * 1024 * 1024,
+		.fps = sensor_params[USE_SENSOR].sensor_fps,
+		.gop = sensor_params[USE_SENSOR].sensor_fps,
+		.rc_mode = 2,
+		.minQp = 25,
+		.maxQp = 48,
+		.jpeg_qlevel = 0,
+		.rotation = 0,
+		.out_buf_size = V2_ENC_BUF_SIZE,
+		.out_rsvd_size = 0,
+		.direct_output = 0,
+		.use_static_addr = 0,
+		.fcs = 0,
+	},
+
 	.video_enable[STREAM_V4] = 0,
+
 - modify the following setting in the user_boot_config_init (other keeping the same)
-    video_boot_stream.init_isp_items.init_brightness = 0;    //Default:0
-    video_boot_stream.init_isp_items.init_contrast = 50;     //Default:50
-    video_boot_stream.init_isp_items.init_flicker = 1;        //Default:1
-    video_boot_stream.init_isp_items.init_mirrorflip = 0xf3;  //Mirror and flip
-    video_boot_stream.init_isp_items.init_saturation = 50;    //Default:50
-    video_boot_stream.init_isp_items.init_wdr_level = 50;     //Default:50
-    video_boot_stream.init_isp_items.init_wdr_mode = 0;       //Default:0
+	video_boot_stream.init_isp_items.enable = 1;
+	video_boot_stream.init_isp_items.init_brightness = 0;    //Default:0
+	video_boot_stream.init_isp_items.init_contrast = 50;     //Default:50
+	video_boot_stream.init_isp_items.init_flicker = 1;        //Default:1
+	video_boot_stream.init_isp_items.init_hdr_mode = 0;       //Default:0
+	video_boot_stream.init_isp_items.init_mirrorflip = 0xf3;  //Mirror and flip
+	video_boot_stream.init_isp_items.init_saturation = 50;    //Default:50
+	video_boot_stream.init_isp_items.init_wdr_level = 50;     //Default:50
+	video_boot_stream.init_isp_items.init_wdr_mode = 0;       //Default:0
+	video_boot_stream.init_isp_items.init_mipi_mode = 0;	  //Default:0
 
 5. \project\realtek_amebapro2_v0_example\inc\sensor.h
+- in sensor_params, modify [SENSOR_SC5356]       = {2592, 1944, 24},
 - in sen_id, replace SENSOR_GC2053 by SENSOR_SC5356
 - set USE_SENSOR to SENSOR_SC5356
 - in manual_iq, replace iq_gc2053 by iq_sc5356
@@ -78,6 +115,10 @@ This scenario is intended for a templete for ai glass scenario
 
 7. \component\file_system\fatfs\r0.14\diskio.c
 - DWORD get_fattime(void) modified to weak function __attribute__((weak)) DWORD get_fattime(void)
+
+8. \component\soc\8735b\fwlib\rtl8735b\lib\source\ram\video\voe_bin
+- user could replace the iq in this folder to get a better video vision
+- under project\realtek_amebapro2_v0_example\scenario\ai_glass\src\iq, there is some pre-setting iq firmware for some sensor
 
 ## Config for in this scenario ##
 1. main.c

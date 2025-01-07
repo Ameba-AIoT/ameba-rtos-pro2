@@ -115,18 +115,20 @@ int gyroscope_fifo_read(gyro_data_t *data, uint16_t len)
 	float gyroUpdateInterval = 1000.0 / MPU6050_FIFO_DEFAULT_RATE;
 	float timestamp = 0;
 	for (int i = 0; i < len ; i++) {
+#if !IGN_ACC_DATA
 		data[i].g[0] = gs_accel_g[i][0];
 		data[i].g[1] = gs_accel_g[i][1];
 		data[i].g[2] = gs_accel_g[i][2];
-		data[i].g_raw[0] = gs_accel_raw[i][0];
-		data[i].g_raw[1] = gs_accel_raw[i][1];
-		data[i].g_raw[2] = gs_accel_raw[i][2];
+#endif
+		//data[i].g_raw[0] = gs_accel_raw[i][0];
+		//data[i].g_raw[1] = gs_accel_raw[i][1];
+		//data[i].g_raw[2] = gs_accel_raw[i][2];
 		data[i].dps[0] = gs_gyro_dps[i][0];
 		data[i].dps[1] = gs_gyro_dps[i][1];
 		data[i].dps[2] = gs_gyro_dps[i][2];
-		data[i].dps_raw[0] = gs_gyro_raw[i][0];
-		data[i].dps_raw[1] = gs_gyro_raw[i][1];
-		data[i].dps_raw[2] = gs_gyro_raw[i][2];
+		//data[i].dps_raw[0] = gs_gyro_raw[i][0];
+		//data[i].dps_raw[1] = gs_gyro_raw[i][1];
+		//data[i].dps_raw[2] = gs_gyro_raw[i][2];
 
 		//TODO: every gyro data must sync with video's timestamp
 		data[i].timestamp = (uint32_t) timestamp;

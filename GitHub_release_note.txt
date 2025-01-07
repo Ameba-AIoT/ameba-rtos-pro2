@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 078ed90cfd013ebaef36168d8d25b81cd3dfb8f5
+* [amebapro2][sdk] optimize uart, jpg, gsensor, http in ai glass scenario
+
 SHA-1: 696e9011fdc2a711625b2df2882c8876713ac866
 * [amebapro2][sdk] fix warning in ai glass scenario
 

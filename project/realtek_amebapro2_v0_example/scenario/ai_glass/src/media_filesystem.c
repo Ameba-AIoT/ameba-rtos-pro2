@@ -160,6 +160,49 @@ static int check_extension(const char *filename, const char *ext)
 	return strcmp(filename + len_filename - len_ext, ext) == 0;
 }
 
+// return extensions' num
+// if not exist, return -1
+static int check_valid_file_and_remove(const char *list_path, const char *filename, const char *exclude_filename, const char **extensions,
+									   uint16_t num_extensions)
+{
+	struct stat finfo = {0};
+	int res;
+
+	if (is_excluded_file(filename, exclude_filename)) {
+		printf("file %s is a exclude file %s\n", filename, exclude_filename);
+		return -1;
+	} else {
+		char *file_path = malloc(PATH_MAX + 1);
+		if (file_path) {
+			snprintf(file_path, PATH_MAX + 1, "%s/%s", list_path, filename);
+			res = stat(file_path, &finfo);
+
+			if (res == 0) {
+				if (finfo.st_size == 0) {
+					printf("size 0 is invlaid %s, remove file\r\n", file_path);
+					remove(file_path);
+					free(file_path);
+					return -1;
+				}
+			} else {
+				printf("Failed to get file %s info (error: %d), remove file\r\n", file_path, res);
+				remove(file_path);
+				free(file_path);
+				return -1;
+			}
+			free(file_path);
+		}
+		for (int i = 0; i < num_extensions; i++) {
+			if (check_extension(filename, extensions[i])) {
+				return i;
+			}
+		}
+		//printf("%s check_extension failed\r\n", filename);
+	}
+
+	return -1;
+}
+
 static int file_exists(const char *filename)
 {
 	FILE *file = fopen(filename, "r");
@@ -168,82 +211,6 @@ static int file_exists(const char *filename)
 		return 1;
 	}
 	return 0;
-}
-
-void extdisk_generate_unique_filename(const char *base_name, const char *time_str, const char *extension_name, char *new_name, uint32_t size)
-{
-	if (snprintf(new_name, size, "%s%s", base_name, time_str) >= size) {
-		printf("Error: Filename buffer size too small.\n");
-		return;
-	}
-
-	if (!ai_glass_extdisk_done) {
-		printf("External disk is not initialized yet\r\n");
-		return;
-	}
-	int count = 1;
-	char temp_path[MAX_FILE_LEN] = {0};
-	snprintf(temp_path, sizeof(temp_path), "%s%s%s", ai_glass_extdisk_tag, new_name, extension_name);
-
-	while (file_exists(temp_path)) {
-		if (snprintf(new_name, size, "%s%s_%d", base_name, time_str, count) >= size) {
-			printf("Error: Filename buffer size too small.\n");
-			return;
-		}
-
-		if (snprintf(temp_path, sizeof(temp_path), "%s%s%s", ai_glass_extdisk_tag, new_name, extension_name) >= sizeof(temp_path)) {
-			printf("Error: Path buffer size too small.\n");
-			return;
-		}
-		count++;
-	}
-}
-
-static void extdisk_get_filenum(const char *dir_path, const char **extensions, uint16_t *ext_counts, uint16_t num_extensions, const char *exclude_filename)
-{
-	DIR *file_dir = NULL;
-	char *filename;
-	dirent *entry;
-	//printf("survey dir: %s\r\n", dir_path);
-	uint8_t *sub_dir_path = malloc(PATH_MAX + 1);
-	file_dir = opendir(dir_path);
-
-	if (file_dir) {
-		for (;;) {
-			// read directory
-			entry = readdir(file_dir);
-
-			if (!entry) {
-				break;
-			}
-			filename = entry->d_name;
-			if (filename[0] == '.' || ((filename[0] == '.') && (filename[1] == '.'))) {
-				continue;
-			}
-
-			if (entry->d_type == DT_DIR) {
-				if (sub_dir_path) {
-					if (snprintf((char *)sub_dir_path, PATH_MAX + 1, "%s/%s", dir_path, entry->d_name) < (PATH_MAX + 1)) {
-						extdisk_get_filenum((const char *)sub_dir_path, extensions, ext_counts, num_extensions, exclude_filename);
-					}
-				}
-			} else {
-				if (!is_excluded_file(entry->d_name, exclude_filename)) {
-					for (int i = 0; i < num_extensions; i++) {
-						if (check_extension(entry->d_name, extensions[i])) {
-							ext_counts[i]++;
-						}
-					}
-				}
-			}
-		}
-		// close directory
-		closedir(file_dir);
-	}
-	if (sub_dir_path) {
-		free(sub_dir_path);
-	}
-	return;
 }
 
 FILE *extdisk_fopen(const char *filename, const char *mode)
@@ -320,6 +287,79 @@ int extdisk_remove(const char *filename)
 	char ai_glass_path[MAX_FILE_LEN] = {0};
 	snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_extdisk_tag, filename);
 	return remove(ai_glass_path);
+}
+
+void extdisk_generate_unique_filename(const char *base_name, const char *time_str, const char *extension_name, char *new_name, uint32_t size)
+{
+	if (snprintf(new_name, size, "%s%s", base_name, time_str) >= size) {
+		printf("Error: Filename buffer size too small.\n");
+		return;
+	}
+
+	if (!ai_glass_extdisk_done) {
+		printf("External disk is not initialized yet\r\n");
+		return;
+	}
+	int count = 1;
+	char temp_path[MAX_FILE_LEN] = {0};
+	snprintf(temp_path, sizeof(temp_path), "%s%s%s", ai_glass_extdisk_tag, new_name, extension_name);
+
+	while (file_exists(temp_path)) {
+		if (snprintf(new_name, size, "%s%s_%d", base_name, time_str, count) >= size) {
+			printf("Error: Filename buffer size too small.\n");
+			return;
+		}
+
+		if (snprintf(temp_path, sizeof(temp_path), "%s%s%s", ai_glass_extdisk_tag, new_name, extension_name) >= sizeof(temp_path)) {
+			printf("Error: Path buffer size too small.\n");
+			return;
+		}
+		count++;
+	}
+}
+
+static void extdisk_get_filenum(const char *dir_path, const char **extensions, uint16_t *ext_counts, uint16_t num_extensions, const char *exclude_filename)
+{
+	DIR *file_dir = NULL;
+	char *filename;
+	dirent *entry;
+	//printf("survey dir: %s\r\n", dir_path);
+	uint8_t *sub_dir_path = malloc(PATH_MAX + 1);
+	file_dir = opendir(dir_path);
+
+	if (file_dir) {
+		for (;;) {
+			// read directory
+			entry = readdir(file_dir);
+
+			if (!entry) {
+				break;
+			}
+			filename = entry->d_name;
+			if (filename[0] == '.' || ((filename[0] == '.') && (filename[1] == '.'))) {
+				continue;
+			}
+
+			if (entry->d_type == DT_DIR) {
+				if (sub_dir_path) {
+					if (snprintf((char *)sub_dir_path, PATH_MAX + 1, "%s/%s", dir_path, entry->d_name) < (PATH_MAX + 1)) {
+						extdisk_get_filenum((const char *)sub_dir_path, extensions, ext_counts, num_extensions, exclude_filename);
+					}
+				}
+			} else {
+				int extension_num = check_valid_file_and_remove(dir_path, entry->d_name, exclude_filename, extensions, num_extensions);
+				if (extension_num >= 0) {
+					ext_counts[extension_num]++;
+				}
+			}
+		}
+		// close directory
+		closedir(file_dir);
+	}
+	if (sub_dir_path) {
+		free(sub_dir_path);
+	}
+	return;
 }
 
 void extdisk_count_filenum(const char *dir_path, const char **extensions, uint16_t *ext_counts, uint16_t num_extensions, const char *exclude_filename)
@@ -433,16 +473,16 @@ static cJSON *get_filelist(const char *list_path, const char *folder_name, uint1
 				}
 			} else {
 				// Add file to contents
-				if (!is_excluded_file(entry->d_name, exclude_filename)) {
-					for (int i = 0; i < num_extensions; i++) {
-						if (check_extension(entry->d_name, extensions[i])) {
-							cJSON *file_obj = create_json_file_object(list_path, entry->d_name);
-							if (file_obj != NULL) {
-								cJSON_AddItemToArray(contents, file_obj);
-								(*file_number)++;
-							}
-						}
+				if (check_valid_file_and_remove(list_path, entry->d_name, exclude_filename, extensions, num_extensions) >= 0) {
+					cJSON *file_obj = create_json_file_object(list_path, entry->d_name);
+					if (file_obj != NULL) {
+						cJSON_AddItemToArray(contents, file_obj);
+						(*file_number)++;
+					} else {
+						printf("get file %s failed\r\n", entry->d_name);
 					}
+				} else {
+					printf("file %s is not valid\r\n", entry->d_name);
 				}
 			}
 		}

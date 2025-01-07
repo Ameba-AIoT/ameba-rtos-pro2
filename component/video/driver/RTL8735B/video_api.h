@@ -5,6 +5,9 @@
 #include <osdep_service.h>
 #include "hal_video.h"
 
+#define APP_VOE_LOG_EN          0
+#define APP_VOE_FCS_INFO_EN     1
+
 #define VIDEO_SET_RCPARAM		0x10
 #define VIDEO_FORCE_IFRAME		0x11
 #define VIDEO_BPS               0x12
@@ -254,6 +257,7 @@ typedef struct voe_info_s {
 	video_params_t video_info[MAX_CHANNEL];
 	uint32_t stream_is_open[MAX_CHANNEL];
 	uint32_t voe_scale_up_en;
+	video_roi_t voe_scale_up_roi;
 } voe_info_t;
 
 typedef struct mult_sensor_info_s {

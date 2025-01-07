@@ -285,16 +285,6 @@ int wlan_do_resume(void)
 		LwIP_DHCP(0, DHCP_START);
 	}
 
-	if (wowlan_wake_reason == 0x7A || wowlan_wake_reason == 0x7B) { // CSA
-		if (p_store_fast_connect_info) {
-			uint8_t *ip = LwIP_GetIP(0);
-			uint8_t *sv = LwIP_GetDHCPSERVER(0);
-			uint32_t offer_ip = *((u32_t *)ip);
-			uint32_t server_ip = *((u32_t *)sv);
-			printf("CSA new channel\n\r");
-			p_store_fast_connect_info(offer_ip, server_ip); // store new channel in flash
-		}
-	}
 	return 0;
 }
 

@@ -324,6 +324,7 @@ int video_boot_open(int ch_index, video_boot_params_t *v_stream)
 	int type;
 	int res = 0;
 	int codec = 0;
+	int ret = OK;
 
 	int enc_in_w = (video_boot_stream.video_params[ch_index].width + 15) & ~15;  //force 16 aligned
 	int enc_in_h = video_boot_stream.video_params[ch_index].height;
@@ -383,6 +384,7 @@ int video_boot_open(int ch_index, video_boot_params_t *v_stream)
 	v_adp->cmd[ch]->CodecType = v_stream->type;
 	v_adp->cmd[ch]->fcs = 1;
 	v_adp->cmd[ch]->EncMode = MODE_QUEUE;
+	v_adp->cmd[ch]->voe_dbg = BOOTLOADER_VOE_LOG_EN;
 
 	if (v_stream->type == CODEC_HEVC) {
 		v_adp->cmd[ch]->outputFormat     = VCENC_VIDEO_CODEC_HEVC,
@@ -473,11 +475,56 @@ int video_boot_open(int ch_index, video_boot_params_t *v_stream)
 		v_adp->cmd[ch]->drop_frame_num = video_boot_stream.video_drop_frame[ch_index];
 	}
 
-	if (v_stream->use_roi) {
-		v_adp->cmd[ch]->roix = v_stream->roi.xmin;
-		v_adp->cmd[ch]->roiy = v_stream->roi.ymin;
-		v_adp->cmd[ch]->roiw = v_stream->roi.xmax - v_stream->roi.xmin;
-		v_adp->cmd[ch]->roih = v_stream->roi.ymax - v_stream->roi.ymin;
+	if (video_boot_stream.voe_scale_up_en == 0) {
+		int origin_width = (int)video_boot_stream.isp_info.sensor_width;
+		int origin_height = (int)video_boot_stream.isp_info.sensor_height;
+		if (v_stream->use_roi) {
+			origin_width = v_stream->roi.xmax - v_stream->roi.xmin;
+			origin_height = v_stream->roi.ymax - v_stream->roi.ymin;
+		}
+		if (origin_width <= 0 || origin_height <= 0) {
+			dbg_printf("error: invlalid input resolution\r\n");
+			ret = NOK;
+			goto EXIT;
+		}
+		if (enc_in_w <= origin_width && enc_in_h <= origin_height) { //scale down
+			if (v_stream->use_roi) {
+				//dbg_printf("scale down ch%d set_roi (%d,%d,%d,%d)\r\n", ch, v_stream->roi.xmin, v_stream->roi.ymin, origin_width, origin_height);
+				hal_video_isp_set_roi(ch, v_stream->roi.xmin, v_stream->roi.ymin, origin_width, origin_height);
+			}
+		} else if (enc_in_w >= origin_width && enc_in_h >= origin_height) {//scale up
+			if (ch != 0) {
+				dbg_printf("error: scale up only support ch0\r\n");
+				ret = NOK;
+				goto EXIT;
+			} else if ((enc_in_w >= origin_width * 2) || (enc_in_h >= origin_height * 2)) {
+				dbg_printf("error: Encoder width and height should both be less than roi_w/h multi two.\r\n");
+				ret = NOK;
+				goto EXIT;
+			} else if (enc_in_w > 2688 || enc_in_h > 1944) {
+				dbg_printf("error: max scale up resolution is 2688x1944 \r\n");
+				ret = NOK;
+				goto EXIT;
+			} else {
+				video_boot_stream.voe_scale_up_en = 1;
+				hal_video_isp_clk_set(ch, 5, 0);
+				if (v_stream->use_roi) {
+					//dbg_printf("scale up ch%d set_roi (%d,%d,%d,%d)\r\n", ch, v_stream->roi.xmin, v_stream->roi.ymin, origin_width, origin_height);
+					hal_video_isp_set_roi(ch, v_stream->roi.xmin, v_stream->roi.ymin, origin_width, origin_height);
+					memcpy(&(video_boot_stream.voe_scale_up_roi), &(v_stream->roi), sizeof(video_boot_roi_t));
+				}
+			}
+		} else {
+			dbg_printf("error: invalid resolution %dx%d -> %dx%d\r\n", origin_width, origin_height, enc_in_w, enc_in_h);
+			ret = NOK;
+			goto EXIT;
+		}
+	} else if (v_stream->use_roi) {
+		if (ch != 0) {
+			dbg_printf("It don't support to setup the ROI when scale up is enable\r\n");
+			ret = NOK;
+			goto EXIT;
+		}
 	}
 
 	if (v_stream->level) {
@@ -544,15 +591,15 @@ int video_boot_open(int ch_index, video_boot_params_t *v_stream)
 		hal_video_set_isp_init_items(ch, &init_items);
 	} else {
 		video_isp_initial_items_t init_items;
-		init_items.init_brightness = 0xffff;
-		init_items.init_contrast = 0xffff;
-		init_items.init_flicker = 0xffff;
-		init_items.init_hdr_mode = 0xffff;
-		init_items.init_mirrorflip = 0xffff;
-		init_items.init_saturation = 0xffff;
-		init_items.init_wdr_level = 0xffff;
-		init_items.init_wdr_mode = 0xffff;
-		init_items.init_mipi_mode = 0xffff;
+		init_items.init_brightness = 0;
+		init_items.init_contrast = 50;
+		init_items.init_flicker = 1;
+		init_items.init_hdr_mode = 0;
+		init_items.init_mirrorflip = 0xf0;
+		init_items.init_saturation = 50;
+		init_items.init_wdr_level = 50;
+		init_items.init_wdr_mode = 2;
+		init_items.init_mipi_mode = 0;
 		hal_video_set_isp_init_items(ch, &init_items);
 	}
 
@@ -579,7 +626,8 @@ int video_boot_open(int ch_index, video_boot_params_t *v_stream)
 
 	//v_stream->out_buf_size = out_buf_size;
 	//v_stream->out_rsvd_size = out_rsvd_size;
-	return OK;
+EXIT:
+	return ret;
 }
 
 /*** KM BOOT LOADER handling ***/
@@ -642,7 +690,10 @@ int video_btldr_process(voe_fcs_load_ctrl_t *pvoe_fcs_ld_ctrl, int *code_start)
 		int fcs_ch = -1;
 		for (i = 0; i < MAX_FCS_CHANNEL; i++) {
 			if (video_boot_stream.video_params[i].fcs) {
-				video_boot_open(i, &video_boot_stream.video_params[i]);
+				if (video_boot_open(i, &video_boot_stream.video_params[i]) != OK) {
+					dbg_printf("error: ch%d open fail\r\n", video_boot_stream.video_params[i].stream_id);
+					return NOK;
+				}
 			}
 			if ((fcs_ch == -1) && (video_boot_stream.video_params[i].fcs == 1)) { //Get the first start channel
 				fcs_ch = i;

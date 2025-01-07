@@ -30,8 +30,18 @@
 
 #define STACKSIZE                   (512 + 768)
 
+_WEAK void wlan_init_start_time(void)
+{
+
+}
+_WEAK void wlan_init_end_time(void)
+{
+
+}
+
 void init_thread(void *param)
 {
+	wlan_init_start_time();
 #if defined(configENABLE_TRUSTZONE) && (configENABLE_TRUSTZONE == 1)
 	rtw_create_secure_context(configMINIMAL_SECURE_STACK_SIZE);
 #endif
@@ -49,6 +59,7 @@ void init_thread(void *param)
 	printf("\n\r%s(%d), Available heap 0x%x\n", __FUNCTION__, __LINE__, xPortGetFreeHeapSize());
 #endif
 
+	wlan_init_end_time();
 	/* Kill init thread after all init tasks done */
 	vTaskDelete(NULL);
 }

@@ -666,6 +666,7 @@ static int ssl_tls13_write_psk_key_exchange_modes_ext(mbedtls_ssl_context *ssl,
     return 0;
 }
 
+#if defined(MBEDTLS_SSL_SESSION_TICKETS)
 static psa_algorithm_t ssl_tls13_get_ciphersuite_hash_alg(int ciphersuite)
 {
     const mbedtls_ssl_ciphersuite_t *ciphersuite_info = NULL;
@@ -678,7 +679,6 @@ static psa_algorithm_t ssl_tls13_get_ciphersuite_hash_alg(int ciphersuite)
     return PSA_ALG_NONE;
 }
 
-#if defined(MBEDTLS_SSL_SESSION_TICKETS)
 static int ssl_tls13_has_configured_ticket(mbedtls_ssl_context *ssl)
 {
     mbedtls_ssl_session *session = ssl->session_negotiate;
@@ -1140,6 +1140,11 @@ int mbedtls_ssl_tls13_write_client_hello_exts(mbedtls_ssl_context *ssl,
     size_t ext_len;
 
     *out_len = 0;
+
+    ret = mbedtls_ssl_tls13_crypto_init(ssl);
+    if (ret != 0) {
+        return ret;
+    }
 
     /* Write supported_versions extension
      *
@@ -3040,12 +3045,7 @@ static int ssl_tls13_process_new_session_ticket(mbedtls_ssl_context *ssl)
              * be exported now and we signal the ticket to the application.
              */
             ssl->session->exported = 0;
-#if 0 // Removed by Realtek to prevent handshake failed
             ret = MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET;
-#else
-            ret = 0;
-            MBEDTLS_SSL_DEBUG_MSG(2, ("Receive new session ticket"));
-#endif
             break;
 
         case POSTPROCESS_NEW_SESSION_TICKET_DISCARD:

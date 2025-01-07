@@ -222,7 +222,7 @@ etharp_tmr(void)
 		u8_t ap_bssid[6] = {0xff,0xff,0xff,0xff,0xff,0xff};
 		if (rtw_wx_get_wap(0, ap_bssid) == 0) {
 			if(wifi_user_config.active_keepalive_enabled & BIT0){
-				etharp_request_dst(&xnetif[0], netif_ip4_addr(&xnetif[0]), ap_bssid);
+				etharp_request_dst(&xnetif[0], netif_ip4_gw(&xnetif[0]), ap_bssid);
 			}
 		}
 		arp_timer_count = 0;

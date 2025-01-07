@@ -85,6 +85,7 @@ int video_get_cb_fps(int chn)
 	}
 	return ch_fps[chn];
 }
+
 static int video_rate_control_check_fps(int fps)
 {
 	int isp_max_fps = 0;
@@ -306,6 +307,12 @@ void video_frame_complete_cb(void *param1, void  *param2, uint32_t arg)
 						}
 					}
 				}
+			}
+		}
+		if(ctx->dbg_ts_info) {
+			if(ctx->dbg_ts_info->timestamp_cnt < MMF_VIDEO_DBG_TS_MAX_CNT) {
+				ctx->dbg_ts_info->timestamp[ctx->dbg_ts_info->timestamp_cnt] = timestamp;
+				ctx->dbg_ts_info->timestamp_cnt++;
 			}
 		}
 	} else {
@@ -824,6 +831,39 @@ int video_control(void *p, int cmd, int arg)
 		ctx->timestamp_offset = arg;
 	}
 	break;
+	case CMD_VIDEO_EN_DBG_TS_INFO: {
+		if(arg) {
+			if(ctx->dbg_ts_info == NULL) {
+				ctx->dbg_ts_info = malloc(sizeof(dbg_ts_info_t));
+				if(ctx->dbg_ts_info == NULL) {
+					VIDEO_DBG_ERROR("dbg_ts_info malloc failed\r\n");
+					return -1;
+				}
+			}
+			ctx->dbg_ts_info->timestamp_cnt = 0; //init timestamp cnt
+		} else {
+			if(ctx->dbg_ts_info) {
+				free(ctx->dbg_ts_info);
+				ctx->dbg_ts_info = NULL;
+				return 0;
+			}
+		}
+	}
+	break;
+	case CMD_VIDEO_SHOW_DBG_TS_INFO: {
+		if(ctx->dbg_ts_info) {
+			int ch = ctx->params.stream_id;
+			printf("ch%d timestamp = ", ch);
+			for(int i = 0; i < ctx->dbg_ts_info->timestamp_cnt; i++) {
+				printf("%u ", ctx->dbg_ts_info->timestamp[i]);
+			}
+			printf("\r\n");
+		} else {
+			VIDEO_DBG_ERROR("dbg_ts_info disable\r\n");
+			return -1;
+		}
+	}
+	break;
 	case CMD_VIDEO_SET_RATE_CONTROL: {
 		memcpy(&ctx->rate_ctrl_p.rate_ctrl, (void *)arg, sizeof(rate_ctrl_t));
 		if ((ctx->rate_ctrl_p.rate_ctrl.minimum_bitrate == 0) || \
@@ -907,6 +947,10 @@ int video_handle(void *ctx, void *input, void *output)
 void *video_destroy(void *p)
 {
 	video_ctx_t *ctx = (video_ctx_t *)p;
+	if(ctx->dbg_ts_info) {
+		free(ctx->dbg_ts_info);
+		ctx->dbg_ts_info = NULL;
+	}
 
 	free(ctx);
 	return NULL;
@@ -938,6 +982,7 @@ void *video_create(void *parent)
 	memset(ctx, 0, sizeof(video_ctx_t));
 
 	ctx->parent = parent;
+	ctx->dbg_ts_info = NULL;
 
 
 	if (voe_boot_fsc_status()) {

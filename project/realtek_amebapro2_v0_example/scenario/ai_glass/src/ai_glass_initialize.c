@@ -269,6 +269,20 @@ static void uart_service_get_power_state(uartcmdpacket_t *param)
 	printf("get UART_OPC_CMD_GET_POWER_STATE\r\n");
 	//uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 	uint8_t power_result = 0;
+	switch (wifi_get_connect_status()) {
+	case WLAN_STAT_IDLE:
+		power_result = UART_PWR_NORMAL;
+		break;
+	case WLAN_STAT_HTTP_IDLE:
+		power_result = UART_PWR_APON;
+		break;
+	case WLAN_STAT_HTTP_CONNECTED:
+		power_result = UART_PWR_HTTP_CONN;
+		break;
+	default:
+		power_result = UART_PWR_APON;
+		break;
+	}
 	uart_params_t power_param = {
 		.data = &power_result,
 		.length = 1,
@@ -680,7 +694,7 @@ static void mp4_send_response_callback(struct tmrTimerControl *parm)
 				xSemaphoreGive(send_response_timermutex);
 				aiglass_get_video_send_end_semaphore();
 				uart_send_packet(UART_OPC_RESP_RECORD_STOP, &record_resp_pkt, 2000);
-				printf("mp4_send_response_callback UART_OPC_RESP_RECORD_STOP\r\n");
+				printf("mp4_send_response_callback UART_OPC_RESP_RECORD_STOP %u\r\n", mm_read_mediatime_ms());
 				xSemaphoreGive(video_proc_sema);
 			} else {
 				if (current_state == STATE_RECORDING || current_state == STATE_IDLE) {
@@ -692,6 +706,7 @@ static void mp4_send_response_callback(struct tmrTimerControl *parm)
 					.next = NULL
 				};
 				uart_send_packet(UART_OPC_RESP_RECORD_CONT, &record_resp_pkt, 2000);
+				printf("mp4_send_response_callback UART_OPC_RESP_RECORD_CONT %u\r\n", mm_read_mediatime_ms());
 				if (send_response_timer != NULL) {
 					if (xTimerStart(send_response_timer, 0) != pdPASS) {
 						printf("Send UART_OPC_RESP_RECORD_CONT timer failed\r\n");
@@ -705,7 +720,6 @@ static void mp4_send_response_callback(struct tmrTimerControl *parm)
 	} else {
 		printf("Send UART_OPC_RESP_RECORD_CONT timer mutex failed\r\n");
 	}
-	//printf("mp4_send_response_callback UART_OPC_RESP_RECORD_CONT\r\n");
 	return;
 }
 static void uart_service_record_start(uartcmdpacket_t *param)
@@ -782,7 +796,7 @@ static void uart_service_record_start(uartcmdpacket_t *param)
 // for UART_OPC_CMD_RECORD_STOP Todo
 static void uart_service_record_stop(uartcmdpacket_t *param)
 {
-	printf("get UART_OPC_CMD_RECORD_STOP\r\n");
+	printf("get UART_OPC_CMD_RECORD_STOP %u\r\n", mm_read_mediatime_ms());
 	//uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 	uint8_t record_stop_status = AI_GLASS_CMD_COMPLETE;
 	if (current_state == STATE_RECORDING) {
@@ -811,14 +825,14 @@ static void uart_service_record_stop(uartcmdpacket_t *param)
 		.next = NULL
 	};
 	uart_send_packet(UART_OPC_RESP_RECORD_STOP, &record_stop_pkt, 2000);
-	printf("end of UART_OPC_CMD_RECORD_STOP\r\n");
+	printf("end of UART_OPC_CMD_RECORD_STOP %u\r\n", mm_read_mediatime_ms());
 }
 
 // for UART_OPC_CMD_SET_WIFI_MODE
 static uint8_t wifi_reserve_buf[111] = {0};
 static void uart_set_ap_mode(uartcmdpacket_t *param)
 {
-	printf("get UART_OPC_CMD_SET_WIFI_MODE\r\n");
+	printf("get UART_OPC_CMD_SET_WIFI_MODE %u\r\n", mm_read_mediatime_ms());
 	//check_cmd_sample_fun(param);
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 	uint8_t mode = query_pkt->data_buf[0];
@@ -851,7 +865,7 @@ static void uart_set_ap_mode(uartcmdpacket_t *param)
 	} else {
 		result = AI_GLASS_PARAMS_ERR;
 	}
-
+	printf("UART_OPC_CMD_SET_WIFI_MODE set mode %d done %u\r\n", mode, mm_read_mediatime_ms());
 	uart_params_t resv1_param = {
 		.data = (uint8_t *)wifi_reserve_buf,
 		.length = 5,
@@ -898,7 +912,7 @@ static void uart_set_ap_mode(uartcmdpacket_t *param)
 		.next = &ssidlen_param
 	};
 	uart_send_packet(UART_OPC_RESP_SET_WIFI_MODE, &result_param, 2000);
-	printf("end of UART_OPC_CMD_SET_WIFI_MODE\r\n");
+	printf("end of UART_OPC_CMD_SET_WIFI_MODE %u\r\n", mm_read_mediatime_ms());
 }
 
 // for UART_OPC_CMD_GET_SD_INFO
@@ -1089,7 +1103,9 @@ void gyro_read_gsensor_thread(void *param)
 		if (read_cnt > 0) {
 			uint32_t cur_ts = mm_read_mediatime_ms();
 			printf("timestamp: %lu\r\n", cur_ts + gdata[read_cnt - 1].timestamp);
+#if !IGN_ACC_DATA
 			printf("angular acceleration: X %f Y %f Z %f\r\n", gdata[read_cnt - 1].g[0], gdata[read_cnt - 1].g[1], gdata[read_cnt - 1].g[2]);
+#endif
 			printf("angular velocity: X %f Y %f Z %f\r\n", gdata[read_cnt - 1].dps[0], gdata[read_cnt - 1].dps[1], gdata[read_cnt - 1].dps[2]);
 		}
 		vTaskDelay(30);
@@ -1133,11 +1149,21 @@ void fENABLEMSC(void *arg)
 	aiglass_mass_storage_init();
 }
 
+void fENABLEAPMODE(void *arg)
+{
+	rtw_softap_info_t wifi_cfg = {0};
+	ai_glass_init_external_disk();
+	if (wifi_enable_ap_mode(AI_GLASS_AP_SSID, AI_GLASS_AP_PASSWORD, AI_GLASS_AP_CHANNEL, 20) == WLAN_SET_OK) {
+		//wifi_get_ap_setting(&wifi_cfg);
+	}
+}
+
 log_item_t at_ai_glass_items[ ] = {
 	{"DISKFORMAT",      fDISKFORMAT,    {NULL, NULL}},
 	{"TESTGSENSOR",     fTESTGSENSOR,   {NULL, NULL}},
 	{"SENDVIDEOEND",    fSENDVIDEOEND,  {NULL, NULL}},
 	{"ENABLEMSC",       fENABLEMSC,     {NULL, NULL}},
+	{"ENABLEAPMODE",    fENABLEAPMODE,  {NULL, NULL}},
 };
 #endif
 void ai_glass_log_init(void)

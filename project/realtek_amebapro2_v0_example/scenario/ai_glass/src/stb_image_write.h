@@ -1610,7 +1610,7 @@ static const float aasf[] = { 1.0f * 2.828427125f, 1.387039845f * 2.828427125f, 
 #define JPEG_FORMAT JPEG_JIFF
 //shared section for both jiff and exif
 static const unsigned char SOI[] = { 0xFF, 0xD8 };
-static const unsigned char DQT[] = {0xFF, 0xDB, 0, 0x84, 0 };
+static const unsigned char DQT[] = { 0xFF, 0xDB, 0, 0x84, 0 };
 //static const unsigned char head0[] = { 0xFF,0xD8,0xFF,0xE0,0,0x10,'J','F','I','F',0,1,1,0,0,1,0,1,0,0,0xFF,0xDB,0,0x84,0 };
 static const unsigned char SOS[] = { 0xFF, 0xDA, 0, 0xC, 3, 1, 0, 2, 0x11, 3, 0x11, 0, 0x3F, 0 };
 
@@ -1624,7 +1624,400 @@ static const unsigned char JIFF_APP0[] = { 0xFF, 0xE0, 0, 0x10, 'J', 'F', 'I', '
 /////static const unsigned char EXIF_APP1[] = { 0xFF,0xE1,<length0>,<length1>,'E','x','i','f',0,0,'I','I',2a,0,8,0,0,0 }; //no thumbnail
 #endif
 
+// Image File Directory (IFD) structure
+// Byte 0-1     Num of the directory entries
+// Byte 1-N     Directory entries
+// Byte N+1-N+5 Offset to the next IFD
+
+
+// Directory Entry (DE) structure
+// Byte 0-1     Tag             // TIFF tag id
+// Byte 2-3     Type            // Data type
+// Byte 4-7     Count           // Num of using label or item
+// Byte 8-11    Value/Offset    // Value: If the data length (depend on Type) * Count is less than; Offset: Otherwise, the offset from the start of the TIFF header
+
+#define IFD_TYPE_BYTE           1   // 8-bit unsigned integer
+#define IFD_TYPE_ASCII          2   // 8-bit containing one 7-bit ASCII code.
+#define IFD_TYPE_SHORT          3   // 16-bit unsigned integer
+#define IFD_TYPE_LONG           4   // 32-bit unsigned integer
+#define IFD_TYPE_RATIONAL       5   // two LONGs. The first LONG is the numerator and the second LONG expressed the denominator
+#define IFD_TYPE_SBYTE          6   // 8-bit signed integer
+#define IFD_TYPE_UNDEFINED      7   // 8-bit that may take any value depending on the field definition
+#define IFD_TYPE_SSHORT         8   // 16-bit signed integer
+#define IFD_TYPE_SLONGA32BIT    9   // 4-byte signed integer (2-s complement notation)
+#define IFD_TYPE_SRATIONAL      10  // two SLONGs. The first SLONG is the numerator and the second SLONG expressed the denominator
+
+// Return the offset start position
+static uint32_t create_write_tiff_DE(uint8_t *buf, uint16_t DE_tag, uint16_t DE_type, uint32_t DE_count)
+{
+	uint32_t position = 0;
+	memcpy(buf + position, &DE_tag, sizeof(DE_tag));
+	position += sizeof(DE_tag);
+
+	memcpy(buf + position, &DE_type, sizeof(DE_type));
+	position += sizeof(DE_type);
+
+	memcpy(buf + position, &DE_count, sizeof(DE_count));
+	position += sizeof(DE_count);
+
+	return position;
+}
+
+static uint32_t create_ifd0_exif_sub_ifd(uint8_t *tiff_start, uint8_t *ifd_start, bool is_final_ifd)
+{
+	uint16_t numoftheDE = 2;
+	uint32_t subifd_position = 0;
+	uint32_t subifd_nextifd_offset = 2 + numoftheDE * 12; // 1 ifd structure size is 12 bytes
+	uint32_t subifd_data_area = 2 + numoftheDE * 12 + 4;  // 1 ifd structure size is 12 bytes + offset size (4)
+
+	uint32_t data_offset = 0;
+
+	// write num of DE in exif sub ifd
+	memcpy(ifd_start + subifd_position, &numoftheDE, sizeof(numoftheDE));
+	subifd_position += sizeof(uint16_t);
+
+	// write ExifVersion //
+	const char exifver_name[] = "0220";
+	subifd_position += create_write_tiff_DE(ifd_start + subifd_position, 0x9000, IFD_TYPE_UNDEFINED, strlen(exifver_name));
+	memcpy(ifd_start + subifd_position, &exifver_name, strlen(exifver_name));
+	subifd_position += sizeof(uint32_t);
+
+	// write ColorSpace //
+	uint16_t colorspace = 1; //sRGB
+	subifd_position += create_write_tiff_DE(ifd_start + subifd_position, 0xA001, IFD_TYPE_SHORT, 1);
+	memcpy(ifd_start + subifd_position, &colorspace, sizeof(colorspace));
+	subifd_position += sizeof(uint32_t);
+
+	if (is_final_ifd) {
+		data_offset = 0;
+	} else {
+		data_offset = ifd_start + subifd_data_area - tiff_start;
+	}
+	memcpy(ifd_start + subifd_nextifd_offset, &data_offset, sizeof(data_offset));
+
+	return subifd_data_area;
+}
+
+// Transforming GPSLongitude or GPSLatitude to exif format
+static uint32_t write_gps_coordinate_exif_format(uint8_t *dat_start, float coordinate)
+{
+	uint32_t data_position = 0;
+
+	if (coordinate < 0) {
+		coordinate = -coordinate;
+	}
+
+	float abscoordinate = coordinate;
+	int deg = (uint32_t)abscoordinate;
+	float minFloat = (abscoordinate - deg) * 60.0f;
+	int min = (uint32_t)minFloat;
+	float secFloat = (minFloat - min) * 60.0f;
+
+	uint32_t degrees_num = deg;
+	uint32_t degrees_den = 1;
+	memcpy(dat_start + data_position, &degrees_num, sizeof(degrees_num));
+	data_position += sizeof(degrees_num);
+	memcpy(dat_start + data_position, &degrees_den, sizeof(degrees_den));
+	data_position += sizeof(degrees_den);
+
+	uint32_t minutes_num = min;
+	uint32_t minutes_den = 1;
+	memcpy(dat_start + data_position, &minutes_num, sizeof(minutes_num));
+	data_position += sizeof(minutes_num);
+	memcpy(dat_start + data_position, &minutes_den, sizeof(minutes_den));
+	data_position += sizeof(minutes_den);
+
+	uint32_t seconds_num = (uint32_t)(secFloat * 10000);
+	uint32_t seconds_den = 10000;
+	memcpy(dat_start + data_position, &seconds_num, sizeof(seconds_num));
+	data_position += sizeof(seconds_num);
+	memcpy(dat_start + data_position, &seconds_den, sizeof(seconds_den));
+	data_position += sizeof(seconds_den);
+
+	return data_position;
+}
+
+static void float_to_fraction(float value, uint32_t *numerator, uint32_t *denominator, float precision)
+{
+	uint32_t num1 = 0, denom1 = 1, num2 = 1, denom2 = 0;
+	uint32_t wholePart;
+	float decimalPart = value;
+
+	while (1) {
+		wholePart = (uint32_t) decimalPart;
+		float remainingDecimal = decimalPart - wholePart;
+
+		*numerator = num1 + wholePart * num2;
+		*denominator = denom1 + wholePart * denom2;
+
+		if (remainingDecimal < precision) {
+			break;
+		}
+
+		num1 = num2;
+		denom1 = denom2;
+		num2 = *numerator;
+		denom2 = *denominator;
+
+		if (remainingDecimal > 0.0f) {
+			decimalPart = 1.0f / remainingDecimal;
+		}
+	}
+}
+
+static uint32_t create_ifd0_gps_sub_ifd(uint8_t *tiff_start, uint8_t *ifd_start, float latitude, float longitude, float altitude, bool is_final_ifd)
+{
+	uint16_t numoftheDE = 7;
+	uint32_t subifd_position = 0;
+	uint32_t subifd_nextifd_offset = 2 + numoftheDE * 12; // 1 ifd structure size is 12 bytes
+	uint32_t subifd_data_area = 2 + numoftheDE * 12 + 4; // 1 ifd structure size is 12 bytes + offset size (4)
+
+	uint32_t data_offset = 0;
+
+	// write num of DE in exif sub ifd
+	memcpy(ifd_start + subifd_position, &numoftheDE, sizeof(numoftheDE));
+	subifd_position += sizeof(uint16_t);
+
+	// write GPSVersion //
+	subifd_position += create_write_tiff_DE(ifd_start + subifd_position, 0x0000, IFD_TYPE_BYTE, 4);
+	ifd_start[subifd_position] = 2;
+	ifd_start[subifd_position + 1] = 2;
+	ifd_start[subifd_position + 2] = 0;
+	ifd_start[subifd_position + 3] = 0;
+	subifd_position += sizeof(uint32_t);
+
+	// write GPSLatitudeRef //
+	subifd_position += create_write_tiff_DE(ifd_start + subifd_position, 0x0001, IFD_TYPE_ASCII, 2);
+	if (latitude > 0) {
+		ifd_start[subifd_position] = 'N';
+	} else {
+		ifd_start[subifd_position] = 'S';
+	}
+	ifd_start[subifd_position + 1] = 0;
+	subifd_position += sizeof(uint32_t);
+
+	// write GPSLatitude //
+	subifd_position += create_write_tiff_DE(ifd_start + subifd_position, 0x0002, IFD_TYPE_RATIONAL, 3);
+	data_offset = ifd_start + subifd_data_area - tiff_start;
+	memcpy(ifd_start + subifd_position, &data_offset, sizeof(data_offset));
+	subifd_position += sizeof(uint32_t);
+	subifd_data_area += write_gps_coordinate_exif_format(ifd_start + subifd_data_area, latitude);
+
+	// write GPSLongitudeRef //
+	subifd_position += create_write_tiff_DE(ifd_start + subifd_position, 0x0003, IFD_TYPE_ASCII, 2);
+	if (longitude > 0) {
+		ifd_start[subifd_position] = 'E';
+	} else {
+		ifd_start[subifd_position] = 'W';
+	}
+	ifd_start[subifd_position + 1] = 0;
+	subifd_position += sizeof(uint32_t);
+
+	// write GPSLongitude //
+	subifd_position += create_write_tiff_DE(ifd_start + subifd_position, 0x0004, IFD_TYPE_RATIONAL, 3);
+	data_offset = ifd_start + subifd_data_area - tiff_start;
+	memcpy(ifd_start + subifd_position, &data_offset, sizeof(data_offset));
+	subifd_position += sizeof(uint32_t);
+	subifd_data_area += write_gps_coordinate_exif_format(ifd_start + subifd_data_area, longitude);
+
+	// write GPSAltitudeRef //
+	subifd_position += create_write_tiff_DE(ifd_start + subifd_position, 0x0005, IFD_TYPE_BYTE, 1);
+	if (altitude >= 0) {
+		ifd_start[subifd_position] = 0;
+	} else {
+		ifd_start[subifd_position] = 1;
+		altitude = -altitude;
+	}
+	subifd_position += sizeof(uint32_t);
+
+	// write GPSAltitude //
+	uint32_t altitude_num = 0;
+	uint32_t altitude_den = 0;
+	float precision = 0.0001f;
+	subifd_position += create_write_tiff_DE(ifd_start + subifd_position, 0x0006, IFD_TYPE_RATIONAL, 1);
+	data_offset = ifd_start + subifd_data_area - tiff_start;
+	memcpy(ifd_start + subifd_position, &data_offset, sizeof(data_offset));
+	subifd_position += sizeof(uint32_t);
+	float_to_fraction(altitude, &altitude_num, &altitude_den, precision);
+	memcpy(ifd_start + subifd_data_area, &altitude_num, sizeof(altitude_num));
+	subifd_data_area += sizeof(altitude_num);
+	memcpy(ifd_start + subifd_data_area, &altitude_den, sizeof(altitude_den));
+	subifd_data_area += sizeof(altitude_den);
+
+	if (is_final_ifd) {
+		data_offset = 0;
+	} else {
+		data_offset = ifd_start + subifd_data_area - tiff_start;
+	}
+	memcpy(ifd_start + subifd_nextifd_offset, &data_offset, sizeof(data_offset));
+
+	return subifd_data_area;
+}
+
+#define ADD_RTK_TAG 0
+uint32_t create_ifd0(uint8_t *tiff_start, uint8_t *ifd0_start, float latitude, float longitude, float altitude, uint32_t width, uint32_t height,
+					 bool is_final_ifd)
+{
+	uint16_t numoftheDE = 9;
+#if ADD_RTK_TAG
+	numoftheDE += 2;
+#endif
+	uint32_t ifd0_position = 0;
+	uint32_t ifd0_nextifd_offset = 2 + numoftheDE * 12; // 1 ifd structure size is 12 bytes
+	uint32_t ifd0_data_area = 2 + numoftheDE * 12 + 4;  // 1 ifd structure size is 12 bytes + offset size (4)
+
+	uint32_t data_offset = 0;
+
+	// write num of DE in ifd0
+	memcpy(ifd0_start + ifd0_position, &numoftheDE, sizeof(numoftheDE));
+	ifd0_position += sizeof(uint16_t);
+
+	// write image width //
+	ifd0_position += create_write_tiff_DE(ifd0_start + ifd0_position, 0x0100, IFD_TYPE_LONG, 1);
+	memcpy(ifd0_start + ifd0_position, &width, sizeof(width));
+	ifd0_position += sizeof(uint32_t);
+
+	// write image length (height) //
+	ifd0_position += create_write_tiff_DE(ifd0_start + ifd0_position, 0x0101, IFD_TYPE_LONG, 1);
+	memcpy(ifd0_start + ifd0_position, &height, sizeof(height));
+	ifd0_position += sizeof(uint32_t);
+
+#if ADD_RTK_TAG
+	// write make //
+	const char make_name[] = "Realtek";
+	ifd0_position += create_write_tiff_DE(ifd0_start + ifd0_position, 0x010f, IFD_TYPE_ASCII, sizeof(make_name));
+	data_offset = ifd0_start + ifd0_data_area - tiff_start;
+	memcpy(ifd0_start + ifd0_position, &data_offset, sizeof(data_offset));
+	ifd0_position += sizeof(uint32_t);
+
+	// write ascii for make name
+	memcpy(ifd0_start + ifd0_data_area, make_name, sizeof(make_name));
+	ifd0_data_area += sizeof(make_name);
+
+	// write model //
+	const char model_name[] = "Amebapro2";
+	ifd0_position += create_write_tiff_DE(ifd0_start + ifd0_position, 0x0110, IFD_TYPE_ASCII, sizeof(model_name));
+	data_offset = ifd0_start + ifd0_data_area - tiff_start;
+	memcpy(ifd0_start + ifd0_position, &data_offset, sizeof(data_offset));
+	ifd0_position += sizeof(uint32_t);
+
+	// write ascii for make name
+	memcpy(ifd0_start + ifd0_data_area, model_name, sizeof(model_name));
+	ifd0_data_area += sizeof(model_name);
+#endif
+
+	// write image orientation //
+	uint16_t orientation_vlaue = 1;
+	ifd0_position += create_write_tiff_DE(ifd0_start + ifd0_position, 0x0112, IFD_TYPE_SHORT, 1);
+	memcpy(ifd0_start + ifd0_position, &orientation_vlaue, sizeof(orientation_vlaue));
+	ifd0_position += sizeof(uint32_t);
+
+	// write image YCbCrPositioning //
+	uint16_t positioning_vlaue = 1;
+	ifd0_position += create_write_tiff_DE(ifd0_start + ifd0_position, 0x0213, IFD_TYPE_SHORT, 1);
+	memcpy(ifd0_start + ifd0_position, &positioning_vlaue, sizeof(positioning_vlaue));
+	ifd0_position += sizeof(uint32_t);
+
+	// write image XResolution // (If unknown, set 72)
+	uint32_t xr_numerator = 0x48000000;
+	uint32_t xr_denominator = 0x01000000;
+	ifd0_position += create_write_tiff_DE(ifd0_start + ifd0_position, 0x011A, IFD_TYPE_RATIONAL, 1);
+	data_offset = ifd0_start + ifd0_data_area - tiff_start;
+	memcpy(ifd0_start + ifd0_position, &data_offset, sizeof(data_offset));
+	ifd0_position += sizeof(uint32_t);
+	// write RATIONAL for XResolution
+	memcpy(ifd0_start + ifd0_data_area, &xr_numerator, sizeof(xr_numerator));
+	ifd0_data_area += sizeof(xr_numerator);
+	memcpy(ifd0_start + ifd0_data_area, &xr_denominator, sizeof(xr_denominator));
+	ifd0_data_area += sizeof(xr_denominator);
+
+	// write image YResolution // (If unknown, set 72)
+	uint32_t yr_numerator = 0x48000000;
+	uint32_t yr_denominator = 0x01000000;
+	ifd0_position += create_write_tiff_DE(ifd0_start + ifd0_position, 0x011B, IFD_TYPE_RATIONAL, 1);
+	data_offset = ifd0_start + ifd0_data_area - tiff_start;
+	memcpy(ifd0_start + ifd0_position, &data_offset, sizeof(data_offset));
+	ifd0_position += sizeof(uint32_t);
+	// write RATIONAL for YResolution
+	memcpy(ifd0_start + ifd0_data_area, &yr_numerator, sizeof(yr_numerator));
+	ifd0_data_area += sizeof(yr_numerator);
+	memcpy(ifd0_start + ifd0_data_area, &yr_denominator, sizeof(yr_denominator));
+	ifd0_data_area += sizeof(yr_denominator);
+
+	// write image ResolutionUnit // (If unknown, set 2)
+	uint16_t resolutionunit = 2;
+	ifd0_position += create_write_tiff_DE(ifd0_start + ifd0_position, 0x0128, IFD_TYPE_SHORT, 1);
+	memcpy(ifd0_start + ifd0_position, &resolutionunit, sizeof(resolutionunit));
+	ifd0_position += sizeof(uint32_t);
+
+	// write image Exif sub IFD // not yet
+	ifd0_position += create_write_tiff_DE(ifd0_start + ifd0_position, 0x8769, IFD_TYPE_LONG, 1);
+	data_offset = ifd0_start + ifd0_data_area - tiff_start;
+	memcpy(ifd0_start + ifd0_position, &data_offset, sizeof(data_offset));
+	ifd0_position += sizeof(uint32_t);
+	// write exif sub
+	ifd0_data_area += create_ifd0_exif_sub_ifd(tiff_start, ifd0_start + ifd0_data_area, true);
+
+	// write image gps sub IFD // not yet
+	ifd0_position += create_write_tiff_DE(ifd0_start + ifd0_position, 0x8825, IFD_TYPE_LONG, 1);
+	data_offset = ifd0_start + ifd0_data_area - tiff_start;
+	memcpy(ifd0_start + ifd0_position, &data_offset, sizeof(data_offset));
+	ifd0_position += sizeof(uint32_t);
+	// write exif sub
+	ifd0_data_area += create_ifd0_gps_sub_ifd(tiff_start, ifd0_start + ifd0_data_area, latitude, longitude, altitude, true);
+
+	// write offset to the next ifd
+	if (is_final_ifd) {
+		data_offset = 0;
+	} else {
+		data_offset = ifd0_start + ifd0_data_area - tiff_start;
+	}
+	memcpy(ifd0_start + ifd0_nextifd_offset, &data_offset, sizeof(data_offset));
+
+	printf("ifd0_data_area = %d, %x\r\n", ifd0_data_area, ifd0_data_area);
+
+	return ifd0_data_area;
+}
+
 //add by RTK
+uint32_t write_exif_app1(uint8_t *buf, uint32_t buf_length, float latitude, float longitude, float altitude, uint32_t width, uint32_t height)
+{
+	uint16_t tiff_position = 0;
+	uint16_t app1_position = 0;
+	// APP1 mark
+	buf[0] = 0xFF;
+	buf[1] = 0xE1;
+	// 2 and 3 is for exif APP1 length in big-endain
+
+	// Exif tag
+	buf[4] = 'E';
+	buf[5] = 'x';
+	buf[6] = 'i';
+	buf[7] = 'f';
+	buf[8] = 0;
+	buf[9] = 0;
+	app1_position += 10;
+	tiff_position = app1_position;
+
+	// Tiff block
+	// little endian
+	buf[10] = 'I'; //buf[10] = 'M';
+	buf[11] = 'I'; //buf[11] = 'M';
+	buf[12] = 0x2A; //buf[10] = 0x00;
+	buf[13] = 0x00; //buf[11] = 0x2A;
+	app1_position += 4;
+
+	uint32_t app1_ifd0_offset = 8;
+	memcpy(buf + app1_position, &app1_ifd0_offset, sizeof(app1_ifd0_offset));
+	app1_position += sizeof(app1_ifd0_offset);
+	app1_position += create_ifd0(buf + tiff_position, buf + app1_position, latitude, longitude, altitude, width, height, true);
+
+	buf[2] = (uint8_t)(((app1_position - 2) & 0xFF00) >> 8);
+	buf[3] = (uint8_t)((app1_position - 2) & 0x00FF);
+
+	return app1_position;
+}
+
 #define YTable_SIZE     64
 #define UVTable_SIZE    64
 static void stbi_write_header(stbi__write_context *s, int width, int height, int subsample, unsigned char *YTable, unsigned char *UVTable)
@@ -1632,16 +2025,20 @@ static void stbi_write_header(stbi__write_context *s, int width, int height, int
 #if JPEG_FORMAT == JPEG_JIFF
 	//SOI
 	s->func(s->context, (void *)SOI, sizeof(SOI));
+
 	//JIFF_APP0
 	s->func(s->context, (void *)JIFF_APP0, sizeof(JIFF_APP0));
+
 	//DQT
 	s->func(s->context, (void *)DQT, sizeof(DQT));
 	s->func(s->context, (void *)YTable, YTable_SIZE);
 	stbiw__putc(s, 1);
 	s->func(s->context, UVTable, UVTable_SIZE);
+
 	//SOF0
 	const unsigned char SOF0[] = { 0xFF, 0xC0, 0, 0x11, 8, (unsigned char)(height >> 8), STBIW_UCHAR(height), (unsigned char)(width >> 8), STBIW_UCHAR(width), 3, 1, (unsigned char)(subsample ? 0x22 : 0x11), 0, 2, 0x11, 1, 3, 0x11, 1 };
 	s->func(s->context, (void *)SOF0, sizeof(SOF0));
+
 	//DHT
 	const unsigned char DHT[] = { 0xFF, 0xC4, 0x01, 0xA2, 0 };
 	s->func(s->context, (void *)DHT, sizeof(DHT));
@@ -1656,18 +2053,27 @@ static void stbi_write_header(stbi__write_context *s, int width, int height, int
 	stbiw__putc(s, 0x11); // HTUACinfo
 	s->func(s->context, (void *)(std_ac_chrominance_nrcodes + 1), sizeof(std_ac_chrominance_nrcodes) - 1);
 	s->func(s->context, (void *)std_ac_chrominance_values, sizeof(std_ac_chrominance_values));
+
 	//SOS
 	s->func(s->context, (void *)SOS, sizeof(SOS));
 #elif JPEG_FORMAT == JPEG_EXIF
 	//SOI
 	s->func(s->context, (void *)SOI, sizeof(SOI));
+
 	//EXIF_APP1
-	//s->func(s->context, (void*)JIFF_APP0, sizeof(JIFF_APP0));
+	// This malloc may not need in the future
+	uint8_t *exif_app1_buf = malloc(2048);
+	uint32_t actual_size = 0;
+	actual_size = write_exif_app1(exif_app1_buf, 2048, 0, 0, 0, width, height);
+	s->func(s->context, (void *)exif_app1_buf, actual_size);
+	free(exif_app1_buf);
+
 	//DQT
 	s->func(s->context, (void *)DQT, sizeof(DQT));
 	s->func(s->context, (void *)YTable, YTable_SIZE);
 	stbiw__putc(s, 1);
 	s->func(s->context, UVTable, UVTable_SIZE);
+
 	//DHT
 	const unsigned char DHT[] = { 0xFF, 0xC4, 0x01, 0xA2, 0 };
 	s->func(s->context, (void *)DHT, sizeof(DHT));
@@ -1682,9 +2088,11 @@ static void stbi_write_header(stbi__write_context *s, int width, int height, int
 	stbiw__putc(s, 0x11); // HTUACinfo
 	s->func(s->context, (void *)(std_ac_chrominance_nrcodes + 1), sizeof(std_ac_chrominance_nrcodes) - 1);
 	s->func(s->context, (void *)std_ac_chrominance_values, sizeof(std_ac_chrominance_values));
+
 	//SOF0
 	const unsigned char SOF0[] = { 0xFF, 0xC0, 0, 0x11, 8, (unsigned char)(height >> 8), STBIW_UCHAR(height), (unsigned char)(width >> 8), STBIW_UCHAR(width), 3, 1, (unsigned char)(subsample ? 0x22 : 0x11), 0, 2, 0x11, 1, 3, 0x11, 1 };
 	s->func(s->context, (void *)SOF0, sizeof(SOF0));
+
 	//SOS
 	s->func(s->context, (void *)SOS, sizeof(SOS));
 #endif

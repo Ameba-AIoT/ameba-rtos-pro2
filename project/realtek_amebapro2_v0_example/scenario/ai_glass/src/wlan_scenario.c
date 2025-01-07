@@ -323,6 +323,7 @@ int wifi_enable_ap_mode(const char *ssid, const char *password, int channel, int
 
 set_http:
 	if (!httpd_is_running()) {
+		httpd_setup_idle_timeout(HTTPD_CONNECT_TIMEOUT);
 		if (httpd_start(8080, 5, 4096, HTTPD_THREAD_SINGLE, HTTPD_SECURE_NONE) != 0) {
 			printf("ERROR: httpd_start");
 			httpd_clear_page_callbacks();
@@ -344,4 +345,17 @@ int wifi_disable_ap_mode(void)
 		return WLAN_SET_OK;
 	}
 	return WLAN_SET_FAIL;
+}
+
+int wifi_get_connect_status(void)
+{
+	if (httpd_is_running()) {
+		if (httpd_get_active_connection_num() == 0) {
+			return WLAN_STAT_HTTP_IDLE;
+		} else {
+			return WLAN_STAT_HTTP_CONNECTED;
+		}
+	} else {
+		return WLAN_STAT_IDLE;
+	}
 }

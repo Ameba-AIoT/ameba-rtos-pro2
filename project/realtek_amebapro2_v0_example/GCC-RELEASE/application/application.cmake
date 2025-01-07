@@ -50,6 +50,7 @@ include(./libispfeature.cmake OPTIONAL)
 include(./libmd.cmake OPTIONAL)
 include(./libfaultlog.cmake OPTIONAL)
 include(./libeap.cmake OPTIONAL)
+include(./libiperf3.cmake OPTIONAL)
 
 if(BUILD_LIB)
 	message(STATUS "build libraries")
@@ -897,6 +898,7 @@ list(
 	fmp4
 	usbd
 	qrcode
+	iperf3
 	nn
 	libface
 	ispfeature

@@ -435,3 +435,44 @@ nnmodel_t yolov7_tiny = {
 
 	.name = "YOLOv7t"
 };
+
+
+//----------------------------------------------------------
+// Yolo-Fastest  https://github.com/dog-qiuqiu/Yolo-Fastest
+//----------------------------------------------------------
+// Citation: 
+// dog-qiuqiu. (2021, July 24). dog-qiuqiu/Yolo-Fastest: yolo-fastest-v1.1.0 (Version v.1.1.0). Zenodo.
+//----------------------------------------------------------
+
+static float anchor_yolo_fastest_2layer[6][2] = {
+	{115, 73}, {119,199}, {242,238},
+	{12, 18}, {37, 49}, {52,132},
+};
+
+void yolo_fastest_set_network_init_info(void *m)
+{
+	yolo_new_coords = 0;
+	pAnchor = &anchor_yolo_fastest_2layer[0][0]; // setup anchor
+
+	nnmodel_t *model = (nnmodel_t *)m;
+	yolo_in_width  = model->input_param.dim[0].size[0];
+	yolo_in_height = model->input_param.dim[0].size[1];
+}
+
+void *yolo_fastest_get_network_filename_init(void)
+{
+	return (void *)"NN_MDL/yolo_fastest.nb";	// fix name for NN model binary
+}
+
+nnmodel_t yolo_fastest = {
+	.nb 			= yolo_fastest_get_network_filename_init,
+	.set_init_info  = yolo_fastest_set_network_init_info,
+	.preprocess 	= yolo_preprocess,
+	.postprocess 	= yolo_postprocess,
+	.model_src 		= MODEL_SRC_FILE,
+	.set_confidence_thresh   = yolo_set_confidence_thresh,
+	.set_nms_thresh     = yolo_set_nms_thresh,
+
+	.name = "YOLO_fastest"
+};
+

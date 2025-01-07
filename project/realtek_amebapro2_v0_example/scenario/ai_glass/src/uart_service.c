@@ -7,6 +7,7 @@
 #include <platform_opts.h>
 #include "FreeRTOS.h"
 #include "task.h"
+#include "stream_buffer.h"
 #include <platform_stdlib.h>
 #include "semphr.h"
 //#include "device.h"
@@ -76,82 +77,7 @@ static CallbackEntry_t uartcmdcb_table[UART_UART_CMD_COUNT];
 static uint8_t uart_txbuf[UART_MAX_PIC_SIZE] __attribute__((aligned(32))) = {0};
 //static uint8_t uart_rxbuf[UART_MAX_PIC_SIZE] __attribute__((aligned(32))) = {0};
 
-typedef struct {
-	uint8_t *buffer;
-	uint32_t size;
-	uint16_t write_index;
-	uint16_t read_index;
-} ring_buffer_t;
-
-static ring_buffer_t *uart_rb = NULL;
-static SemaphoreHandle_t rx_data_sema = NULL;
-volatile static bool rx_data_available = false;
-
-static ring_buffer_t *ring_buffer_init(uint16_t size)
-{
-	ring_buffer_t *rb = (ring_buffer_t *)malloc(sizeof(ring_buffer_t));
-	if (rb == NULL) {
-		return NULL;
-	}
-
-	rb->buffer = (uint8_t *)malloc(size * sizeof(uint8_t));
-	if (rb->buffer == NULL) {
-		free(rb);
-		return NULL;
-	}
-
-	rb->size = size;
-	rb->write_index = 0;
-	rb->read_index = 0;
-	return rb;
-}
-
-static void ring_buffer_free(ring_buffer_t *rb)
-{
-	free(rb->buffer);
-	rb->buffer = NULL;
-}
-
-static bool ring_buffer_is_empty(ring_buffer_t *rb)
-{
-	return (rb->write_index == rb->read_index);
-}
-
-static bool ring_buffer_is_full(ring_buffer_t *rb)
-{
-	return ((rb->write_index + 1) % rb->size == rb->read_index);
-}
-
-static bool ring_buffer_write_word(ring_buffer_t *rb, uint8_t data)
-{
-	if (ring_buffer_is_full(rb)) {
-		return false;
-	}
-
-	rb->buffer[rb->write_index] = data;
-	rb->write_index = (rb->write_index + 1) % rb->size;
-	return true;
-}
-
-static bool ring_buffer_read_word(ring_buffer_t *rb, uint8_t *data)
-{
-	if (ring_buffer_is_empty(rb)) {
-		return false;
-	}
-
-	*data = rb->buffer[rb->read_index];
-	rb->read_index = (rb->read_index + 1) % rb->size;
-	return true;
-}
-
-static int ring_buffer_read_sequence(ring_buffer_t *rb, uint8_t *buf, uint32_t len)
-{
-	uint32_t count = 0;
-	while (!ring_buffer_is_empty(rb) && count < len) {
-		ring_buffer_read_word(rb, &buf[count++]);
-	}
-	return count;
-}
+StreamBufferHandle_t uart_rx_stream = NULL;
 
 static uint8_t CalculateChecksum(uint8_t sync_word, uint8_t seq_number, uint16_t resp_opcode, uart_params_t *params_array, uint16_t *length)
 {
@@ -286,7 +212,7 @@ static void FreeTxUartQueue(void)
 	DeleteQueueIfExists(tx_uart_ack_ready, FreeAckItem);
 }
 
-static QueueHandle_t CreateQueueAndFill(int length, size_t item_size, void **item_array, InitItemFn init_item_fn)
+static QueueHandle_t CreateQueueAndFill(int length, size_t item_size, void **item_array, InitItemFn init_item_fn, FreeItemFn free_item_fn)
 {
 	QueueHandle_t queue = xQueueCreate(length, item_size);
 	if (queue == NULL) {
@@ -294,18 +220,24 @@ static QueueHandle_t CreateQueueAndFill(int length, size_t item_size, void **ite
 	}
 
 	for (int i = 0; i < length; i++) {
-		item_array[i] = InitCmdItem();
+		item_array[i] = init_item_fn();
 		if (!item_array[i]) {
 			for (int j = 0; j < i; j++) {
-				free(item_array[j]);
+				if (free_item_fn) {
+					free_item_fn(item_array[j]);
+				}
 			}
+			vQueueDelete(queue);
 			return NULL;
 		}
 		if (xQueueSend(queue, &item_array[i], 0) != pdPASS) {
 			// Free already allocated items before returning NULL
 			for (int j = 0; j <= i; j++) {
-				free(item_array[j]);
+				if (free_item_fn) {
+					free_item_fn(item_array[j]);
+				}
 			}
+			vQueueDelete(queue);
 			return NULL;
 		}
 	}
@@ -317,7 +249,7 @@ static int CreateRxUartQueue(int queue_length, int critical_queue_length, int ac
 	uartcmdpacket_t *cmd_item[queue_length];
 	uartackpacket_t *ack_item[ack_queue_length];
 
-	rx_uart_recycle = CreateQueueAndFill(queue_length, sizeof(uartcmdpacket_t *), (void **)cmd_item, InitCmdItem);
+	rx_uart_recycle = CreateQueueAndFill(queue_length, sizeof(uartcmdpacket_t *), (void **)cmd_item, InitCmdItem, FreeCmdItem);
 	if (!rx_uart_recycle) {
 		printf("Failed to create rx_uart_recycle queue\n");
 		FreeRxUartQueue();
@@ -330,7 +262,7 @@ static int CreateRxUartQueue(int queue_length, int critical_queue_length, int ac
 		return UART_QUEUE_CREATE_FAIL;
 	}
 
-	rx_critical_recycle = CreateQueueAndFill(critical_queue_length, sizeof(uartcmdpacket_t *), (void **)cmd_item, InitCmdItem);
+	rx_critical_recycle = CreateQueueAndFill(critical_queue_length, sizeof(uartcmdpacket_t *), (void **)cmd_item, InitCmdItem, FreeCmdItem);
 	if (!rx_critical_recycle) {
 		printf("Failed to create rx_critical_recycle queue\n");
 		FreeRxUartQueue();
@@ -343,7 +275,7 @@ static int CreateRxUartQueue(int queue_length, int critical_queue_length, int ac
 		return UART_QUEUE_CREATE_FAIL;
 	}
 
-	rx_uart_ack_recycle = CreateQueueAndFill(ack_queue_length, sizeof(uartackpacket_t *), (void **)ack_item, InitAckItem);
+	rx_uart_ack_recycle = CreateQueueAndFill(ack_queue_length, sizeof(uartackpacket_t *), (void **)ack_item, InitAckItem, FreeAckItem);
 	if (!rx_uart_ack_recycle) {
 		printf("Failed to create rx_uart_ack_recycle queue\n");
 		FreeRxUartQueue();
@@ -369,7 +301,7 @@ static int CreateTxUartQueue(int queue_length, int critical_queue_length, int ac
 	uartackpacket_t *ack_item[ack_queue_length];
 #if 0 // the tx queue is not need yet
 	uartpacket_t *pkt_item[queue_length];
-	tx_uart_recycle = CreateQueueAndFill(queue_length, sizeof(uartpacket_t *), (void **)pkt_item, InitPktItem);
+	tx_uart_recycle = CreateQueueAndFill(queue_length, sizeof(uartpacket_t *), (void **)pkt_item, InitPktItem, FreePktItem);
 	if (!tx_uart_recycle) {
 		printf("Failed to create tx_uart_recycle queue\n");
 		FreeTxUartQueue();
@@ -382,7 +314,7 @@ static int CreateTxUartQueue(int queue_length, int critical_queue_length, int ac
 		return UART_QUEUE_CREATE_FAIL;
 	}
 
-	tx_critical_recycle = CreateQueueAndFill(critical_queue_length, sizeof(uartpacket_t *), (void **)pkt_item, InitPktItem);
+	tx_critical_recycle = CreateQueueAndFill(critical_queue_length, sizeof(uartpacket_t *), (void **)pkt_item, InitPktItem, FreePktItem);
 	if (!tx_critical_recycle) {
 		printf("Failed to create tx_critical_recycle queue\n");
 		FreeTxUartQueue();
@@ -395,7 +327,7 @@ static int CreateTxUartQueue(int queue_length, int critical_queue_length, int ac
 		return UART_QUEUE_CREATE_FAIL;
 	}
 #endif
-	tx_uart_ack_recycle = CreateQueueAndFill(ack_queue_length, sizeof(uartackpacket_t *), (void **)ack_item, InitAckItem);
+	tx_uart_ack_recycle = CreateQueueAndFill(ack_queue_length, sizeof(uartackpacket_t *), (void **)ack_item, InitAckItem, FreeAckItem);
 	if (!tx_uart_ack_recycle) {
 		printf("Failed to create tx_uart_ack_recycle queue\n");
 		FreeTxUartQueue();
@@ -413,10 +345,11 @@ static int CreateTxUartQueue(int queue_length, int critical_queue_length, int ac
 static int SendAck(uint8_t recv_seq_number, uint16_t recv_opcode, uint8_t status)
 {
 	uartackpacket_t *ack_packet;
-	int ret = xQueueReceive(tx_uart_ack_recycle, (void *)&ack_packet, 0);
 	if (!IS_VALID_UART_CMD(recv_opcode)) {
 		printf("[UART WARNING] Received cmd packet with invalid opcode 0x%04x\r\n", recv_opcode);
+		return UART_OK;
 	}
+	int ret = xQueueReceive(tx_uart_ack_recycle, (void *)&ack_packet, 0);
 	if (ret == pdPASS) {
 		// Initialize and populate ack_packet only if it's successfully received
 		ack_packet->length = ACK_DATA_LEN; // length not including sync_word(1), seq_number(1), length(2), and checksum(1)
@@ -590,35 +523,38 @@ static void UART_ReceiveHandler(uint8_t received_byte)
 static void ProcessUARTRecvThread(void *params)
 {
 	uint8_t data[UART_MAX_BUF_SIZE] = {0};
+	uint32_t bytes_read = 0;
 	while (1) {
-		if (xSemaphoreTake(rx_data_sema, portMAX_DELAY) == pdTRUE) {
-			int bytes_read = ring_buffer_read_sequence(uart_rb, data, sizeof(data));
-
-			for (int i = 0; i < bytes_read; i++) {
-				UART_ReceiveHandler(data[i]);
-			}
-
-			rx_data_available = false;
+		bytes_read = xStreamBufferReceive(uart_rx_stream, data, UART_MAX_BUF_SIZE, portMAX_DELAY);
+		for (int i = 0; i < bytes_read; i++) {
+			UART_ReceiveHandler(data[i]);
 		}
 	}
 }
 
+uint8_t rx_uart_tmp_buf[UART_MAX_BUF_SIZE];
 static void UARTServiceIrq(uint32_t id, SerialIrq event)
 {
 	serial_t *sobj = (void *)id;
+	uint32_t xBytesGet = 0;
+	uint32_t xBytesSent = 0;
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
 	if (event == RxIrq) {
 		uint8_t rc = 0;
 		while (serial_readable(sobj)) {
-			if (ring_buffer_is_full(uart_rb)) {
+			rc = (uint8_t)serial_getc(sobj);
+			rx_uart_tmp_buf[xBytesGet] = rc;
+			xBytesGet ++;
+			if (xBytesGet >= UART_MAX_BUF_SIZE) {
 				break;
 			}
-			rc = (uint8_t)serial_getc(sobj);
-			ring_buffer_write_word(uart_rb, rc);
 		}
-		if (!rx_data_available) {
-			xSemaphoreGiveFromISR(rx_data_sema, pdFALSE);
-			rx_data_available = true;
+		if (xBytesGet > 0 && xBytesGet <= UART_MAX_BUF_SIZE) {
+			xBytesSent = xStreamBufferSendFromISR(uart_rx_stream, rx_uart_tmp_buf, xBytesGet, NULL);
+			if (xHigherPriorityTaskWoken) {
+				taskYIELD();
+			}
 		}
 	}
 
@@ -1029,15 +965,9 @@ int uart_service_init(PinName tx_pin, PinName rx_pin, int baudrate)
 	int ret = 0;
 	serial_init(&(srobj.sobj), tx_pin, rx_pin);
 
-	rx_data_sema = xSemaphoreCreateBinary();
-	if (rx_data_sema == NULL) {
-		printf("rx_data_sema create fail\r\n");
-		return UART_SERVICE_INIT_FAIL;
-	}
-	rx_data_available = false;
-	uart_rb = ring_buffer_init(UART_MAX_BUF_SIZE);
-	if (uart_rb == NULL) {
-		printf("ring_buffer_init fail\r\n");
+	uart_rx_stream = xStreamBufferCreate(UART_MAX_BUF_SIZE, 1);
+	if (uart_rx_stream == NULL) {
+		printf("uart_rx_stream fail\r\n");
 		ret = UART_SERVICE_INIT_FAIL;
 		return ret;
 	}

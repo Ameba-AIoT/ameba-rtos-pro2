@@ -27,6 +27,7 @@
 
 #include "mbedtls/bignum.h"
 #include "bignum_core.h"
+#include "bignum_internal.h"
 #include "bn_mul.h"
 #include "mbedtls/platform_util.h"
 #include "mbedtls/error.h"
@@ -37,7 +38,7 @@
 
 #include "mbedtls/platform.h"
 
-#if !defined(CONFIG_PLATFORM_8735B)
+
 
 /*
  * Conditionally select an MPI sign in constant time.
@@ -50,6 +51,7 @@ static inline signed short mbedtls_ct_mpi_sign_if(mbedtls_ct_condition_t cond,
     return (signed short) mbedtls_ct_uint_if(cond, sign1 + 1, sign2 + 1) - 1;
 }
 
+#if !defined(CONFIG_PLATFORM_8735B)
 /*
  * Compare signed values in constant time
  */
@@ -170,10 +172,12 @@ int mbedtls_mpi_safe_cond_swap(mbedtls_mpi *X,
 cleanup:
     return ret;
 }
+#endif // #if !defined(CONFIG_PLATFORM_8735B)
 
 /* Implementation that should never be optimized out by the compiler */
 #define mbedtls_mpi_zeroize_and_free(v, n) mbedtls_zeroize_and_free(v, ciL * (n))
 
+#if !defined(CONFIG_PLATFORM_8735B)
 /*
  * Initialize one MPI
  */
@@ -1615,10 +1619,15 @@ int mbedtls_mpi_mod_int(mbedtls_mpi_uint *r, const mbedtls_mpi *A, mbedtls_mpi_s
 
     return 0;
 }
+#endif // #if !defined(CONFIG_PLATFORM_8735B)
 
-int mbedtls_mpi_exp_mod(mbedtls_mpi *X, const mbedtls_mpi *A,
-                        const mbedtls_mpi *E, const mbedtls_mpi *N,
-                        mbedtls_mpi *prec_RR)
+/*
+ * Warning! If the parameter E_public has MBEDTLS_MPI_IS_PUBLIC as its value,
+ * this function is not constant time with respect to the exponent (parameter E).
+ */
+static int mbedtls_mpi_exp_mod_optionally_safe(mbedtls_mpi *X, const mbedtls_mpi *A,
+                                               const mbedtls_mpi *E, int E_public,
+                                               const mbedtls_mpi *N, mbedtls_mpi *prec_RR)
 {
     int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
 
@@ -1701,7 +1710,11 @@ int mbedtls_mpi_exp_mod(mbedtls_mpi *X, const mbedtls_mpi *A,
     {
         mbedtls_mpi_uint mm = mbedtls_mpi_core_montmul_init(N->p);
         mbedtls_mpi_core_to_mont_rep(X->p, X->p, N->p, N->n, mm, RR.p, T);
-        mbedtls_mpi_core_exp_mod(X->p, X->p, N->p, N->n, E->p, E->n, RR.p, T);
+        if (E_public == MBEDTLS_MPI_IS_PUBLIC) {
+            mbedtls_mpi_core_exp_mod_unsafe(X->p, X->p, N->p, N->n, E->p, E->n, RR.p, T);
+        } else {
+            mbedtls_mpi_core_exp_mod(X->p, X->p, N->p, N->n, E->p, E->n, RR.p, T);
+        }
         mbedtls_mpi_core_from_mont_rep(X->p, X->p, N->p, N->n, mm, T);
     }
 
@@ -1726,6 +1739,23 @@ cleanup:
     return ret;
 }
 
+#if !defined(CONFIG_PLATFORM_8735B)
+int mbedtls_mpi_exp_mod(mbedtls_mpi *X, const mbedtls_mpi *A,
+                        const mbedtls_mpi *E, const mbedtls_mpi *N,
+                        mbedtls_mpi *prec_RR)
+{
+    return mbedtls_mpi_exp_mod_optionally_safe(X, A, E, MBEDTLS_MPI_IS_SECRET, N, prec_RR);
+}
+#endif // #if !defined(CONFIG_PLATFORM_8735B)
+
+int mbedtls_mpi_exp_mod_unsafe(mbedtls_mpi *X, const mbedtls_mpi *A,
+                               const mbedtls_mpi *E, const mbedtls_mpi *N,
+                               mbedtls_mpi *prec_RR)
+{
+    return mbedtls_mpi_exp_mod_optionally_safe(X, A, E, MBEDTLS_MPI_IS_PUBLIC, N, prec_RR);
+}
+
+#if !defined(CONFIG_PLATFORM_8735B)
 /*
  * Greatest common divisor: G = gcd(A, B)  (HAC 14.54)
  */

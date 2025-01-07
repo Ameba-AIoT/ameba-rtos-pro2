@@ -25,7 +25,7 @@ usbd_cdc_acm_usr_cb_t cdc_acm_usr_cb = {
 	.transmit_complete = NULL,//acm_transmit_complete,
 #endif
 };
-
+static int cdc_trans_mode = ACM_TRANS_NON_BLOCK_MODE;//Non block mode
 #ifdef USB_CONSOLE_LOG
 #define USBCDC_BUF_SIZE 2048
 #define CONSOLE_MODE 0X00
@@ -113,7 +113,10 @@ void example_cdc_thread(void *param)
 		}
 		goto exit;
 	}
-
+	status = cdc_setup_trans_mode(cdc_trans_mode);
+	if (status) {
+		printf("The setup parameters is not support, use the defualt value\r\n");
+	}
 	status = usbd_cdc_acm_init(0, 0, &cdc_acm_usr_cb);
 	if (status) {
 		printf("USB CDC driver load fail.\n");

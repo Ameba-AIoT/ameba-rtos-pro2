@@ -33,8 +33,15 @@
 #define AI_GLASS_AP_PASSWORD    "rtkaiglass"
 
 // AP channel
-#define AI_GLASS_AP_CHANNEL     6
+#define AI_GLASS_AP_CHANNEL     157
 
+// HTTP connection timeout in second
+#define HTTPD_CONNECT_TIMEOUT   15
+
+// Connection status
+#define WLAN_STAT_IDLE              0
+#define WLAN_STAT_HTTP_IDLE         1
+#define WLAN_STAT_HTTP_CONNECTED    2
 
 enum {
 	WLAN_SET_FAIL       = -1,
@@ -44,5 +51,6 @@ enum {
 int wifi_enable_ap_mode(const char *ssid, const char *password, int channel, int timeout);
 int wifi_disable_ap_mode(void);
 int wifi_get_ap_setting(rtw_softap_info_t *wifi_cfg);
+int wifi_get_connect_status(void);
 
 #endif

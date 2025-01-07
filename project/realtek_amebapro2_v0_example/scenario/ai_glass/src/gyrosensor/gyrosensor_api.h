@@ -18,13 +18,31 @@
 #undef AI_DEMO_MPU6050
 #define AI_DEMO_ICM42670P
 
+// ignore the accelerometer data from g-sensor
+#define IGN_ACC_DATA    1
+
+// Whole g-sensor data
+// we do not need raw data of the g-sensor
+//typedef struct gyro_data_s {
+//    uint32_t timestamp;
+//	float dps[3];       // Gyroscope
+//	float g[3];         // Accelerometer
+//	int16_t dps_raw[3];
+//	int16_t g_raw[3];
+//} gyro_data_t;
+
+#if IGN_ACC_DATA
 typedef struct gyro_data_s {
-	float g[3];         // Accelerometer
-	int16_t g_raw[3];
-	float dps[3];       // Gyroscope
-	int16_t dps_raw[3];
 	uint32_t timestamp;
+	float dps[3];       // Gyroscope
 } gyro_data_t;
+#else
+typedef struct gyro_data_s {
+	uint32_t timestamp;
+	float dps[3];       // Gyroscope
+	float g[3];         // Accelerometer
+} gyro_data_t;
+#endif
 
 int gyroscope_is_inited(void);
 

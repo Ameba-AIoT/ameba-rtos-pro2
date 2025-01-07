@@ -68,7 +68,9 @@ hal_gpio_adapter_t sensor_en_gpio;
 int sensor_en_pin_delay_init = 0;
 static int fcs_queue_start_time = 0;
 static int fcs_queue_end_time = 0;
-video_pre_init_params_t video_pre_init_param = {0};
+static video_pre_init_params_t video_pre_init_param = {
+	.voe_dbg_disable = !APP_VOE_LOG_EN,
+};
 
 //Video boot config//
 #include "fw_img_export.h"
@@ -1336,15 +1338,15 @@ void video_pre_init_procedure(int ch, video_pre_init_params_t *parm)
 		hal_video_set_isp_init_items(ch, &parm->init_isp_items);
 	} else {
 		video_isp_initial_items_t init_items;
-		init_items.init_brightness = 0x00;
-		init_items.init_contrast = 0x32;
-		init_items.init_flicker = 0x01;
-		init_items.init_hdr_mode = 0x0;
+		init_items.init_brightness = 0;
+		init_items.init_contrast = 50;
+		init_items.init_flicker = 1;
+		init_items.init_hdr_mode = 0;
 		init_items.init_mirrorflip = 0xf0;
-		init_items.init_saturation = 050;
-		init_items.init_wdr_level = 0x50;
-		init_items.init_wdr_mode = 0x02;
-		init_items.init_mipi_mode = 0x0;
+		init_items.init_saturation = 50;
+		init_items.init_wdr_level = 50;
+		init_items.init_wdr_mode = 2;
+		init_items.init_mipi_mode = 0;
 		hal_video_set_isp_init_items(ch, &init_items);
 	}
 
@@ -1366,7 +1368,7 @@ void video_pre_init_procedure(int ch, video_pre_init_params_t *parm)
 		v_adp->cmd[ch]->all_init_iq_set_flag = 1;
 		v_adp->cmd[ch]->direct_i2c_mode = 1;
 		//init exposure time min limit /*to fix*/
-		if(parm->isp_ae_init_exposure < 300) {
+		if (parm->isp_ae_init_exposure < 300) {
 			video_dprintf(VIDEO_LOG_MSG, "modify ae exposure time to 300\r\n");
 			v_adp->cmd[ch]->init_exposure = 300;
 		} else {
@@ -1560,13 +1562,13 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 		}
 		voe_info.stream_is_open[ch] = 1;
 		if (isp_boot->fcs_start_time) { //If it enable the fcs mode that it will show the fcs info.
-			hal_video_print(1);
+			hal_video_print(APP_VOE_FCS_INFO_EN);
 			video_time_info_t video_time;
 			hal_video_time_info(1, &video_time);
 			isp_info.frame_done_time = isp_boot->fcs_voe_time + video_time.frame_done / 1000;
 			video_dprintf(VIDEO_LOG_MSG, " fcs_start_time %d fcs_voe_time %d frame_done_time %d\r\n", isp_boot->fcs_start_time, isp_boot->fcs_voe_time,
 						  isp_info.frame_done_time);
-			hal_video_print(0);
+			hal_video_print(APP_VOE_LOG_EN);
 		}
 		for (int i = 0; i <= 2; i++) {
 			g_enc_buff_size[i] = isp_boot->video_params[i].out_buf_size;
@@ -1588,7 +1590,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 			status = NOK;
 			goto EXIT;
 		}
-		ret = snprintf(cmd1, sizeof(cmd1), "%s %d %s -w %d -h %d -x %d -X %d -y %d -Y %d -r %d --mode %d --codecFormat %d %s --dbg 1 -i isp"  // -x %d -y %d
+		ret = snprintf(cmd1, sizeof(cmd1), "%s %d %s -w %d -h %d -x %d -X %d -y %d -Y %d -r %d --mode %d --codecFormat %d %s --dbg %d -i isp"  // -x %d -y %d
 					   , fmt_table[(codec & (CODEC_HEVC | CODEC_H264)) - 1]
 					   , ch
 					   , fps_cmd1
@@ -1601,7 +1603,8 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 					   , rotation
 					   , 2
 					   , (codec & (CODEC_HEVC | CODEC_H264)) - 1
-					   , paramter_table[(codec & (CODEC_HEVC | CODEC_H264)) - 1]);
+					   , paramter_table[(codec & (CODEC_HEVC | CODEC_H264)) - 1]
+					   , APP_VOE_LOG_EN);
 		if (ret < 0 || ret >= sizeof(cmd1)) {
 			printf("fail to generate cmd1\r\n");
 			//return -1;
@@ -1618,7 +1621,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 			status = NOK;
 			goto EXIT;
 		}
-		ret = snprintf(cmd2, sizeof(cmd2), "%s %d %s -w %d -h %d -x %d -X %d -y %d -Y %d -G %d -q %d --mode %d --codecFormat %d %s --dbg 1 -i isp"
+		ret = snprintf(cmd2, sizeof(cmd2), "%s %d %s -w %d -h %d -x %d -X %d -y %d -Y %d -G %d -q %d --mode %d --codecFormat %d %s --dbg %d -i isp"
 					   , fmt_table[2]
 					   , ch
 					   , fps_cmd2
@@ -1632,7 +1635,8 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 					   , jpeg_qlevel
 					   , 0
 					   , 2
-					   , paramter_table[2]);
+					   , paramter_table[2]
+					   , APP_VOE_LOG_EN);
 		if (ret < 0 || ret >= sizeof(cmd2)) {
 			printf("fail to generate cmd2\r\n");
 			//return -1;
@@ -1657,7 +1661,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 			status = NOK;
 			goto EXIT;
 		}
-		ret = snprintf(cmd3, sizeof(cmd3), "%s %d %s -w %d -h %d --mode %d --codecFormat %d %s --dbg 1 -i isp"
+		ret = snprintf(cmd3, sizeof(cmd3), "%s %d %s -w %d -h %d --mode %d --codecFormat %d %s --dbg %d -i isp"
 					   , fmt_table[value]
 					   , ch
 					   , fps_cmd3
@@ -1665,7 +1669,8 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 					   , v_stream->height
 					   , 0
 					   , 3
-					   , paramter_table[value]);
+					   , paramter_table[value]
+					   , APP_VOE_LOG_EN);
 		if (ret < 0 || ret >= sizeof(cmd3)) {
 			printf("fail to generate cmd3\r\n");
 			//return -1;
@@ -1736,20 +1741,20 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 		voe_info.voe_scale_up_en = 0;
 	}
 
-	if(voe_info.voe_scale_up_en == 0) {
+	if (voe_info.voe_scale_up_en == 0) {
 		int origin_width = (int)isp_info.sensor_width;
 		int origin_height = (int)isp_info.sensor_height;
-		if(v_stream->use_roi) {
-			origin_width = v_stream->roi.xmax - v_stream->roi.xmin;
-			origin_height = v_stream->roi.ymax - v_stream->roi.ymin;
+		if (v_stream->use_roi) {
+			origin_width = (int)v_stream->roi.xmax - (int)v_stream->roi.xmin;
+			origin_height = (int)v_stream->roi.ymax - (int)v_stream->roi.ymin;
 		}
-		if(origin_width <= 0 || origin_height <= 0) {
+		if (origin_width <= 0 || origin_height <= 0) {
 			video_dprintf(VIDEO_LOG_ERR, "error: invlalid input resolution\r\n");
 			status = NOK;
 			goto EXIT;
 		}
-		if(enc_in_w <= origin_width && enc_in_h <= origin_height) {//scale down
-			if(v_stream->use_roi) {
+		if (enc_in_w <= origin_width && enc_in_h <= origin_height) { //scale down
+			if (v_stream->use_roi) {
 				video_dprintf(VIDEO_LOG_INF, "ch%d set_roi (%d,%d,%d,%d)\r\n", ch, v_stream->roi.xmin, v_stream->roi.ymin, origin_width, origin_height);
 				hal_video_isp_set_roi(ch, v_stream->roi.xmin, v_stream->roi.ymin, origin_width, origin_height);
 			}
@@ -1769,9 +1774,10 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 			} else {
 				voe_info.voe_scale_up_en = 1;
 				hal_video_isp_clk_set(ch, 5, 0);
-				if(v_stream->use_roi) {
+				if (v_stream->use_roi) {
 					video_dprintf(VIDEO_LOG_INF, "ch%d set_roi (%d,%d,%d,%d)\r\n", ch, v_stream->roi.xmin, v_stream->roi.ymin, origin_width, origin_height);
 					hal_video_isp_set_roi(ch, v_stream->roi.xmin, v_stream->roi.ymin, origin_width, origin_height);
+					memcpy(&(voe_info.voe_scale_up_roi), &(v_stream->roi), sizeof(video_roi_t));
 				}
 			}
 		} else {
@@ -1782,6 +1788,10 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 	} else if (v_stream->use_roi) {
 		if (ch == 0) {
 			video_dprintf(VIDEO_LOG_INF, "It don't need to setup ch0 again\r\n");
+			//ch0 should maintain the roi settings, while reopening /* to fix */
+			int roi_w = (int)voe_info.voe_scale_up_roi.xmax - (int)voe_info.voe_scale_up_roi.xmin;
+			int roi_h = (int)voe_info.voe_scale_up_roi.ymax - (int)voe_info.voe_scale_up_roi.ymin;
+			hal_video_isp_set_roi(ch, voe_info.voe_scale_up_roi.xmin, voe_info.voe_scale_up_roi.ymin, roi_w, roi_h);
 		} else {
 			video_dprintf(VIDEO_LOG_ERR, "It don't support to setup the ROI when scale up is enable\r\n");
 			status = NOK;

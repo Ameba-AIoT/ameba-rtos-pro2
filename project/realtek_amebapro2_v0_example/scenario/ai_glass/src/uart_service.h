@@ -172,13 +172,22 @@ typedef enum {
 enum {
 	UART_START_FAIL             = -8,
 	UART_ACK_PACKET_UNAVAILABLE = -7,
-	UART_SEND_PACKET_FAIL		= -6,
+	UART_SEND_PACKET_FAIL       = -6,
 	UART_ACK_TIMEOUT            = -5,
-	UART_SEND_PACKET_TIMEOUT	= -4,
-	UART_REG_CALLBACK_FAIL		= -3,
-	UART_QUEUE_CREATE_FAIL		= -2,
-	UART_SERVICE_INIT_FAIL		= -1,
+	UART_SEND_PACKET_TIMEOUT    = -4,
+	UART_REG_CALLBACK_FAIL      = -3,
+	UART_QUEUE_CREATE_FAIL      = -2,
+	UART_SERVICE_INIT_FAIL      = -1,
 	UART_OK                     = 0,
+};
+
+// Uart power status
+enum {
+	UART_PWR_NORMAL             = 0x01,
+	UART_PWR_DLPS               = 0x02,
+	UART_PWR_OFF                = 0x03,
+	UART_PWR_APON               = 0x04,
+	UART_PWR_HTTP_CONN          = 0x05,
 };
 
 // The uart command packet
