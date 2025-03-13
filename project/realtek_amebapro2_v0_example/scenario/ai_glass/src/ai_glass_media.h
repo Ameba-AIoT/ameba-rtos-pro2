@@ -5,6 +5,20 @@
 #include "task.h"
 #include "sensor.h"
 
+/**
+* Nor Flash Address To Store Snapshot/Record data
+*/
+#define FLASH_FW_SELECT_ADDR            (FLASH_APP_BASE + 0x1000) // Remain 1K after FLASH_APP_BASE
+#define FLASH_FW_SELECT_SIZE            0x100
+#define FLASH_AI_SNAP_BLOCK_BASE        (FLASH_FW_SELECT_ADDR + FLASH_FW_SELECT_SIZE)
+#define FLASH_AI_SNAP_BLOCK_SIZE        0x800
+#define FLASH_REC_BLOCK_BASE            (FLASH_AI_SNAP_BLOCK_BASE + FLASH_AI_SNAP_BLOCK_SIZE) //Store the AI Glass Record params
+#define FLASH_REC_BLOCK_SIZE            0x800
+#define FLASH_LIFE_SNAP_BLOCK_BASE      (FLASH_REC_BLOCK_BASE + FLASH_REC_BLOCK_SIZE) //Store the AI Glass Snapshot params
+#define FLASH_LIFE_SNAP_BLOCK_SIZE      0x800
+
+// Todo: Nand Flash Address To Store Snapshot/Record data
+
 #define WIDTH_2K    2560
 #define HEIGHT_2K   1440
 #define WIDTH_5M    2592
@@ -27,6 +41,7 @@ enum {
 	MEDIA_INVALID_WIDTH     = -2,   // MEDIA_WIDTH_INVALID
 	MEDIA_FAIL              = -1,   // MEDIA_FAIL
 	MEDIA_OK                = 0,    // MEDIA_OK
+	MEDIA_NO_NEED_TO_UPDATE = 1,    // MEDIA_NO_NEED_TO_UPDATE
 };
 
 typedef enum {
@@ -35,6 +50,8 @@ typedef enum {
 	STATE_END_RECORDING, // 2
 	STATE_ERROR,         // Add more states if needed
 } MP4State;
+
+#define REC_PARAM_SIZE  37
 
 typedef struct ai_glass_record_param_s {
 	uint8_t     type;
@@ -55,6 +72,8 @@ typedef struct ai_glass_record_param_s {
 	uint8_t     rc_mode;
 	uint16_t    record_length;
 } ai_glass_record_param_t;
+
+#define SNAP_PARAM_SIZE  31
 
 typedef struct ai_glass_snapshot_param_s {
 	uint8_t     type; // JPEG for sure
@@ -78,18 +97,19 @@ typedef struct ai_glass_snapshot_param_s {
 #define MAX_AISNAP_HEIGHT           sensor_params[USE_SENSOR].sensor_height
 #define MAX_RECORD_WIDTH            ((sensor_params[USE_SENSOR].sensor_width > WIDTH_2K) ? WIDTH_2K : sensor_params[USE_SENSOR].sensor_width)
 #define MAX_RECORD_HEIGHT           ((sensor_params[USE_SENSOR].sensor_height > HEIGHT_2K) ? HEIGHT_2K : sensor_params[USE_SENSOR].sensor_height)
-#define MAX_RECORD_BPS              (4*1024*1024)
+#define MAX_RECORD_BPS              (12*1024*1024)
 #define MIN_RECORD_BPS              (512*1024)
 #define MAX_RECORD_FPS              sensor_params[USE_SENSOR].sensor_fps
 #define MIN_RECORD_FPS              6
 #define MAX_RECORD_GOP              sensor_params[USE_SENSOR].sensor_fps
 #define MIN_RECORD_GOP              6
-
+#define MAX_RECORD_RECTIME          300
+#define MIN_RECORD_RECTIME          10
 
 #define DEFAULT_RECORD_TYPE         VIDEO_H264
 #define DEFAULT_RECORD_WIDTH        ((sensor_params[USE_SENSOR].sensor_width > WIDTH_2K) ? WIDTH_2K : sensor_params[USE_SENSOR].sensor_width)
 #define DEFAULT_RECORD_HEIGHT       ((sensor_params[USE_SENSOR].sensor_height > HEIGHT_2K) ? HEIGHT_2K : sensor_params[USE_SENSOR].sensor_height)
-#define DEFAULT_RECORD_BPS          (4*1024*1024)
+#define DEFAULT_RECORD_BPS          (2*1024*1024)
 #define DEFAULT_RECORD_FPS          24
 #define DEFAULT_RECORD_GOP          24
 #define DEFAULT_RECORD_MINQP        0
@@ -116,18 +136,6 @@ typedef struct ai_glass_snapshot_param_s {
 #define DEFAULT_LIFESNAP_MAXQP      0
 #define DEFAULT_LIFESNAP_ROTATION   0
 
-#define FLASH_AI_SNAPSHOT_DATA  (USER_DATA_BASE + 0x0DC00) //Store the AI Glass Snapshot params
-#define FLASH_RECORD_DATA       (USER_DATA_BASE + 0x0E800) //Store the AI Glass Record params
-#define FLASH_SNAPSHOT_DATA     (USER_DATA_BASE + 0x0F400) //Store the AI Glass Record params
-
-/**
-* Nor Flash Snapshot/Record data
-*/
-#define NOR_FLASH_AI_SNAPSHOT   FLASH_AI_SNAPSHOT_DATA
-#define NOR_FLASH_RECORD        FLASH_RECORD_DATA
-#define NOR_FLASH_LIFE_SNAPSHOT FLASH_SNAPSHOT_DATA
-
-
 // Function for media
 int media_update_record_params(const ai_glass_record_param_t *params);
 int media_update_ai_snapshot_params(const ai_glass_snapshot_param_t *params);
@@ -138,7 +146,7 @@ int media_get_life_snapshot_params(ai_glass_snapshot_param_t *params);
 void print_record_data(const ai_glass_record_param_t *params);
 void print_snapshot_data(const ai_glass_snapshot_param_t *params);
 void initial_media_parameters(void);
-
+void deinitial_media(void);
 
 // ai snapshot
 int ai_snapshot_initialize(void);

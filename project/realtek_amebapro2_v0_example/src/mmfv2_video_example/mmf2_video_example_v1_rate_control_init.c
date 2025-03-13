@@ -14,8 +14,8 @@
 #include "wifi_conf.h"
 #include "sensor.h"
 
-#define AUTO_RATE_CONTROL
-#ifndef AUTO_RATE_CONTROL
+#define BPS_STABLE_CONTROL
+#ifndef BPS_STABLE_CONTROL
 #define QUEUE_LENGTH_MODE	1
 #define BANDWIDTH_MODE	0
 #define HIGH_THRESHOLD  8
@@ -65,14 +65,15 @@ static rtsp2_params_t rtsp2_v1_params = {
 	}
 };
 
-#ifdef AUTO_RATE_CONTROL
-static rate_ctrl_t rate_ctrl_v1_params = {
+#ifdef BPS_STABLE_CONTROL
+static bps_stbl_ctrl_param_t bps_stbl_ctrl_v1_params = {
 	.maximun_bitrate = V1_BPS * 1.2,
 	.minimum_bitrate = V1_BPS * 0.8,
 	.target_bitrate = V1_BPS
 };
 
-static uint32_t rate_ctrl_stage[3] = {20, 16, 12};
+static uint32_t bps_stbl_ctrl_fps_stage[3] = {20, 16, 12};
+static uint32_t bps_stbl_ctrl_gop_stage[3] = {40, 32, 24}; //default set gop = fps * 2
 #else
 static struct user_bitrate_control {
 	uint32_t enable;
@@ -186,14 +187,17 @@ void mmf2_video_example_v1_rate_control_init(void)
 	video_v1_params.resolution = VIDEO_FHD;
 	video_v1_params.width = sensor_params[USE_SENSOR].sensor_width;
 	video_v1_params.height = sensor_params[USE_SENSOR].sensor_height;
+#ifdef BPS_STABLE_CONTROL
+	video_v1_params.fps = bps_stbl_ctrl_fps_stage[0];
+	video_v1_params.gop = bps_stbl_ctrl_gop_stage[0];
+	/*auto rate control setting*/
+	bps_stbl_ctrl_v1_params.sampling_time = video_v1_params.gop;
+#else
 	video_v1_params.fps = sensor_params[USE_SENSOR].sensor_fps;
 	video_v1_params.gop = sensor_params[USE_SENSOR].sensor_fps;
-	/*rtsp parameter setting*/
-	rtsp2_v1_params.u.v.fps = sensor_params[USE_SENSOR].sensor_fps;
-#ifdef AUTO_RATE_CONTROL
-	/*auto rate control setting*/
-	rate_ctrl_v1_params.sampling_time = video_v1_params.gop;
 #endif
+	/*rtsp parameter setting*/
+	rtsp2_v1_params.u.v.fps = video_v1_params.fps;
 #if (USE_UPDATED_VIDEO_HEAP == 0)
 	int voe_heap_size = video_voe_presetting(1, video_v1_params.width, video_v1_params.height, V1_BPS, 0,
 						0, 0, 0, 0, 0,
@@ -238,9 +242,11 @@ void mmf2_video_example_v1_rate_control_init(void)
 	}
 
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, V1_CHANNEL);	// start channel 0
-#ifdef AUTO_RATE_CONTROL
-	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_RATE_CONTROL_FPS_STAGE, (int)rate_ctrl_stage);
-	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_RATE_CONTROL, (int)&rate_ctrl_v1_params);
+#ifdef BPS_STABLE_CONTROL
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_FPS_STG, (int)bps_stbl_ctrl_fps_stage);
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_GOP_STG, (int)bps_stbl_ctrl_gop_stage);
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_PARAMS, (int)&bps_stbl_ctrl_v1_params);
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_BPS_STBL_CTRL_EN, 1);
 #else
 	user_bps_ctrl.enable = 1;
 	/*user can start their own task here*/
@@ -258,7 +264,7 @@ mmf2_video_exmaple_v1_fail:
 static const char *example = "mmf2_video_example_v1_rate_control_init";
 static void example_deinit(void)
 {
-#ifndef AUTO_RATE_CONTROL
+#ifndef BPS_STABLE_CONTROL
 	if (user_bps_ctrl.enable) {
 		user_bps_ctrl.enable = 0;
 		vTaskDelete(bitrate_control_handler);
@@ -280,6 +286,26 @@ static void example_deinit(void)
 
 	video_voe_release();
 }
+
+#ifdef BPS_STABLE_CONTROL
+static void bitrate_change(void *arg)
+{
+	char *argv[MAX_ARGC] = {0};
+	int argc = parse_param(arg, argv);
+	if (argc > 2) {
+		printf("BC=target_bitrate\r\n");
+		return;
+	} else if(argc == 1) {
+		bps_stbl_ctrl_v1_params.target_bitrate = 512 * 1024;
+	} else {
+		bps_stbl_ctrl_v1_params.target_bitrate = atoi((char const *)argv[1]);
+	}
+	bps_stbl_ctrl_v1_params.maximun_bitrate = bps_stbl_ctrl_v1_params.target_bitrate * 1.2;
+	bps_stbl_ctrl_v1_params.minimum_bitrate = bps_stbl_ctrl_v1_params.target_bitrate * 0.8;
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_BPS, bps_stbl_ctrl_v1_params.target_bitrate);
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_PARAMS, (int)&bps_stbl_ctrl_v1_params);
+}
+#endif
 
 static void fUC(void *arg)
 {
@@ -309,6 +335,9 @@ static void fUC(void *arg)
 
 static log_item_t userctrl_items[] = {
 	{"UC", fUC, },
+#ifdef BPS_STABLE_CONTROL
+	{"BC", bitrate_change,}
+#endif
 };
 
 static void atcmd_userctrl_init(void)

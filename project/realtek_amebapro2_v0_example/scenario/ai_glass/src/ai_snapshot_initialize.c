@@ -7,6 +7,12 @@
 #include "sensor.h"
 #include "ai_glass_media.h"
 #include "media_filesystem.h"
+#include "ai_glass_dbg.h"
+
+// Configure
+#define MAXIMUM_FILE_TAG_SIZE   32
+#define MAXIMUM_FILE_SIZE       (MAXIMUM_FILE_TAG_SIZE + 32)
+#define DROP_FRAME              2
 
 typedef struct {
 	uint8_t *output_buffer;
@@ -32,10 +38,6 @@ typedef struct {
 // static video_params_t ai_video_params;
 static jpeg_aisnapshot_context_t *ai_snap_ctx = NULL;
 
-#define MAXIMUM_FILE_TAG_SIZE   32
-#define MAXIMUM_FILE_SIZE       (MAXIMUM_FILE_TAG_SIZE + 32)
-
-#define DROP_FRAME  2
 static video_pre_init_params_t ai_snap_pre_init_param = {
 	.video_drop_enable = 1,
 	.video_drop_frame = DROP_FRAME,
@@ -44,11 +46,11 @@ static video_pre_init_params_t ai_snap_pre_init_param = {
 static int video_snapshot_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 {
 	ai_snap_ctx->take_snapshot = 1;
-	printf("capture_snapshot_cb snapshot size = %lu\n\r", jpeg_len);
+	AI_GLASS_MSG("capture_snapshot_cb snapshot size = %lu\n\r", jpeg_len);
 	ai_snap_ctx->dest_addr = (uint32_t) malloc(jpeg_len);
 	memcpy((void *)ai_snap_ctx->dest_addr, (const void *)jpeg_addr, jpeg_len);
 	ai_snap_ctx->dest_actual_len = jpeg_len;
-	printf("capture_snapshot_cb snapshot addr = %ld, size = %lu\n\r", ai_snap_ctx->dest_addr, ai_snap_ctx->dest_actual_len);
+	AI_GLASS_MSG("capture_snapshot_cb snapshot addr = %ld, size = %lu\n\r", ai_snap_ctx->dest_addr, ai_snap_ctx->dest_actual_len);
 	rtw_up_sema(&ai_snap_ctx->snapshot_sema);
 	return 0;
 }
@@ -58,10 +60,10 @@ static int video_snapshot_get_buffer(jpeg_buffer_t *video_buf, uint32_t timeout_
 	if (rtw_down_timeout_sema(&ai_snap_ctx->snapshot_sema, timeout_ms)) {
 		video_buf->output_buffer = (uint8_t *) ai_snap_ctx->dest_addr;
 		video_buf->output_size = ai_snap_ctx->dest_actual_len;
-		printf("video_snapshot_get_buffer2 size = %p, %lu\n\r", video_buf->output_buffer, video_buf->output_size);
+		AI_GLASS_MSG("video_snapshot_get_buffer size = %p, %lu\n\r", video_buf->output_buffer, video_buf->output_size);
 		return 0;
 	} else {
-		printf("video_snapshot_get_buffer size fail\n\r");
+		AI_GLASS_ERR("video_snapshot_get_buffer size fail\n\r");
 		video_buf->output_buffer = NULL;
 		video_buf->output_size = 0;
 		return -1;
@@ -72,14 +74,14 @@ static int video_capture_snapshot(const char *filename)
 {
 	int ret = -1;
 	if (!video_snapshot_get_buffer(&ai_snap_ctx->video_buf, SNAPSHOT_TIMEOUT)) {
-		printf("video_snapshot_get_buffer size = %p, %lu\n\r", ai_snap_ctx->video_buf.output_buffer, ai_snap_ctx->video_buf.output_size);
+		AI_GLASS_MSG("video_snapshot_get_buffer size = %p, %lu\n\r", ai_snap_ctx->video_buf.output_buffer, ai_snap_ctx->video_buf.output_size);
 		if (!ai_snap_ctx->snapshot_write(ai_snap_ctx->video_buf.output_buffer, ai_snap_ctx->video_buf.output_size, filename)) {
 			ret = 0;
 		}
 		ai_snap_ctx->take_snapshot = 0;
-		printf("get ai snapshot buffer success\r\n");
+		AI_GLASS_INFO("get ai snapshot buffer success\r\n");
 	} else {
-		printf("Warn: get ai snapshot buffer failed\r\n");
+		AI_GLASS_ERR("get ai snapshot buffer failed\r\n");
 	}
 	return ret;
 }
@@ -87,12 +89,12 @@ static int video_capture_snapshot(const char *filename)
 static int aisnapshot_write_picture(uint8_t *buf, uint32_t len, const char *filename)
 {
 	FILE *m_file = NULL;
-	//printf("jpeg %s, file len = %u\r\n", filename, len);
+	AI_GLASS_MSG("jpeg %s, file len = %lu\r\n", filename, len);
 	if (ai_snap_ctx->dest_addr) {
 		m_file = ramdisk_fopen(filename, "w");
 		if (m_file) {
-			fwrite(buf, 1, len, m_file);
-			fclose(m_file);
+			ramdisk_fwrite(buf, 1, len, m_file);
+			ramdisk_fclose(m_file);
 			free((void *)ai_snap_ctx->dest_addr);
 			ai_snap_ctx->dest_addr = 0;
 			return 0;
@@ -102,7 +104,7 @@ static int aisnapshot_write_picture(uint8_t *buf, uint32_t len, const char *file
 			return -1;
 		}
 	} else {
-		printf("jpeg buffer allocate fail\r\n");
+		AI_GLASS_ERR("jpeg buffer allocate fail\r\n");
 		return -1;
 	}
 }
@@ -112,7 +114,7 @@ int ai_snapshot_initialize(void)
 	int ret = 0;
 
 	if (ai_snap_ctx == NULL) {
-		printf("================AI snapshot start==========================\r\n");
+		AI_GLASS_INFO("================AI snapshot start==========================\r\n");
 		ai_snap_ctx = (jpeg_aisnapshot_context_t *) malloc(sizeof(jpeg_aisnapshot_context_t));
 		memset(ai_snap_ctx, 0x00, sizeof(jpeg_aisnapshot_context_t));
 
@@ -133,9 +135,9 @@ int ai_snapshot_initialize(void)
 		snapshot_param->roi.xmax = 0;
 		snapshot_param->roi.ymax = 0;
 		snapshot_param->use_static_addr = 1;
-		printf("snapshot width = %ld\r\n", snapshot_param->width);
-		printf("snapshot height = %ld\r\n", snapshot_param->height);
-		printf("snapshot jpeg_qlevel = %ld\r\n", snapshot_param->jpeg_qlevel);
+		AI_GLASS_MSG("snapshot width = %ld\r\n", snapshot_param->width);
+		AI_GLASS_MSG("snapshot height = %ld\r\n", snapshot_param->height);
+		AI_GLASS_MSG("snapshot jpeg_qlevel = %ld\r\n", snapshot_param->jpeg_qlevel);
 
 		rtw_init_sema(&ai_snap_ctx->snapshot_sema, 0);
 		rtw_mutex_init(&ai_snap_ctx->snapshot_mutex);
@@ -149,12 +151,12 @@ int ai_snapshot_initialize(void)
 		} else {
 			ret = -1;
 			ai_snapshot_deinitialize();
-			printf("AI snapshot open fail\r\n");
+			AI_GLASS_ERR("AI snapshot open fail\r\n");
 			goto endofaisnapshot;
 		}
 	} else {
 		ret = -2;
-		printf("AI snapshot is on-going\r\n");
+		AI_GLASS_WARN("AI snapshot is on-going\r\n");
 		goto endofaisnapshot;
 	}
 endofaisnapshot:
@@ -163,19 +165,19 @@ endofaisnapshot:
 
 int ai_snapshot_take(const char *file_name)
 {
-	printf("================ai_snapshot_take==========================\r\n");
+	AI_GLASS_INFO("================ai_snapshot_take==========================\r\n");
 	int ret = -1;
 	if (ai_snap_ctx) {
-		printf("Sanpshot start\r\n");
+		AI_GLASS_MSG("Sanpshot start\r\n");
 		rtw_mutex_get(&ai_snap_ctx->snapshot_mutex);
-		printf("ai_snapshot_take %s\r\n", file_name);
+		AI_GLASS_MSG("ai_snapshot_take %s\r\n", file_name);
 		ai_snap_ctx->take_snapshot = 1;
 		mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_SNAPSHOT, 1);
 		ret = video_capture_snapshot(file_name);
 		ai_snap_ctx->take_snapshot = 0;
 		rtw_mutex_put(&ai_snap_ctx->snapshot_mutex);
 	} else {
-		printf("The snapshot is not init\r\n");
+		AI_GLASS_ERR("The snapshot is not init\r\n");
 	}
 	return ret;
 }
@@ -184,7 +186,7 @@ int ai_snapshot_deinitialize(void)
 {
 	if (ai_snap_ctx) {
 		if (ai_snap_ctx->take_snapshot) {
-			printf("It is running\r\n");
+			AI_GLASS_WARN("It is running\r\n");
 			return -1;
 		} else {
 			rtw_free_sema(&ai_snap_ctx->snapshot_sema);
@@ -195,8 +197,8 @@ int ai_snapshot_deinitialize(void)
 			ai_snap_ctx = NULL;
 		}
 	}
-	printf("DEINT WITH SINGLE\r\n");
-	printf("ai snapshot deinit\n");
+	AI_GLASS_INFO("DEINT WITH SINGLE\r\n");
+	AI_GLASS_INFO("ai snapshot deinit\n");
 	return 0;
 }
 

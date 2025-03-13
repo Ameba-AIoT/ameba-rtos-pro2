@@ -17,6 +17,7 @@
 
 #define STACKSIZE     2048
 #define WOWLAN_GPIO_WDT      1
+#define WOWLAN_CONNECTIVITY_CHECK     0
 //Clock, 1: 4MHz, 0: 100kHz
 #define CLOCK 0
 //SLEEP_DURATION, 120s
@@ -172,6 +173,15 @@ void tcp_app_task(void *param)
 			close(server_fd);
 		}
 	}
+
+#if WOWLAN_CONNECTIVITY_CHECK
+	//Set connectivity(connectivitycheck.gstatic.com) ip address
+	wifi_set_connectivity_ip();
+	//The upper layer determines whether to access the external network to decide whether to activate this function.
+	if (0) {
+		wifi_set_connectivity_offload(60, 3600);
+	}
+#endif
 
 	retention_local_ip = *(uint32_t *) LwIP_GetIP(0);
 	dcache_clean_invalidate_by_addr((uint32_t *) &retention_local_ip, sizeof(retention_local_ip));
@@ -424,6 +434,11 @@ void main(void)
 
 					free(wakeup_packet);
 
+				} else if (wowlan_wake_reason == 0x80) {
+					wlan_mcu_ok = 1;
+					unicast_wakeup = 1;
+				} else if (wowlan_wake_reason == 0x81) {
+					wlan_mcu_ok = 1;
 				}
 			}
 		} else if (pm_reason & (BIT(9) | BIT(10) | BIT(11) | BIT(12))) {

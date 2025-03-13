@@ -39,6 +39,7 @@ list(
     ${CMAKE_CURRENT_LIST_DIR}/src/nv12tojpg.c
     ${CMAKE_CURRENT_LIST_DIR}/src/uart_service.c
     ${CMAKE_CURRENT_LIST_DIR}/src/wlan_scenario.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/sliding_windows.c
 )
 
 #ENTRY for the project

@@ -238,6 +238,7 @@ list(
 	${sdk_root}/component/soc/8735b/cmsis/cmsis-dsp/source/TransformFunctions/arm_rfft_fast_init_f32.c
 	${sdk_root}/component/soc/8735b/cmsis/cmsis-dsp/source/BasicMathFunctions/arm_scale_f32.c
 	${sdk_root}/component/soc/8735b/cmsis/cmsis-dsp/source/BasicMathFunctions/arm_dot_prod_f32.c
+	${sdk_root}/component/soc/8735b/cmsis/cmsis-dsp/source/BasicMathFunctions/arm_offset_f32.c
 )
 
 #at_cmd
@@ -993,8 +994,8 @@ target_link_options(
 	"LINKER:SHELL:-wrap,hal_sys_get_video_img_ld_offset"
 	"LINKER:SHELL:-wrap,hal_sys_cust_pws_val_ctrl"
 	"LINKER:SHELL:-wrap,hal_32k_s1_sel"
-	"LINKER:SHELL:-wrap,hal_xtal_divider_enable"	
-	
+	"LINKER:SHELL:-wrap,hal_xtal_divider_enable"
+	"LINKER:SHELL:-wrap,hal_sys_clear_prefw_boot_fail_sts"
 )
 endif()
 

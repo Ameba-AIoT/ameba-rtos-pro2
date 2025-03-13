@@ -204,6 +204,10 @@ static void example_mmf2_video_surport(void)
 	// RTP   -> AAD  -> AUDIO
 	//mmf2_video_example_joint_test_vipnn_rtsp_mp4_init();
 
+	// H264 -> RTSP (V1)
+	// RGB  -> NN image classification (V4)
+	//mmf2_video_example_vipnn_classify_rtsp_init();
+
 	video_init_done = 1;
 }
 

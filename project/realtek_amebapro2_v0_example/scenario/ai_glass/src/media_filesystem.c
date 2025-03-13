@@ -17,12 +17,17 @@
 //#include "ff.h"
 #include "vfs.h"
 #include "mmf2_mediatime_8735b.h"
+#include "ai_glass_dbg.h"
 
-#define SHOW_LIST_FILE_TIME 0
 #define ENABLE_FILE_TIME_FUNCTION   1 // If enable this flag, please set original get_fattime to weak function
 
-#define MAX_TAG_LEN     32
-#define MAX_FILE_LEN    128
+#define MAX_TAG_LEN                 32
+#define MAX_FILE_LEN                128
+
+#define SYS_COUNT_FILENAME          "FileExtensionCount.json"
+
+#define MAX_JSON_FILELENGTH         512
+
 static char ai_glass_extdisk_tag[MAX_TAG_LEN] = {0};
 static int ai_glass_extdisk_done = 0;
 static SemaphoreHandle_t extdisk_mutex = NULL;
@@ -31,7 +36,12 @@ static char ai_glass_ramdisk_tag[MAX_TAG_LEN] = {0};
 static int ai_glass_ramdisk_done = 0;
 static SemaphoreHandle_t ramdisk_mutex = NULL;
 
+static cJSON *filecount_object = NULL;
+
 static time_t gps_timeinfo = 0;
+static float gps_latitude = 0;
+static float gps_longitude = 0;
+static float gps_altitude = 0;
 
 time_t media_filesystem_gpstime_to_time_t(uint32_t gps_week, uint32_t gps_seconds);
 
@@ -60,15 +70,33 @@ static int show_utc_format_time(time_t rawtime)
 	//time(&rawtime);
 	timeinfo = gmtime(&rawtime);
 
-	printf("UTC format time: %s\r\n", asctime(timeinfo));
+	FILE_SYS_MSG("UTC format time: %s\r\n", asctime(timeinfo));
 	return 0;
 }
 
 void media_filesystem_setup_gpstime(uint32_t gps_week, uint32_t gps_seconds)
 {
 	gps_timeinfo = media_filesystem_gpstime_to_time_t(gps_week, gps_seconds);
-	printf("Set up GPS time for system\r\n");
+	FILE_SYS_INFO("Set up GPS time for system\r\n");
 	show_utc_format_time(gps_timeinfo);
+}
+
+int media_filesystem_setup_gpscoordinate(float latitude, float longitude, float altitude)
+{
+	//Todo: check the coordinate is valid or not
+	gps_latitude = latitude;
+	gps_longitude = longitude;
+	gps_altitude = altitude;
+	FILE_SYS_INFO("Set up GPS coordinate for system\r\n");
+	return 0;
+}
+
+void media_filesystem_get_gpscoordinate(float *latitude, float *longitude, float *altitude)
+{
+	//Todo: check the coordinate is valid or not
+	*latitude = gps_latitude;
+	*longitude = gps_longitude;
+	*altitude = gps_altitude;
 }
 
 #define LEAP_SECONDS 0 // Todo: If user want to transfer actual UTC time, the could use this
@@ -106,7 +134,7 @@ static void time_transfer_to_string(time_t rawtime, char *buffer, uint32_t buffe
 	struct tm *timeinfo = gmtime(&rawtime);
 
 	strftime(buffer, buffer_size, "%Y%m%d_%H%M%S", timeinfo);
-	printf("get time = %s\r\n", buffer);
+	FILE_SYS_MSG("get time = %s\r\n", buffer);
 	//strftime(buffer, buffer_size, "%Y-%m-%dT%H:%M:%SZ", timeinfo);
 	return;
 }
@@ -126,13 +154,13 @@ int media_filesystem_init(void)
 	vfs_init(NULL);
 	extdisk_mutex = xSemaphoreCreateMutex();
 	if (extdisk_mutex == NULL) {
-		printf("extdisk_mutex create fail\r\n");
+		FILE_SYS_ERR("extdisk_mutex create fail\r\n");
 		vfs_deinit(NULL);
 		return -1;
 	}
 	ramdisk_mutex = xSemaphoreCreateMutex();
 	if (ramdisk_mutex == NULL) {
-		printf("ramdisk_mutex create fail\r\n");
+		FILE_SYS_ERR("ramdisk_mutex create fail\r\n");
 		vfs_deinit(NULL);
 		vSemaphoreDelete(extdisk_mutex);
 		return -1;
@@ -168,8 +196,11 @@ static int check_valid_file_and_remove(const char *list_path, const char *filena
 	struct stat finfo = {0};
 	int res;
 
-	if (is_excluded_file(filename, exclude_filename)) {
-		printf("file %s is a exclude file %s\n", filename, exclude_filename);
+	if (is_excluded_file(filename, SYS_COUNT_FILENAME)) {
+		FILE_SYS_MSG("file %s is a exclude file %s\n", filename, exclude_filename);
+		return -1;
+	} else if (is_excluded_file(filename, exclude_filename)) {
+		FILE_SYS_MSG("file %s is a exclude file %s\n", filename, exclude_filename);
 		return -1;
 	} else {
 		char *file_path = malloc(PATH_MAX + 1);
@@ -179,13 +210,13 @@ static int check_valid_file_and_remove(const char *list_path, const char *filena
 
 			if (res == 0) {
 				if (finfo.st_size == 0) {
-					printf("size 0 is invlaid %s, remove file\r\n", file_path);
+					FILE_SYS_WARN("size 0 is invlaid %s, remove file\r\n", file_path);
 					remove(file_path);
 					free(file_path);
 					return -1;
 				}
 			} else {
-				printf("Failed to get file %s info (error: %d), remove file\r\n", file_path, res);
+				FILE_SYS_WARN("Failed to get file %s info (error: %d), remove file\r\n", file_path, res);
 				remove(file_path);
 				free(file_path);
 				return -1;
@@ -197,7 +228,6 @@ static int check_valid_file_and_remove(const char *list_path, const char *filena
 				return i;
 			}
 		}
-		//printf("%s check_extension failed\r\n", filename);
 	}
 
 	return -1;
@@ -205,29 +235,87 @@ static int check_valid_file_and_remove(const char *list_path, const char *filena
 
 static int file_exists(const char *filename)
 {
-	FILE *file = fopen(filename, "r");
-	if (file) {
-		fclose(file);
-		return 1;
+	return (access(filename, F_OK) == F_OK);
+}
+
+static int increase_file_sys_count(cJSON *storage, const char *type_name)
+{
+	if (storage) {
+		cJSON *countItem = cJSON_GetObjectItem(storage, type_name);
+		if (countItem) {
+			countItem->valuedouble += 1;
+		} else {
+			cJSON_AddNumberToObject(storage, type_name, 1);
+		}
+		return 0;
+	} else {
+		return -1;
 	}
-	return 0;
+}
+
+static int decrease_file_sys_count(cJSON *storage, const char *type_name)
+{
+	cJSON *countItem = cJSON_GetObjectItem(storage, type_name);
+	if (countItem && countItem->valuedouble > 0) {
+		countItem->valuedouble -= 1;
+		return 0;
+	} else {
+		return -1;
+	}
+}
+
+static int get_file_sys_count(cJSON *storage, const char *type_name)
+{
+	cJSON *countItem = cJSON_GetObjectItem(storage, type_name);
+	if (countItem) {
+		return countItem->valuedouble;
+	} else {
+		return 0;
+	}
+}
+
+int extdisk_get_filecount(const char *count_label)
+{
+	if (!ai_glass_extdisk_done) {
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
+		return 0;
+	}
+
+	return get_file_sys_count(filecount_object, count_label);
 }
 
 FILE *extdisk_fopen(const char *filename, const char *mode)
 {
 	if (!ai_glass_extdisk_done) {
-		printf("External disk is not initialized yet\r\n");
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
 		return NULL;
 	}
 	char ai_glass_path[MAX_FILE_LEN] = {0};
 	snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_extdisk_tag, filename);
-	return fopen(ai_glass_path, mode);
+
+	int file_exists = 0;
+	if (access(ai_glass_path, F_OK) == F_OK) {
+		file_exists = 1;
+	}
+
+	FILE *newfile = fopen(ai_glass_path, mode);
+
+	if (!file_exists && newfile) {
+		if (check_extension(ai_glass_path, ".mp4")) {
+			increase_file_sys_count(filecount_object, SYS_COUNT_FILM_LABEL);
+		} else if (check_extension(ai_glass_path, ".jpg") || check_extension(ai_glass_path, ".jpeg")) {
+			increase_file_sys_count(filecount_object, SYS_COUNT_PIC_LABEL);
+		} else if (check_extension(ai_glass_path, ".bin")) {
+			increase_file_sys_count(filecount_object, SYS_COUNT_SYS_LABEL);
+		}
+	}
+	return newfile;
 }
 
 int extdisk_fclose(FILE *stream)
 {
 	if (!ai_glass_extdisk_done) {
-		printf("External disk is not initialized yet\r\n");
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
 		return -1;
 	}
 	return fclose(stream);
@@ -236,7 +324,7 @@ int extdisk_fclose(FILE *stream)
 size_t extdisk_fread(void *ptr, size_t size, size_t count, FILE *stream)
 {
 	if (!ai_glass_extdisk_done) {
-		printf("External disk is not initialized yet\r\n");
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
 		return -1;
 	}
 	return fread(ptr, size, count, stream);
@@ -245,7 +333,7 @@ size_t extdisk_fread(void *ptr, size_t size, size_t count, FILE *stream)
 size_t extdisk_fwrite(const void *ptr, size_t size, size_t count, FILE *stream)
 {
 	if (!ai_glass_extdisk_done) {
-		printf("External disk is not initialized yet\r\n");
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
 		return -1;
 	}
 	return fwrite(ptr, size, count, stream);
@@ -254,7 +342,7 @@ size_t extdisk_fwrite(const void *ptr, size_t size, size_t count, FILE *stream)
 int extdisk_fseek(FILE *stream, long int offset, int origin)
 {
 	if (!ai_glass_extdisk_done) {
-		printf("External disk is not initialized yet\r\n");
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
 		return -1;
 	}
 	return fseek(stream, offset, origin);
@@ -263,7 +351,7 @@ int extdisk_fseek(FILE *stream, long int offset, int origin)
 int extdisk_ftell(FILE *stream)
 {
 	if (!ai_glass_extdisk_done) {
-		printf("External disk is not initialized yet\r\n");
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
 		return -1;
 	}
 	return ftell(stream);
@@ -272,7 +360,7 @@ int extdisk_ftell(FILE *stream)
 int extdisk_feof(FILE *stream)
 {
 	if (!ai_glass_extdisk_done) {
-		printf("External disk is not initialized yet\r\n");
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
 		return -1;
 	}
 	return feof(stream);
@@ -281,23 +369,35 @@ int extdisk_feof(FILE *stream)
 int extdisk_remove(const char *filename)
 {
 	if (!ai_glass_extdisk_done) {
-		printf("External disk is not initialized yet\r\n");
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
 		return -1;
 	}
 	char ai_glass_path[MAX_FILE_LEN] = {0};
 	snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_extdisk_tag, filename);
-	return remove(ai_glass_path);
+
+	int ret = remove(ai_glass_path);
+
+	if (ret == 0) {
+		if (check_extension(ai_glass_path, ".mp4")) {
+			decrease_file_sys_count(filecount_object, SYS_COUNT_FILM_LABEL);
+		} else if (check_extension(ai_glass_path, ".jpg") || check_extension(ai_glass_path, ".jpeg")) {
+			decrease_file_sys_count(filecount_object, SYS_COUNT_PIC_LABEL);
+		} else if (check_extension(ai_glass_path, ".bin")) {
+			decrease_file_sys_count(filecount_object, SYS_COUNT_SYS_LABEL);
+		}
+	}
+	return ret;
 }
 
 void extdisk_generate_unique_filename(const char *base_name, const char *time_str, const char *extension_name, char *new_name, uint32_t size)
 {
 	if (snprintf(new_name, size, "%s%s", base_name, time_str) >= size) {
-		printf("Error: Filename buffer size too small.\n");
+		FILE_SYS_ERR("Filename buffer size too small.\n");
 		return;
 	}
 
 	if (!ai_glass_extdisk_done) {
-		printf("External disk is not initialized yet\r\n");
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
 		return;
 	}
 	int count = 1;
@@ -306,12 +406,12 @@ void extdisk_generate_unique_filename(const char *base_name, const char *time_st
 
 	while (file_exists(temp_path)) {
 		if (snprintf(new_name, size, "%s%s_%d", base_name, time_str, count) >= size) {
-			printf("Error: Filename buffer size too small.\n");
+			FILE_SYS_ERR("Filename buffer size too small.\n");
 			return;
 		}
 
 		if (snprintf(temp_path, sizeof(temp_path), "%s%s%s", ai_glass_extdisk_tag, new_name, extension_name) >= sizeof(temp_path)) {
-			printf("Error: Path buffer size too small.\n");
+			FILE_SYS_ERR("Path buffer size too small.\n");
 			return;
 		}
 		count++;
@@ -323,7 +423,7 @@ static void extdisk_get_filenum(const char *dir_path, const char **extensions, u
 	DIR *file_dir = NULL;
 	char *filename;
 	dirent *entry;
-	//printf("survey dir: %s\r\n", dir_path);
+	FILE_SYS_INFO("survey dir: %s\r\n", dir_path);
 	uint8_t *sub_dir_path = malloc(PATH_MAX + 1);
 	file_dir = opendir(dir_path);
 
@@ -365,7 +465,7 @@ static void extdisk_get_filenum(const char *dir_path, const char **extensions, u
 void extdisk_count_filenum(const char *dir_path, const char **extensions, uint16_t *ext_counts, uint16_t num_extensions, const char *exclude_filename)
 {
 	if (!ai_glass_extdisk_done) {
-		printf("External disk is not initialized yet\r\n");
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
 		return;
 	}
 	char ai_glass_path[MAX_FILE_LEN] = {0};
@@ -385,16 +485,15 @@ static cJSON *create_json_folder_object(const char *list_path, const char *folde
 	cJSON_AddStringToObject(folder_obj, "type", "folder");
 	cJSON_AddStringToObject(folder_obj, "name", foldername);
 	struct stat finfo = {0};
-	int res;
-	res = stat(list_path, &finfo);
-#if SHOW_LIST_FILE_TIME
+
+	int res = stat(list_path, &finfo);
 	if (res == 0) {
 		show_utc_format_time(finfo.st_mtime);
-		printf("Folder: %s\n", list_path);
+		FILE_SYS_MSG("Folder: %s\n", list_path);
 	} else {
-		printf("Failed to get folder %s info (error: %d)\n", list_path, res);
+		FILE_SYS_WARN("Failed to get folder %s info (error: %d)\n", list_path, res);
 	}
-#endif
+
 	//cJSON_AddNumberToObject(folder_obj, "time", finfo.st_mtime);
 	char utctime_buffer[30] = {0};
 	time_transfer_to_string_utcform(finfo.st_mtime, utctime_buffer, sizeof(utctime_buffer));
@@ -408,19 +507,18 @@ static cJSON *create_json_file_object(const char *list_path, const char *filenam
 	cJSON_AddStringToObject(folder_obj, "type", "file");
 	cJSON_AddStringToObject(folder_obj, "name", filename);
 	struct stat finfo = {0};
-	int res;
 	char *file_path = malloc(PATH_MAX + 1);
 	if (file_path) {
 		snprintf(file_path, PATH_MAX + 1, "%s/%s", list_path, filename);
-		res = stat(file_path, &finfo);
-#if SHOW_LIST_FILE_TIME
+
+		int res = stat(file_path, &finfo);
 		if (res == 0) {
 			show_utc_format_time(finfo.st_mtime);
-			printf("File: %s\n", file_path);
+			FILE_SYS_MSG("File: %s\n", file_path);
 		} else {
-			printf("Failed to get file %s info (error: %d)\n", file_path, res);
+			FILE_SYS_WARN("Failed to get file %s info (error: %d)\n", file_path, res);
 		}
-#endif
+
 		free(file_path);
 	}
 	//cJSON_AddNumberToObject(folder_obj, "time", finfo.st_mtime);
@@ -479,10 +577,10 @@ static cJSON *get_filelist(const char *list_path, const char *folder_name, uint1
 						cJSON_AddItemToArray(contents, file_obj);
 						(*file_number)++;
 					} else {
-						printf("get file %s failed\r\n", entry->d_name);
+						FILE_SYS_WARN("get file %s failed\r\n", entry->d_name);
 					}
 				} else {
-					printf("file %s is not valid\r\n", entry->d_name);
+					FILE_SYS_WARN("file %s is not valid\r\n", entry->d_name);
 				}
 			}
 		}
@@ -501,7 +599,7 @@ endoffun:
 cJSON *extdisk_get_filelist(const char *list_path, uint16_t *file_number, const char **extensions, uint16_t num_extensions, const char *exclude_filename)
 {
 	if (!ai_glass_extdisk_done) {
-		printf("External disk is not initialized yet\r\n");
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
 		return NULL;
 	}
 	char ai_glass_path[MAX_FILE_LEN] = {0};
@@ -515,7 +613,7 @@ cJSON *extdisk_get_filelist(const char *list_path, uint16_t *file_number, const 
 const char *extdisk_get_filesystem_tag_name(void)
 {
 	if (!ai_glass_extdisk_done) {
-		printf("External disk is not initialized yet\r\n");
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
 		return NULL;
 	}
 	char *tag_name = malloc(MAX_TAG_LEN);
@@ -525,15 +623,78 @@ const char *extdisk_get_filesystem_tag_name(void)
 	return tag_name;
 }
 
+#define MAX_GROUP_COUNT 20
+static cJSON *parser_file_cntlist_json(char *filename)
+{
+	cJSON *listobj = NULL;
+	char filelist_json[MAX_JSON_FILELENGTH] = {0};
+	// Means file oject exist in the disk and we can use it directly
+	FILE *file = fopen(filename, "r");
+	int br = 0;
+	if (file) {
+		// close and delete the file after read it
+		br = fread(filelist_json, 1, MAX_JSON_FILELENGTH, file);
+		FILE_SYS_MSG("read %d bytes from filelist json\r\n", br);
+		fclose(file);
+		remove(filename);
+	}
+	listobj = cJSON_Parse(filelist_json);
+	if (!listobj) {
+		FILE_SYS_INFO("parser file cnt list from EMMC failed, Create object by survey all file system\r\n");
+		const char *extensions[] = { ".mp4", ".jpeg", ".jpg", ".bin"};
+		uint16_t num_extensions = sizeof(extensions) / sizeof(extensions[0]);
+		if (num_extensions > 0 && num_extensions <= MAX_GROUP_COUNT) {
+			uint16_t ext_counts[MAX_GROUP_COUNT] = {0};
+			char ai_glass_path[MAX_FILE_LEN] = {0};
+			snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_extdisk_tag, "");
+			extdisk_get_filenum(ai_glass_path, extensions, ext_counts, num_extensions, "ai_snapshot.jpg");
+			uint16_t film_num = ext_counts[0];
+			uint16_t picture_num = ext_counts[1] + ext_counts[2];
+			uint16_t sysfile_num = ext_counts[3];
+			FILE_SYS_MSG("film_num = %d\r\n", film_num);
+			FILE_SYS_MSG("picture_num = %d\r\n", picture_num);
+			FILE_SYS_MSG("sysfile_num = %d\r\n", sysfile_num);
+
+			if ((listobj = cJSON_CreateObject()) != NULL) {
+				cJSON_AddItemToObject(listobj, SYS_COUNT_PIC_LABEL, cJSON_CreateNumber(picture_num));
+				cJSON_AddItemToObject(listobj, SYS_COUNT_FILM_LABEL, cJSON_CreateNumber(film_num));
+				cJSON_AddItemToObject(listobj, SYS_COUNT_SYS_LABEL, cJSON_CreateNumber(sysfile_num));
+			}
+		}
+	} else {
+		FILE_SYS_INFO("get parser file cnt list from EMMC successfully\r\n");
+	}
+	return listobj;
+}
+
+static cJSON *save_file_cntlist_json(cJSON *filelistobj, char *filename)
+{
+	if (filelistobj) {
+		char *filelist_json = cJSON_Print(filelistobj);
+		FILE *file = fopen(filename, "w+");
+		int bw = 0;
+		if (file && filelist_json) {
+			bw = fwrite(filelist_json, 1, strlen(filelist_json), file);
+			FILE_SYS_INFO("write %d bytes for filelist json\r\n", bw);
+			fclose(file);
+		} else {
+			FILE_SYS_WARN("FileList not existed or Create file for saving filelist failed\r\n");
+		}
+	} else {
+		FILE_SYS_WARN("file object not exists\r\n");
+	}
+	return filelistobj;
+}
+
 void ramdisk_generate_unique_filename(const char *base_name, const char *time_str, const char *extension_name, char *new_name, uint32_t size)
 {
 	if (snprintf(new_name, size, "%s%s", base_name, time_str) >= size) {
-		printf("Error: Filename buffer size too small.\n");
+		FILE_SYS_ERR("Filename buffer size too small.\n");
 		return;
 	}
 
 	if (!ai_glass_ramdisk_done) {
-		printf("External disk is not initialized yet\r\n");
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
 		return;
 	}
 	int count = 1;
@@ -542,12 +703,12 @@ void ramdisk_generate_unique_filename(const char *base_name, const char *time_st
 
 	while (file_exists(temp_path)) {
 		if (snprintf(new_name, size, "%s%s_%d", base_name, time_str, count) >= size) {
-			printf("Error: Filename buffer size too small.\n");
+			FILE_SYS_ERR("Filename buffer size too small.\n");
 			return;
 		}
 
 		if (snprintf(temp_path, sizeof(temp_path), "%s%s%s", ai_glass_ramdisk_tag, new_name, extension_name) >= sizeof(temp_path)) {
-			printf("Error: Path buffer size too small.\n");
+			FILE_SYS_ERR("Path buffer size too small.\n");
 			return;
 		}
 		count++;
@@ -557,7 +718,7 @@ void ramdisk_generate_unique_filename(const char *base_name, const char *time_st
 FILE *ramdisk_fopen(const char *filename, const char *mode)
 {
 	if (!ai_glass_ramdisk_done) {
-		printf("Ram disk is not initialized yet\r\n");
+		FILE_SYS_WARN("Ram disk is not initialized yet\r\n");
 		return NULL;
 	}
 	char ai_glass_path[MAX_FILE_LEN] = {0};
@@ -568,7 +729,7 @@ FILE *ramdisk_fopen(const char *filename, const char *mode)
 int ramdisk_fclose(FILE *stream)
 {
 	if (!ai_glass_ramdisk_done) {
-		printf("Ram disk is not initialized yet\r\n");
+		FILE_SYS_WARN("Ram disk is not initialized yet\r\n");
 		return -1;
 	}
 	return fclose(stream);
@@ -577,7 +738,7 @@ int ramdisk_fclose(FILE *stream)
 size_t ramdisk_fread(void *ptr, size_t size, size_t count, FILE *stream)
 {
 	if (!ai_glass_ramdisk_done) {
-		printf("Ram disk is not initialized yet\r\n");
+		FILE_SYS_WARN("Ram disk is not initialized yet\r\n");
 		return -1;
 	}
 	return fread(ptr, size, count, stream);
@@ -586,7 +747,7 @@ size_t ramdisk_fread(void *ptr, size_t size, size_t count, FILE *stream)
 size_t ramdisk_fwrite(const void *ptr, size_t size, size_t count, FILE *stream)
 {
 	if (!ai_glass_ramdisk_done) {
-		printf("Ram disk is not initialized yet\r\n");
+		FILE_SYS_WARN("Ram disk is not initialized yet\r\n");
 		return -1;
 	}
 	return fwrite(ptr, size, count, stream);
@@ -595,7 +756,7 @@ size_t ramdisk_fwrite(const void *ptr, size_t size, size_t count, FILE *stream)
 int ramdisk_fseek(FILE *stream, long int offset, int origin)
 {
 	if (!ai_glass_ramdisk_done) {
-		printf("Ram disk is not initialized yet\r\n");
+		FILE_SYS_WARN("Ram disk is not initialized yet\r\n");
 		return -1;
 	}
 	return fseek(stream, offset, origin);
@@ -604,7 +765,7 @@ int ramdisk_fseek(FILE *stream, long int offset, int origin)
 int ramdisk_ftell(FILE *stream)
 {
 	if (!ai_glass_ramdisk_done) {
-		printf("Ram disk is not initialized yet\r\n");
+		FILE_SYS_WARN("Ram disk is not initialized yet\r\n");
 		return -1;
 	}
 	return ftell(stream);
@@ -613,7 +774,7 @@ int ramdisk_ftell(FILE *stream)
 int ramdisk_feof(FILE *stream)
 {
 	if (!ai_glass_ramdisk_done) {
-		printf("Ram disk is not initialized yet\r\n");
+		FILE_SYS_WARN("Ram disk is not initialized yet\r\n");
 		return -1;
 	}
 	return feof(stream);
@@ -622,7 +783,7 @@ int ramdisk_feof(FILE *stream)
 int ramdisk_remove(const char *filename)
 {
 	if (!ai_glass_ramdisk_done) {
-		printf("Ram disk is not initialized yet\r\n");
+		FILE_SYS_WARN("Ram disk is not initialized yet\r\n");
 		return -1;
 	}
 	char ai_glass_path[MAX_FILE_LEN] = {0};
@@ -643,21 +804,24 @@ int ramdisk_get_init_status(void)
 int extdisk_filesystem_init(const char *disk_tag, int vfs_type, int interface)
 {
 	if (xSemaphoreTake(extdisk_mutex, portMAX_DELAY) != pdTRUE) {
-		printf("Wait for extdisk mutex timeout\r\n");
+		FILE_SYS_ERR("Wait for extdisk mutex timeout\r\n");
 		return -1;
 	}
 	if (ai_glass_extdisk_done) {
-		printf("External disk has been initialized\r\n");
+		FILE_SYS_WARN("External disk has been initialized\r\n");
 		xSemaphoreGive(extdisk_mutex);
 		return -1;
 	}
 	memset(ai_glass_extdisk_tag, 0, MAX_TAG_LEN);
 	snprintf(ai_glass_extdisk_tag, MAX_TAG_LEN, "%s:/", disk_tag);
-	printf("ai glass get extdisk name %s\r\n", ai_glass_extdisk_tag);
-	printf("ai glass extdisk time %d\r\n", mm_read_mediatime_ms());
+	FILE_SYS_MSG("ai glass get extdisk name %s\r\n", ai_glass_extdisk_tag);
+	FILE_SYS_MSG("ai glass extdisk time %lu\r\n", mm_read_mediatime_ms());
 	vfs_user_register(disk_tag, vfs_type, interface); // cost about 100ms for SD card, 150ms for EMMC card
+	char ai_glass_path[MAX_FILE_LEN] = {0};
+	snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_extdisk_tag, SYS_COUNT_FILENAME);
+	filecount_object = parser_file_cntlist_json(ai_glass_path);
 	ai_glass_extdisk_done = 1;
-	printf("ai glass extdisk done time %d\r\n", mm_read_mediatime_ms());
+	FILE_SYS_MSG("ai glass extdisk done time %lu\r\n", mm_read_mediatime_ms());
 	xSemaphoreGive(extdisk_mutex);
 	return 0;
 }
@@ -665,21 +829,36 @@ int extdisk_filesystem_init(const char *disk_tag, int vfs_type, int interface)
 int ramdisk_filesystem_init(const char *disk_tag)
 {
 	if (xSemaphoreTake(ramdisk_mutex, portMAX_DELAY) != pdTRUE) {
-		printf("Wait for ramdisk mutex timeout\r\n");
+		FILE_SYS_ERR("Wait for ramdisk mutex timeout\r\n");
 		return -1;
 	}
 	if (ai_glass_ramdisk_done) {
-		printf("External disk has been initialized\r\n");
+		FILE_SYS_WARN("External disk has been initialized\r\n");
 		xSemaphoreGive(ramdisk_mutex);
 		return -1;
 	}
 	memset(ai_glass_ramdisk_tag, 0, MAX_TAG_LEN);
 	snprintf(ai_glass_ramdisk_tag, MAX_TAG_LEN, "%s:/", disk_tag);
-	printf("ai glass get ramdisk name %s\r\n", ai_glass_ramdisk_tag);
-	printf("ai glass ramdisk time %d\r\n", mm_read_mediatime_ms());
+	FILE_SYS_MSG("ai glass get ramdisk name %s\r\n", ai_glass_ramdisk_tag);
+	FILE_SYS_MSG("ai glass ramdisk time %lu\r\n", mm_read_mediatime_ms());
 	vfs_user_register(disk_tag, VFS_FATFS, VFS_INF_RAM); // cost about 10ms for RAM disk
 	ai_glass_ramdisk_done = 1;
-	printf("ai glass ramdisk done time %d\r\n", mm_read_mediatime_ms());
+	FILE_SYS_MSG("ai glass ramdisk done time %lu\r\n", mm_read_mediatime_ms());
 	xSemaphoreGive(ramdisk_mutex);
+	return 0;
+}
+
+int extdisk_save_file_cntlist(void)
+{
+	if (!ai_glass_extdisk_done) {
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
+		return 0;
+	}
+	char ai_glass_path[MAX_FILE_LEN] = {0};
+	if (filecount_object) {
+		snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_extdisk_tag, SYS_COUNT_FILENAME);
+		filecount_object = save_file_cntlist_json(filecount_object, ai_glass_path);
+	}
+
 	return 0;
 }

@@ -714,18 +714,18 @@ error:
 
 void *vipnn_allocate_videomemory(size_t size)
 {
-	extern vip_status_e gcvip_user_allocate_videomemory(vip_uint8_t **logical,
-			void **handle, vip_uint32_t *physical, vip_uint32_t size,
-			vip_uint32_t align,	vip_uint32_t alloc_flag);
+	extern vip_status_e viphal_allocate_videomemory(vip_uint8_t **logical,
+			vip_uint32_t *mem_id, vip_address_t *physical, vip_uint32_t size,
+			vip_uint32_t align, vip_uint32_t alloc_flag);
 	uint8_t *logical = VIP_NULL;
-	unsigned int physical = 0;
-	void *handle = VIP_NULL;
+	vip_address_t physical = 0;
+	vip_uint32_t mem_id;
 	vip_status_e status = VIP_SUCCESS;
-	status = gcvip_user_allocate_videomemory(&logical, &handle, &physical,
-			 size + VIPNN_MEMORY_ALIGN_SIZE, VIPNN_MEMORY_ALIGN_SIZE,
-			 0x01);  //GCVIP_VIDEO_MEM_ALLOC_CONTIGUOUS
-	ONERROR(status, "error: gcvip_user_allocate_videomemory fail.", error);
-	*(uint32_t *)logical = (uint32_t)handle;
+	status = viphal_allocate_videomemory(&logical, &mem_id, &physical,
+										 size + VIPNN_MEMORY_ALIGN_SIZE, VIPNN_MEMORY_ALIGN_SIZE,
+										 0x008 | 0x080);  //VIPDRV_VIDEO_MEM_ALLOC_CONTIGUOUS | VIPDRV_VIDEO_MEM_ALLOC_NO_MMU_PAGE
+	ONERROR(status, "error: viphal_allocate_videomemory fail.", error);
+	*(uint32_t *)logical = mem_id;
 	return (void *)((uint8_t *)logical + VIPNN_MEMORY_ALIGN_SIZE);
 
 error:
@@ -734,13 +734,13 @@ error:
 
 void vipnn_free_videomemory(void *ptr)
 {
-	extern vip_status_e gcvip_user_free_videomemory(void *handle);
+	extern vip_status_e viphal_free_videomemory(vip_uint32_t mem_id);
 	uint8_t *logical = (uint8_t *)ptr - VIPNN_MEMORY_ALIGN_SIZE;
-	void *handle = (void *)(*(uint32_t *)logical);
+	vip_uint32_t mem_id = *(uint32_t *)logical;
 	vip_status_e status = VIP_SUCCESS;
-	status = gcvip_user_free_videomemory(handle);
+	status = viphal_free_videomemory(mem_id);
 	if (status != VIP_SUCCESS) {
-		dprintf(LOG_ERR, "error: gcvip_user_free_videomemory fail.\r\n");
+		printf("error: gcvip_user_free_videomemory fail.\r\n");
 	}
 }
 
@@ -907,7 +907,7 @@ int vipnn_deoply_network(void *p)
 	} else if (ctx->params.model->model_src == MODEL_SRC_FILE) {
 		int nb_size = 0;
 		CHK_MSG(vipnn_load_model(ctx->params.model, &nb_size) == 0, vipnn_deploy_error, "error: load model fail\r\n");
-		status = vip_create_network(ctx->params.model->model_content, nb_size, VIP_CREATE_NETWORK_FROM_FLASH, &ctx->network);
+		status = vip_create_network(&ctx->params.model->model_content, nb_size, VIP_CREATE_NETWORK_FROM_FLASH, &ctx->network);
 	} else {
 		CHK_MSG(false, vipnn_deploy_error, "error: unsupported model source type\r\n");
 	}

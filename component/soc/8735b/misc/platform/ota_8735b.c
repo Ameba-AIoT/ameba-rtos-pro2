@@ -1647,3 +1647,135 @@ update_ota_exit:
 	return ret;
 }
 #endif
+
+#ifdef EXT_STORAGE_OTA_UPDATE
+
+int ext_storage_update_ota(char *filename)
+{
+	printf("\n\r[%s] Starting SD card OTA update\n\r", __FUNCTION__);
+
+	int ret = -1;
+	FILE *my_file = NULL;
+	uint8_t *buf = NULL;
+	uint64_t file_size = 0;
+	uint32_t buf_size = 0;
+	uint32_t idx = 0;
+	uint32_t total_blocks = 0;
+	uint32_t cur_block = 0;
+	int boot_sel = 0;
+	uint8_t cur_fw_idx = 0;
+	uint8_t target_fw_idx = 0;
+	_file_checksum file_checksum;
+	file_checksum.u = 0;
+
+	// Determine boot selection
+	boot_sel = sys_get_boot_sel();
+	if (boot_sel == 0) {
+		buf_size = NOR_BLOCK_SIZE;
+	} else if (boot_sel == 1) {
+		buf_size = NAND_BLOCK_SIZE;
+	}
+
+	buf = update_malloc(buf_size);
+	if (!buf) {
+		printf("\n\r[%s] Failed to allocate buffer\n\r", __FUNCTION__);
+		goto update_ota_exit;
+	}
+
+	// Open the file using fopen
+	printf("\n\r[%s] Opening file: %s\n\r", __FUNCTION__, filename);
+	my_file = fopen(filename, "rb");
+	if (!my_file) {
+		printf("\n\r[%s] Failed to open file: %s\n\r", __FUNCTION__, filename);
+		goto update_ota_exit;
+	}
+
+	printf("\n\r[%s] File opened successfully\n\r", __FUNCTION__);
+
+	// Get file size
+	fseek(my_file, 0, SEEK_END);
+	file_size = ftell(my_file);
+	if (file_size == -1) {
+		printf("[%s] Error getting file size\n", __FUNCTION__);
+	} else {
+		printf("[%s] Detected file size: %llu bytes\n", __FUNCTION__, file_size);
+	}
+	fseek(my_file, 0, SEEK_SET);
+	printf("\n\r[%s] File size: %llu\n\r", __FUNCTION__, file_size);
+
+	// Determine current firmware index
+	cur_fw_idx = hal_sys_get_ld_fw_idx();
+	printf("\n\r[%s] Current firmware index is %d\n\r", __FUNCTION__, cur_fw_idx);
+
+	if (cur_fw_idx == 1) {
+		target_fw_idx = OTA_FW2;
+	} else if (cur_fw_idx == 2) {
+		target_fw_idx = OTA_FW1;
+	} else {
+		goto update_ota_exit;
+	}
+
+	total_blocks = (file_size + buf_size - 1) / buf_size;
+
+	// Start reading and updating firmware
+	printf("\n\r[%s] Start OTA update\n\r", __FUNCTION__);
+	while (idx < file_size) {
+		uint32_t rest_len = file_size - idx;
+		uint32_t data_len = rest_len > buf_size ? buf_size : rest_len;
+
+		memset(buf, 0, buf_size);
+		size_t bytes_read = fread(buf, 1, data_len, my_file);
+		if (bytes_read != data_len && bytes_read != 0) {
+			printf("\n\r[%s] Insufficient data or read error\n\r", __FUNCTION__);
+			goto update_ota_exit;
+		}
+
+		// check when file size and read size is equal, and current bytes_read is 0, -4 checksum
+		if ((idx == (file_size - 4)) && (bytes_read == 0)) {
+			printf("\n\r[%s] OTA update completed successfully\n\r", __FUNCTION__);
+			ret = 0;
+			goto update_ota_exit;
+		}
+		printf("[Firmware updating] ==============================  updating: %d / %llu Bytes\n", idx, file_size);
+
+#if USE_CHECKSUM
+		if ((idx + data_len) > (file_size - 4)) {
+			file_checksum.c[0] = buf[data_len - 4];
+			file_checksum.c[1] = buf[data_len - 3];
+			file_checksum.c[2] = buf[data_len - 2];
+			file_checksum.c[3] = buf[data_len - 1];
+		}
+#endif
+
+		cur_block = idx / buf_size;
+		if (cur_block == (total_blocks - 1)) {
+			data_len -= 4; // Remove checksum bytes
+			memset(buf + data_len, 0xFF, buf_size - data_len);
+		}
+
+		if (boot_sel == 0) {
+			ret = ota_flash_NOR(target_fw_idx, total_blocks, cur_block, buf, data_len, file_checksum);
+		} else if (boot_sel == 1) {
+			ret = ota_flash_NAND(target_fw_idx, total_blocks, cur_block, buf, data_len, file_checksum);
+		}
+
+		if (ret < 0) {
+			printf("\n\r[%s] OTA flash failed\n\r", __FUNCTION__);
+			goto update_ota_exit;
+		}
+
+		idx += data_len;
+	}
+
+update_ota_exit:
+	if (buf) {
+		update_free(buf);
+	}
+	if (my_file) {
+		fclose(my_file);
+	}
+
+	return ret;
+}
+
+#endif

@@ -2,6 +2,7 @@
 #define _VIDEO_BOOT_H_
 
 #include <stdint.h>
+#include <stddef.h>
 #include "fw_img_export.h"
 
 #define BOOTLOADER_VOE_LOG_EN   0
@@ -153,7 +154,7 @@ typedef struct  {
 //Please don't change the structure sequence because the data structure is shared by lib boot.
 typedef struct video_boot_stream_cfg {
 	video_boot_params_t video_params[VIDEO_MAX_NUM];
-	fcs_rate_ctrl_t auto_rate_control[2];
+	fcs_rate_ctrl_t bps_stbl_ctrl_params[2];
 	isp_boot_info_t isp_info;
 	uint32_t voe_heap_addr;
 	uint32_t voe_heap_size;
@@ -185,10 +186,6 @@ typedef struct video_boot_stream_cfg {
 	uint8_t  fcs_user_buffer[FCS_USER_REV_SIZE];//User can use the buffer to transfer to application
 	uint32_t fcs_start_time;//bootloader to fcs user boot function
 	uint32_t fcs_voe_time;//bootloader to voe init function
-	video_boot_params_t extra_video_params;
-	uint8_t extra_video_enable;
-	uint8_t extra_video_snapshot;
-	uint8_t extra_video_drop_frame;
 	video_boot_private_mask_t private_mask;
 	uint32_t meta_enable;//
 	uint32_t meta_size;//enalbe the meta size for
@@ -200,7 +197,19 @@ typedef struct video_boot_stream_cfg {
 	uint32_t extra_fcs_meta_extend_total_size;
 	uint32_t voe_scale_up_en;
 	video_boot_roi_t voe_scale_up_roi;
+	video_boot_params_t extra_video_params;
+	uint8_t extra_video_enable;
+	uint8_t extra_video_snapshot;
+	uint8_t extra_video_drop_frame;
 } video_boot_stream_t;
+
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+    _Static_assert(offsetof(video_boot_stream_t, voe_scale_up_roi) == 1688, "error: wrong offset of voe_scale_up_roi");
+    _Static_assert(offsetof(video_boot_stream_t, extra_video_drop_frame) == 1814, "error: wrong offset of extra_video_drop_frame");
+#else
+    typedef char static_assertion_failed[(offsetof(video_boot_stream_t, voe_scale_up_roi) == 1688) ? 1 : -1];
+    typedef char static_assertion_failed[(offsetof(video_boot_stream_t, extra_video_drop_frame) == 1814) ? 1 : -1];
+#endif
 
 void video_boot_setup_slot_num(int stream_id, int slot_number);
 #endif

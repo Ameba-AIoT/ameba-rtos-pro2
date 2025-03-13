@@ -59,6 +59,7 @@ list(
 	${prj_root}/src/test_model/mel_spectrogram.c
 	${prj_root}/src/test_model/model_palm_detection.c
 	${prj_root}/src/test_model/model_hand_landmark.c
+	${prj_root}/src/test_model/model_mobilenetv2.c
 )
 
 #NN utils
@@ -151,6 +152,8 @@ list(
 	${prj_root}/src/${viplite}/hal/inc
 	${prj_root}/src/${viplite}/hal/user
 	${prj_root}/src/${viplite}/hal/user/freeRTOS
+	${prj_root}/src/${viplite}/include
+	${prj_root}/src/${viplite}/include/nbg_linker
 )
 
 list(

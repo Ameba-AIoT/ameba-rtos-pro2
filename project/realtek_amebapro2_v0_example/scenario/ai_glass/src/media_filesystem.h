@@ -7,6 +7,10 @@
 #include "vfs.h"
 #include "time.h"
 
+#define SYS_COUNT_PIC_LABEL         "picture"
+#define SYS_COUNT_FILM_LABEL        "film"
+#define SYS_COUNT_SYS_LABEL         "sysfile"
+
 enum {
 	DIR_OPEN_FAIL   = -1,
 	MEDIA_FILE_OK   = 0,
@@ -31,6 +35,8 @@ int extdisk_ftell(FILE *stream);
 int extdisk_feof(FILE *stream);
 int extdisk_remove(const char *filename);
 void extdisk_generate_unique_filename(const char *base_name, const char *time_str, const char *extension_name, char *new_name, uint32_t size);
+int extdisk_get_filecount(const char *count_label);
+int extdisk_save_file_cntlist(void);
 
 void extdisk_count_filenum(const char *dir_path, const char **extensions, uint16_t *ext_counts, uint16_t num_extensions, const char *exclude_filename);
 cJSON *extdisk_get_filelist(const char *list_path, uint16_t *file_number, const char **extensions, uint16_t num_extensions, const char *exclude_filename);
@@ -46,4 +52,6 @@ int media_filesystem_init(void);
 const char *media_filesystem_get_current_time_string(void);
 time_t media_filesystem_gpstime_to_time_t(uint32_t gps_week, uint32_t gps_seconds);
 void media_filesystem_setup_gpstime(uint32_t gps_week, uint32_t gps_seconds);
+int media_filesystem_setup_gpscoordinate(float latitude, float longitude, float altitude);
+void media_filesystem_get_gpscoordinate(float *latitude, float *longitude, float *altitude);
 #endif

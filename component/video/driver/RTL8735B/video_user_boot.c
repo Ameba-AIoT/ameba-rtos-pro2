@@ -50,7 +50,7 @@ video_boot_stream_t video_boot_stream = {
 		.use_static_addr = 0,
 		.fcs = 1 //Enable the fcs for channel 0
 	},
-	.auto_rate_control[STREAM_V1] = {
+	.bps_stbl_ctrl_params[STREAM_V1] = {
 		.sampling_time = sensor_params[USE_SENSOR].sensor_fps,
 		.maximun_bitrate = 2 * 1024 * 1024 * 1.2,
 		.minimum_bitrate = 2 * 1024 * 1024 * 0.8,
@@ -80,7 +80,7 @@ video_boot_stream_t video_boot_stream = {
 		.use_static_addr = 0,
 		.fcs = 0,
 	},
-	.auto_rate_control[STREAM_V2] = {
+	.bps_stbl_ctrl_params[STREAM_V2] = {
 		.sampling_time = 0,
 		.maximun_bitrate = 0,
 		.minimum_bitrate = 0,

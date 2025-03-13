@@ -58,7 +58,9 @@ typedef enum {
 	UART_OPC_CMD_DELETE_ALL_FILES   = 0x8410,
 	UART_OPC_CMD_GET_SD_INFO        = 0x8411,
 	UART_OPC_CMD_SET_WIFI_MODE      = 0x8412,
-	UART_OPC_CMD_MAX                = 0x8412, // define the max value of opcode command
+	UART_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW        = 0x8413,
+	UART_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW_ACK    = 0x8414,
+	UART_OPC_CMD_MAX                = 0x8414, // define the max value of opcode command
 } uart_cmd_e;
 
 #define UART_UART_CMD_COUNT (UART_OPC_CMD_MAX - UART_OPC_CMD_MIN + 1)
@@ -81,7 +83,12 @@ typedef enum {
      (value) == UART_OPC_CMD_DELETE_FILE || \
      (value) == UART_OPC_CMD_DELETE_ALL_FILES || \
      (value) == UART_OPC_CMD_SET_WIFI_MODE || \
-     (value) == UART_OPC_CMD_GET_SD_INFO)
+     (value) == UART_OPC_CMD_GET_SD_INFO || \
+     (value) == UART_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW || \
+     (value) == UART_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW_ACK)
+
+#define IS_NO_ACK_UART_CMD(value) \
+    ((value) == UART_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW_ACK)
 
 #if 0
 #define IS_CRITICAL_UART_CMD(value) \
@@ -97,8 +104,7 @@ typedef enum {
      (value) == UART_OPC_CMD_GET_POWER_STATE || \
      (value) == UART_OPC_CMD_TRANS_PIC_STOP || \
      (value) == UART_OPC_CMD_RECORD_SYNC_TS || \
-     (value) == UART_OPC_CMD_RECORD_STOP || \
-     (value) == UART_OPC_CMD_GET_SD_INFO)
+     (value) == UART_OPC_CMD_RECORD_STOP)
 #endif
 
 // Uart Opcode Response
@@ -124,7 +130,8 @@ typedef enum {
 	UART_OPC_RESP_DELETE_ALL_FILES  = 0x8410,
 	UART_OPC_RESP_GET_SD_INFO       = 0x8411,
 	UART_OPC_RESP_SET_WIFI_MODE     = 0x8412,
-	UART_OPC_RESP_MAX               = 0x8412, // define the max value of opcode response
+	UART_OPC_RESP_GET_PICTURE_DATA_SLIDING_WINDOW   = 0x8413,
+	UART_OPC_RESP_MAX                               = 0x8413, // define the max value of opcode response
 } uart_resp_e;
 
 #define UART_UART_RESP_COUNT (UART_OPC_RESP_MAX - UART_OPC_RESP_MIN + 1)
@@ -148,7 +155,8 @@ typedef enum {
      (value) == UART_OPC_RESP_DELETE_FILE || \
      (value) == UART_OPC_RESP_DELETE_ALL_FILES || \
      (value) == UART_OPC_RESP_SET_WIFI_MODE || \
-     (value) == UART_OPC_RESP_GET_SD_INFO)
+     (value) == UART_OPC_RESP_GET_SD_INFO || \
+     (value) == UART_OPC_RESP_GET_PICTURE_DATA_SLIDING_WINDOW)
 
 // ai glass status with bt
 typedef enum {
@@ -236,6 +244,8 @@ extern uint8_t uart_wifi_ic_type;
 int uart_service_rx_cmd_reg(uint16_t uart_information, Callback_t uart_cmd_fun);
 int uart_service_init(PinName tx, PinName rx, int baudrate);
 int uart_service_start(int send_power_start);
-int uart_send_packet(uint16_t resp_opcode, uart_params_t *params_head, int timeout);
+int uart_send_packet(uint16_t resp_opcode, uart_params_t *params_head, bool ignore_ack, int timeout);
+void uart_service_poweroff(void);
+void uart_service_deinit(void);
 
 #endif //#ifndef __UART_SERVICE_H__

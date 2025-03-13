@@ -1112,6 +1112,17 @@ int wifi_set_channel_plan(u8 channel_plan)
 	return rltk_wlan_set_channel_plan(channel_plan);
 }
 
+void wifi_set_active_keepalive_enabled(u8 active_keepalive_enabled)
+{
+	wifi_user_config.active_keepalive_enabled = active_keepalive_enabled;
+}
+
+extern void get_wpa_global_PMK(unsigned char *key);
+void wifi_get_wpa_global_PMK(unsigned char *key)
+{
+	get_wpa_global_PMK(key);
+}
+
 int wifi_connection_abort(void)
 {
 	extern int rtw_wx_connection_abort(void);

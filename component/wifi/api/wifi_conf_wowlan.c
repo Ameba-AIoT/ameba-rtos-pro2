@@ -614,6 +614,111 @@ int wifi_set_tcp_keep_alive_offload(int socket_fd, uint8_t *content, size_t len,
 
 #endif
 
+#ifdef CONFIG_WOWLAN_ICMP_REPLY_OFFLOAD
+extern void rtw_set_retention_icmp_ip(uint8_t *peer_ip);
+extern int rtw_get_retention_icmp_ip(uint8_t *retention_ip);
+void wifi_set_connectivity_ip(void)
+{
+	int ret = 0;
+
+	char server_name[] = "connectivitycheck.gstatic.com";
+	struct hostent *server_host;
+	uint8_t server_addrs[4] = {0};
+	uint8_t default_server_addrs[4] = {8, 8, 8, 8};
+	uint8_t *peer_ip = (uint8_t *) server_addrs;
+
+	server_host = gethostbyname(server_name);
+	if (server_host) {
+		//printf("[wifi_set_connectivity_offload] Get host ip success\n");
+		memcpy(server_addrs, server_host->h_addr, 4);
+		peer_ip = (uint8_t *) server_addrs;
+		rtw_set_retention_icmp_ip(peer_ip);
+	}
+}
+
+int wifi_set_connectivity_offload(uint32_t interval_s, uint32_t timeout_s)
+{
+	int ret = 0;
+
+	struct hostent *server_host;
+	uint8_t server_addrs[4] = {0};
+	uint8_t default_server_addrs[4] = {8, 8, 8, 8};
+	uint8_t *peer_ip = (uint8_t *) server_addrs;
+
+
+	//printf("[wifi_set_connectivity_offload] server_host == NULL\n\r");
+	if (rtw_get_retention_icmp_ip(peer_ip) == 0) {
+		peer_ip = (uint8_t *) default_server_addrs;
+	}
+
+	//printf("[wifi_set_connectivity_offload] %d.%d.%d.%d\n\r",peer_ip[0],peer_ip[1],peer_ip[2],peer_ip[3]);
+
+	uint8_t eth_mac[6] = {0};
+	ip4_addr_t *dst_ip, *dst_ip_ret = NULL;
+	uint8_t *mask = LwIP_GetMASK(0);
+	uint8_t *temp_ip = LwIP_GetIP(0);
+	dst_ip = (ip4_addr_t *) peer_ip;
+	if (!ip4_addr_netcmp(dst_ip, (ip4_addr_t *)temp_ip, (ip4_addr_t *)mask)) {
+		//outside local network
+		dst_ip = (ip4_addr_t *) LwIP_GetGW(0);
+	}
+
+	// dhcp addr
+	ip4_addr_t *dhcp_dst_ip, *dhcp_dst_ip_ret = NULL;
+	dhcp_dst_ip = (ip4_addr_t *) LwIP_GetDHCPSERVER(0);
+	int retry_cnt = 0;
+	if (LwIP_etharp_find_addr(0, dhcp_dst_ip, &dhcp_dst_eth_ret, (const ip4_addr_t **)&dhcp_dst_ip_ret) >= 0) {
+		//memcpy(eth_header, dhcp_dst_eth_ret->addr, ETH_ALEN);
+		//dbg_printf("[wifi_set_connectivity_offload] (1) "MAC_FMT", retry_cnt: %d\n\r",MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);
+	} else {
+		LwIP_etharp_request(0, dhcp_dst_ip);
+
+		vTaskDelay(10);
+		while (LwIP_etharp_find_addr(0, dhcp_dst_ip, &dhcp_dst_eth_ret, (const ip4_addr_t **)&dhcp_dst_ip_ret) < 0) {
+			LwIP_etharp_request(0, dhcp_dst_ip);
+			vTaskDelay(10);
+			retry_cnt++;
+			if (retry_cnt > 200) {
+				break;
+			}
+		}
+		//dbg_printf("[wifi_set_connectivity_offload] (2) "MAC_FMT", retry_cnt: %d\n\r",MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);
+		// if (retry_cnt < 500) {
+		// memcpy(eth_header, dhcp_dst_eth_ret->addr, ETH_ALEN);
+		// }
+	}
+
+	// dst addr
+	static struct eth_addr *dst_eth_ret = NULL;
+	if (LwIP_etharp_find_addr(0, dst_ip, &dst_eth_ret, (const ip4_addr_t **)&dst_ip_ret) >= 0) {
+		memcpy(eth_mac, dst_eth_ret->addr, ETH_ALEN);
+	} else {
+		LwIP_etharp_request(0, dst_ip);
+		int retry_cnt = 0;
+		vTaskDelay(10);
+		while (LwIP_etharp_find_addr(0, dst_ip, &dst_eth_ret, (const ip4_addr_t **)&dst_ip_ret) < 0) {
+			LwIP_etharp_request(0, dst_ip);
+			vTaskDelay(10);
+			retry_cnt++;
+			if (retry_cnt > 200) {
+				break;
+			}
+		}
+
+		if (retry_cnt < 200) {
+			memcpy(eth_mac, dst_eth_ret->addr, ETH_ALEN);
+		}
+	}
+
+#ifdef CONFIG_ARP_KEEP_ALIVE
+	rtw_set_arp_rsp_keep_alive(RTW_TRUE, (uint8_t *)dhcp_dst_ip);
+#endif
+
+	extern void rtw_set_icmp_request(uint8_t *peer_ip, uint8_t *eth_mac, uint32_t interval_s, uint32_t timeout_s);
+	rtw_set_icmp_request(peer_ip, eth_mac, interval_s, timeout_s);
+	return ret;
+}
+#endif
 #ifdef CONFIG_WOWLAN_NTP_OFFLOAD
 int wifi_set_ntp_offload(char *server_names[], uint8_t num_servers, uint32_t update_delay_ms)
 {
@@ -864,12 +969,32 @@ int wifi_wowlan_set_bcn_track(u8  start_window,
 
 #ifdef CONFIG_WOWLAN_PNO
 extern void rtw_set_pno_scan_ssid(u8 *ssid,
-								  u8   ssid_len);
+								  u8  ssid_len,
+								  u8  cur_ch,
+								  u8  *ch_list,
+								  u8  ch_list_len);
 int wifi_wowlan_set_pno_scan_ssid(u8 *ssid,
-								  u8   ssid_len)
+								  u8  ssid_len,
+								  u8  cur_ch,
+								  u8  *ch_list,
+								  u8  ch_list_len)
 {
 	int ret = 0;
-	rtw_set_pno_scan_ssid(ssid, ssid_len);
+	rtw_set_pno_scan_ssid(ssid, ssid_len, cur_ch, ch_list, ch_list_len);
+	return ret;
+}
+
+extern void rtw_set_pno_another_band_scan_ssid(u8 *ssid,
+		u8  ssid_len,
+		u8  *ch_list,
+		u8  ch_list_len);
+int wifi_wowlan_set_pno_another_band_scan_ssid(u8 *ssid,
+		u8  ssid_len,
+		u8  *ch_list,
+		u8  ch_list_len)
+{
+	int ret = 0;
+	rtw_set_pno_another_band_scan_ssid(ssid, ssid_len, ch_list, ch_list_len);
 	return ret;
 }
 

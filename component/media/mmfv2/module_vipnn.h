@@ -331,7 +331,7 @@ typedef struct face_feature_res_s {
 typedef struct yamnet_res_s {
 	int clsid;
 	float prob;
-} yamnet_res_t;
+} yamnet_res_t, classification_res_t;
 
 typedef struct palmdetect_res_s {
 	union {

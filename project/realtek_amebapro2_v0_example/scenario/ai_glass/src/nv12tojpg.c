@@ -134,6 +134,7 @@ static void img_nv12_resize_bilinear(img_t *im_in, img_t *im_out)
 		oy = tmpy >> 8;
 		y = tmpy & 0xFF;
 		tmpx = 0;
+		int y_inverse_factor = 0x100 - y;
 
 		if ((j & 1) == 0) {
 			dst_uv_yScanline = dst_uv + (j / 2) * im_out->width;
@@ -144,6 +145,7 @@ static void img_nv12_resize_bilinear(img_t *im_in, img_t *im_out)
 
 			ox = tmpx >> 8;
 			x = tmpx & 0xFF;
+			int x_inverse_factor = 0x100 - x;
 
 			offsetY = oy * im_in->width;
 			//Y use bilinear
@@ -152,9 +154,9 @@ static void img_nv12_resize_bilinear(img_t *im_in, img_t *im_out)
 			y_plane_color[0][1] = src_y[offsetY + im_in->width + ox];
 			y_plane_color[1][1] = src_y[offsetY + im_in->width + ox + 1];
 
-			y_final = (0x100 - x) * (0x100 - y) * y_plane_color[0][0]
-					  + x * (0x100 - y) * y_plane_color[1][0]
-					  + (0x100 - x) * y * y_plane_color[0][1]
+			y_final = x_inverse_factor * y_inverse_factor * y_plane_color[0][0]
+					  + x * y_inverse_factor * y_plane_color[1][0]
+					  + x_inverse_factor * y * y_plane_color[0][1]
 					  + x * y * y_plane_color[1][1];
 			y_final = y_final >> 16;
 			LIMIT(y_final, 0, 255);

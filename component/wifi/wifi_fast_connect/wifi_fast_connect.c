@@ -216,7 +216,7 @@ void wifi_set_pno_reconnect_channel(uint8_t channel)
 	pno_wr_channel = channel;
 }
 
-void wifi_get_pno_disconnect_params(char *ssid, uint8_t *ssid_len)
+void wifi_get_pno_disconnect_params(char *ssid, uint8_t *ssid_len, uint8_t *channel)
 {
 	struct wlan_fast_reconnect *data = (struct wlan_fast_reconnect *)malloc(sizeof(struct wlan_fast_reconnect));
 	if (data) {
@@ -239,6 +239,7 @@ void wifi_get_pno_disconnect_params(char *ssid, uint8_t *ssid_len)
 
 		strcpy(ssid, (char *)(data->psk_essid));
 		*ssid_len = strlen((char *)(data->psk_essid));
+		*channel = data->channel & 0xFF;
 		free(data);
 	} else {
 		printf("[FAST_CONNECT] malloc buf fail\n");

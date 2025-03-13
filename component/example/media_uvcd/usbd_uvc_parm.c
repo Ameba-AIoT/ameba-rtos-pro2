@@ -34,7 +34,7 @@ struct uvc_format_uncompressed uvc_format_yuy2 = {
 	.bLength		= UVC_DT_FORMAT_UNCOMPRESSED_SIZE,
 	.bDescriptorType	= USB_DT_CS_INTERFACE,
 	.bDescriptorSubType	= UVC_VS_FORMAT_UNCOMPRESSED,
-	.bFormatIndex		= 1,
+	.bFormatIndex		= (FORMAT_TYPE_YUY2 + 1),
 	.bNumFrameDescriptors	= 1,
 	.guidFormat		=
 	{
@@ -53,7 +53,7 @@ struct uvc_format_uncompressed uvc_format_nv12 = {
 	.bLength		= UVC_DT_FORMAT_UNCOMPRESSED_SIZE,
 	.bDescriptorType	= USB_DT_CS_INTERFACE,
 	.bDescriptorSubType	= UVC_VS_FORMAT_UNCOMPRESSED,
-	.bFormatIndex		= 2,
+	.bFormatIndex		= (FORMAT_TYPE_NV12 + 1),
 	.bNumFrameDescriptors	= 1,
 	.guidFormat		=
 	{
@@ -72,7 +72,7 @@ struct uvc_format_mjpeg uvc_format_mjpg = {
 	.bLength		= UVC_DT_FORMAT_MJPEG_SIZE,
 	.bDescriptorType	= USB_DT_CS_INTERFACE,
 	.bDescriptorSubType	= UVC_VS_FORMAT_MJPEG,
-	.bFormatIndex		= 3,
+	.bFormatIndex		= (FORMAT_TYPE_MJPEG + 1),
 	.bNumFrameDescriptors	= 1,
 	.bmFlags		= 1,
 	.bDefaultFrameIndex	= 1,
@@ -86,7 +86,7 @@ struct uvc_format_framebased uvc_format_h264 = {
 	.bLength		= UVC_DT_FORMAT_FRAMEBASED_SIZE,
 	.bDescriptorType	= USB_DT_CS_INTERFACE,
 	.bDescriptorSubType	= UVC_VS_FORMAT_FRAME_BASED,
-	.bFormatIndex		= 4,
+	.bFormatIndex		= (FORMAT_TYPE_H264 + 1),
 	.bNumFrameDescriptors	= 1,
 	.guidFormat		=
 	{
@@ -106,7 +106,7 @@ struct uvc_format_framebased uvc_format_h265 = {
 	.bLength		= UVC_DT_FORMAT_FRAMEBASED_SIZE,
 	.bDescriptorType	= USB_DT_CS_INTERFACE,
 	.bDescriptorSubType	= UVC_VS_FORMAT_FRAME_BASED,
-	.bFormatIndex		= 5,
+	.bFormatIndex		= (FORMAT_TYPE_H265 + 1),
 	.bNumFrameDescriptors	= 1,
 	.guidFormat		=
 	{
@@ -545,19 +545,9 @@ struct uvc_frame_info uvc_frames_nv12[] = {
 };
 
 struct uvc_format_info uvc_formats[] = {
-#if UVCD_YUY2
 	{ FORMAT_TYPE_YUY2, uvc_frames_yuy2 },
-#endif
-#if UVCD_NV12
 	{ FORMAT_TYPE_NV12, uvc_frames_nv12 },
-#endif
-#if UVCD_MJPG
 	{ FORMAT_TYPE_MJPEG, uvc_frames_mjpeg },
-#endif
-#if UVCD_H264
 	{ FORMAT_TYPE_H264, uvc_frames_h264 },
-#endif
-#if UVCD_H265
 	{ FORMAT_TYPE_H265, uvc_frames_h265 },
-#endif
 };

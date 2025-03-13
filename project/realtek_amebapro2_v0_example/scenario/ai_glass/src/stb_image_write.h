@@ -153,6 +153,9 @@ LICENSE
 
 #include <stdlib.h>
 #include "media_filesystem.h"
+#include <stdint.h>
+// Add by RTK, use float or use fixed point for function - stbi_write_jpg_core_from_nv12
+#define USE_Q16_15  1
 
 // if STB_IMAGE_WRITE_STATIC causes problems, try defining STBIWDEF to 'inline' or 'static inline'
 #ifndef STBIWDEF
@@ -1392,6 +1395,83 @@ static void stbiw__jpg_writeBits(stbi__write_context *s, int *bitBufP, int *bitC
 	*bitCntP = bitCnt;
 }
 
+typedef int32_t q16_15_t;
+#define SHIFT_Qx_15                 15
+#define FACTOR_Qx_15                (1 << 15)
+#define ROUNDING_OFFSET_Qx_15       (1 << (SHIFT_Qx_15 - 1))
+#define UINT8_TO_Q16_15(x)          ((q16_15_t)((x) << SHIFT_Qx_15))
+#define FLOAT_TO_Q16_15(x)          ((q16_15_t)((x) * FACTOR_Qx_15 + 0.5))
+#define Q16_15_TO_FLOAT(x)          ((x) / (float)FACTOR_Qx_15)
+#define Q16_15_TO_INT32(x)          ((x) >> SHIFT_Qx_15)
+
+#define ZERO_Q16_15                 FLOAT_TO_Q16_15(0.0f) // 0.0f
+#define P5_Q16_15                   FLOAT_TO_Q16_15(0.5f) // 0.5f
+#define N1_Q16_15                   FLOAT_TO_Q16_15(1.0f) // 1.0f
+#define N128_Q16_15                 FLOAT_TO_Q16_15(128.0f) // 128.0f
+#define Q16_15_TO_INT32_ROUNDED(x)  (int32_t)(((x) < 0) ? (((x - P5_Q16_15 - 1) >> SHIFT_Qx_15) + 1) : ((x + P5_Q16_15) >> SHIFT_Qx_15))
+
+#define MULTIPLY_Q16_15(a, b)       (((int64_t)(a) * (int64_t)(b)) >> SHIFT_Qx_15)
+#define EQUAL_TO_INT_ZERO_Q16_15(x) ((((x) >> SHIFT_Qx_15) == 0) && ((x) & 0xFFFF) != 0)
+
+#define C4_Q16_15      FLOAT_TO_Q16_15(0.707106781f) // c4
+#define C6_Q16_15      FLOAT_TO_Q16_15(0.382683433f) // c6
+
+#define C7_Q16_15      FLOAT_TO_Q16_15(0.541196100f) // c2 - c6
+#define C8_Q16_15      FLOAT_TO_Q16_15(1.306562965f) // c2 + c6
+
+
+static void stbiw__jpg_DCT_Q16_15(q16_15_t *d0p, q16_15_t *d1p, q16_15_t *d2p, q16_15_t *d3p,
+								  q16_15_t *d4p, q16_15_t *d5p, q16_15_t *d6p, q16_15_t *d7p)
+{
+	q16_15_t d0 = *d0p, d1 = *d1p, d2 = *d2p, d3 = *d3p, d4 = *d4p, d5 = *d5p, d6 = *d6p, d7 = *d7p;
+	q16_15_t z1, z2, z3, z4, z5, z11, z13;
+
+	q16_15_t tmp0 = d0 + d7;
+	q16_15_t tmp7 = d0 - d7;
+	q16_15_t tmp1 = d1 + d6;
+	q16_15_t tmp6 = d1 - d6;
+	q16_15_t tmp2 = d2 + d5;
+	q16_15_t tmp5 = d2 - d5;
+	q16_15_t tmp3 = d3 + d4;
+	q16_15_t tmp4 = d3 - d4;
+
+	// Even part
+	q16_15_t tmp10 = tmp0 + tmp3;
+	q16_15_t tmp13 = tmp0 - tmp3;
+	q16_15_t tmp11 = tmp1 + tmp2;
+	q16_15_t tmp12 = tmp1 - tmp2;
+
+	d0 = tmp10 + tmp11;
+	d4 = tmp10 - tmp11;
+
+	z1 = MULTIPLY_Q16_15((tmp12 + tmp13), C4_Q16_15);
+	d2 = tmp13 + z1;
+	d6 = tmp13 - z1;
+
+	// Odd part
+	tmp10 = tmp4 + tmp5;
+	tmp11 = tmp5 + tmp6;
+	tmp12 = tmp6 + tmp7;
+
+	z5 = MULTIPLY_Q16_15((tmp10 - tmp12), C6_Q16_15);
+	z2 = MULTIPLY_Q16_15(tmp10, C7_Q16_15) + z5;
+	z4 = MULTIPLY_Q16_15(tmp12, C8_Q16_15) + z5;
+	z3 = MULTIPLY_Q16_15(tmp11, C4_Q16_15);
+
+	z11 = tmp7 + z3;
+	z13 = tmp7 - z3;
+
+	*d5p = z13 + z2;
+	*d3p = z13 - z2;
+	*d1p = z11 + z4;
+	*d7p = z11 - z4;
+
+	*d0p = d0;
+	*d2p = d2;
+	*d4p = d4;
+	*d6p = d6;
+}
+
 static void stbiw__jpg_DCT(float *d0p, float *d1p, float *d2p, float *d3p, float *d4p, float *d5p, float *d6p, float *d7p)
 {
 	float d0 = *d0p, d1 = *d1p, d2 = *d2p, d3 = *d3p, d4 = *d4p, d5 = *d5p, d6 = *d6p, d7 = *d7p;
@@ -1455,6 +1535,81 @@ static void stbiw__jpg_calcBits(int val, unsigned short bits[2])
 	bits[0] = val & ((1 << bits[1]) - 1);
 }
 
+static int stbiw__jpg_processDU_Q16_15(stbi__write_context *s, int *bitBuf, int *bitCnt, q16_15_t *CDU, int du_stride, q16_15_t *fdtbl, int DC,
+									   const unsigned short HTDC[256][2], const unsigned short HTAC[256][2])
+{
+	const unsigned short EOB[2] = { HTAC[0x00][0], HTAC[0x00][1] };
+	const unsigned short M16zeroes[2] = { HTAC[0xF0][0], HTAC[0xF0][1] };
+	int dataOff, i, j, n, end0pos, x, y;
+	q16_15_t DU[64];
+	// DCT rows
+	for (dataOff = 0, n = du_stride * 8; dataOff < n; dataOff += du_stride) {
+		stbiw__jpg_DCT_Q16_15(&CDU[dataOff], &CDU[dataOff + 1], &CDU[dataOff + 2], &CDU[dataOff + 3], &CDU[dataOff + 4], &CDU[dataOff + 5], &CDU[dataOff + 6],
+							  &CDU[dataOff + 7]);
+	}
+	// DCT columns
+	for (dataOff = 0; dataOff < 8; ++dataOff) {
+		stbiw__jpg_DCT_Q16_15(&CDU[dataOff], &CDU[dataOff + du_stride], &CDU[dataOff + du_stride * 2], &CDU[dataOff + du_stride * 3], &CDU[dataOff + du_stride * 4],
+							  &CDU[dataOff + du_stride * 5], &CDU[dataOff + du_stride * 6], &CDU[dataOff + du_stride * 7]);
+	}
+	// Quantize/descale/zigzag the coefficients
+	for (y = 0, j = 0; y < 8; ++y) {
+		int y_stride = y * du_stride;
+		for (x = 0; x < 8; ++x, ++j) {
+			q16_15_t v;
+			i = y_stride + x;
+
+			v = MULTIPLY_Q16_15(CDU[i], fdtbl[j]);
+			// Todo: Use Q16_15_TO_INT to replace Q16_15_TO_FLOAT
+			DU[stbiw__jpg_ZigZag[j]] = Q16_15_TO_INT32_ROUNDED(v);
+			//DU[stbiw__jpg_ZigZag[j]] = (int)Q16_15_TO_FLOAT((v < ZERO_Q16_15) ? (v - P5_Q16_15) : (v + P5_Q16_15));
+		}
+	}
+
+	// Encode DC
+	int diff = DU[0] - DC;
+	if (diff == 0) {
+		stbiw__jpg_writeBits(s, bitBuf, bitCnt, HTDC[0]);
+	} else {
+		unsigned short bits[2];
+		stbiw__jpg_calcBits(diff, bits);
+		stbiw__jpg_writeBits(s, bitBuf, bitCnt, HTDC[bits[1]]);
+		stbiw__jpg_writeBits(s, bitBuf, bitCnt, bits);
+	}
+	// Encode ACs
+	end0pos = 63;
+	for (; (end0pos > 0) && (DU[end0pos] == 0); --end0pos) {
+	}
+	// end0pos = first element in reverse order !=0
+	if (end0pos == 0) {
+		stbiw__jpg_writeBits(s, bitBuf, bitCnt, EOB);
+		return DU[0];
+	}
+	for (i = 1; i <= end0pos; ++i) {
+		int startpos = i;
+		int nrzeroes;
+		unsigned short bits[2];
+		for (; DU[i] == 0 && i <= end0pos; ++i) {
+		}
+		nrzeroes = i - startpos;
+		if (nrzeroes >= 16) {
+			int lng = nrzeroes >> 4;
+			int nrmarker;
+			for (nrmarker = 1; nrmarker <= lng; ++nrmarker) {
+				stbiw__jpg_writeBits(s, bitBuf, bitCnt, M16zeroes);
+			}
+			nrzeroes &= 15;
+		}
+		stbiw__jpg_calcBits(DU[i], bits);
+		stbiw__jpg_writeBits(s, bitBuf, bitCnt, HTAC[(nrzeroes << 4) + bits[1]]);
+		stbiw__jpg_writeBits(s, bitBuf, bitCnt, bits);
+	}
+	if (end0pos != 63) {
+		stbiw__jpg_writeBits(s, bitBuf, bitCnt, EOB);
+	}
+	return DU[0];
+}
+
 static int stbiw__jpg_processDU(stbi__write_context *s, int *bitBuf, int *bitCnt, float *CDU, int du_stride, float *fdtbl, int DC,
 								const unsigned short HTDC[256][2], const unsigned short HTAC[256][2])
 {
@@ -1462,7 +1617,6 @@ static int stbiw__jpg_processDU(stbi__write_context *s, int *bitBuf, int *bitCnt
 	const unsigned short M16zeroes[2] = { HTAC[0xF0][0], HTAC[0xF0][1] };
 	int dataOff, i, j, n, diff, end0pos, x, y;
 	int DU[64];
-
 	// DCT rows
 	for (dataOff = 0, n = du_stride * 8; dataOff < n; dataOff += du_stride) {
 		stbiw__jpg_DCT(&CDU[dataOff], &CDU[dataOff + 1], &CDU[dataOff + 2], &CDU[dataOff + 3], &CDU[dataOff + 4], &CDU[dataOff + 5], &CDU[dataOff + 6],
@@ -1484,7 +1638,6 @@ static int stbiw__jpg_processDU(stbi__write_context *s, int *bitBuf, int *bitCnt
 			DU[stbiw__jpg_ZigZag[j]] = (int)(v < 0 ? v - 0.5f : v + 0.5f);
 		}
 	}
-
 	// Encode DC
 	diff = DU[0] - DC;
 	if (diff == 0) {
@@ -2238,8 +2391,6 @@ static int stbi_write_jpg_core_from_nv12(stbi__write_context *s, int width, int 
 {
 
 	int row, col, i, k, subsample;
-	float fdtbl_Y[YTable_SIZE], fdtbl_UV[UVTable_SIZE];
-	unsigned char YTable[YTable_SIZE], UVTable[UVTable_SIZE];
 
 	if (!data || !width || !height || comp > 4 || comp < 1) {
 		return 0;
@@ -2250,6 +2401,27 @@ static int stbi_write_jpg_core_from_nv12(stbi__write_context *s, int width, int 
 	quality = quality < 1 ? 1 : quality > 100 ? 100 : quality;
 	quality = quality < 50 ? 5000 / quality : 200 - quality * 2;
 
+#if USE_Q16_15
+	unsigned char YTable[YTable_SIZE], UVTable[UVTable_SIZE];
+	q16_15_t fdtbl_Y[YTable_SIZE], fdtbl_UV[UVTable_SIZE];
+	//printf("USE USE_Q16_15\r\n");
+	for (i = 0; i < YTable_SIZE; ++i) {
+		int uvti, yti = (YQT[i] * quality + 50) / 100;
+		YTable[stbiw__jpg_ZigZag[i]] = (unsigned char)(yti < 1 ? 1 : yti > 255 ? 255 : yti);
+		uvti = (UVQT[i] * quality + 50) / 100;
+		UVTable[stbiw__jpg_ZigZag[i]] = (unsigned char)(uvti < 1 ? 1 : uvti > 255 ? 255 : uvti);
+	}
+
+	for (row = 0, k = 0; row < 8; ++row) {
+		for (col = 0; col < 8; ++col, ++k) {
+			fdtbl_Y[k]  = FLOAT_TO_Q16_15(1.0f / (YTable [stbiw__jpg_ZigZag[k]] * aasf[row] * aasf[col]));
+			fdtbl_UV[k] = FLOAT_TO_Q16_15(1.0f / (UVTable[stbiw__jpg_ZigZag[k]] * aasf[row] * aasf[col]));
+		}
+	}
+#else
+	unsigned char YTable[YTable_SIZE], UVTable[UVTable_SIZE];
+	float fdtbl_Y[YTable_SIZE], fdtbl_UV[UVTable_SIZE];
+	//printf("USE float\r\n");
 	for (i = 0; i < YTable_SIZE; ++i) {
 		int uvti, yti = (YQT[i] * quality + 50) / 100;
 		YTable[stbiw__jpg_ZigZag[i]] = (unsigned char)(yti < 1 ? 1 : yti > 255 ? 255 : yti);
@@ -2263,6 +2435,7 @@ static int stbi_write_jpg_core_from_nv12(stbi__write_context *s, int width, int 
 			fdtbl_UV[k] = 1 / (UVTable[stbiw__jpg_ZigZag[k]] * aasf[row] * aasf[col]);
 		}
 	}
+#endif
 
 	// Write Headers
 	stbi_write_header(s, width, height, subsample, YTable, UVTable);
@@ -2281,73 +2454,130 @@ static int stbi_write_jpg_core_from_nv12(stbi__write_context *s, int width, int 
 		unsigned char *dataUV = (unsigned char *)data + width * height;
 
 		int x, y, pos;
+		int uv_width = width / 2;
 		if (subsample) {
 			for (y = 0; y < height; y += 16) {
 				for (x = 0; x < width; x += 16) {
-					float Y[256], U[256], V[256];
-					for (row = y, pos = 0; row < y + 16; ++row) {
-						// row >= height => use last input row
-						int clamped_row = (row < height) ? row : height - 1;
-						int base_p = (stbi__flip_vertically_on_write ? (height - 1 - clamped_row) : clamped_row) * width * comp;
-						for (col = x; col < x + 16; ++ col, ++ pos) {
-							// if col >= width => use pixel from last input column
-							int p = base_p + ((col < width) ? col : (width - 1)) * comp;
-							//float r = dataR[p], g = dataG[p], b = dataB[p];
-							// RTK modify
-							uint8_t dataU = 0;
-							uint8_t dataV = 0;
-							nv12_to_uv44_value(dataUV, width, height, p, &dataU, &dataV);
-							Y[pos] = dataY[p] - 128; //+0.29900f*r + 0.58700f*g + 0.11400f*b - 128;
-							U[pos] = dataU - 128; //-0.16874f*r - 0.33126f*g + 0.50000f*b;
-							V[pos] = dataV - 128; //+0.50000f*r - 0.41869f*g - 0.08131f*b;
+#if USE_Q16_15
+					q16_15_t Y[256];
+					q16_15_t subU[UVTable_SIZE], subV[UVTable_SIZE];
+#else
+					float Y[256];
+					float subU[UVTable_SIZE], subV[UVTable_SIZE];
+#endif
+					int row_limit = y + 16;
+					int col_limit = x + 16;
+
+					for (int yy = y, pos = 0, subPos = 0; yy < row_limit; yy += 2) {
+						int clamped_row = (yy < height) ? yy : height - 1;
+						int flipped_row = stbi__flip_vertically_on_write ? (height - 1 - clamped_row) : clamped_row;
+						int base_p = flipped_row * width * comp;
+
+						for (int xx = x; xx < col_limit; xx += 2, pos += 4, ++subPos) {
+							int clamped_col = (xx < width) ? xx : (width - 1);
+
+							// Expand Y components
+							int p00 = base_p + clamped_col * comp;
+							int p01 = base_p + ((clamped_col + 1) < width ? (clamped_col + 1) : (width - 1)) * comp;
+							int p10 = base_p + clamped_col * comp + width * comp;
+							int p11 = base_p + ((clamped_col + 1) < width ? (clamped_col + 1) : (width - 1)) * comp + width * comp;
+#if USE_Q16_15
+							Y[pos] = UINT8_TO_Q16_15(dataY[p00]) - N128_Q16_15;
+							Y[pos + 1] = UINT8_TO_Q16_15(dataY[p01]) - N128_Q16_15;
+							Y[pos + 2] = UINT8_TO_Q16_15(dataY[p10]) - N128_Q16_15;
+							Y[pos + 3] = UINT8_TO_Q16_15(dataY[p11]) - N128_Q16_15;
+#else
+							Y[pos] = dataY[p00] - 128;
+							Y[pos + 1] = dataY[p01] - 128;
+							Y[pos + 2] = dataY[p10] - 128;
+							Y[pos + 3] = dataY[p11] - 128;
+#endif
+							// UV components averaging
+							int uv_x = clamped_col / 2;
+							int uv_y = clamped_row / 2;
+							int uv_offset = (uv_y * uv_width + uv_x) * 2;
+#if USE_Q16_15
+							subU[subPos] = (((q16_15_t)UINT8_TO_Q16_15(dataUV[uv_offset]) + (q16_15_t)UINT8_TO_Q16_15(dataUV[uv_offset + 2]) + (q16_15_t)UINT8_TO_Q16_15(
+												 dataUV[uv_offset + uv_width * 2]) + (q16_15_t)UINT8_TO_Q16_15(dataUV[uv_offset + uv_width * 2 + 2])) >> 2) - N128_Q16_15;
+							subV[subPos] = (((q16_15_t)UINT8_TO_Q16_15(dataUV[uv_offset + 1]) + (q16_15_t)UINT8_TO_Q16_15(dataUV[uv_offset + 3]) + (q16_15_t)UINT8_TO_Q16_15(
+												 dataUV[uv_offset + uv_width * 2 + 1]) + (q16_15_t)UINT8_TO_Q16_15(dataUV[uv_offset + uv_width * 2 + 3])) >> 2) - N128_Q16_15;
+#else
+							subU[subPos] = (dataUV[uv_offset] + dataUV[uv_offset + 2] +
+											dataUV[uv_offset + uv_width * 2] + dataUV[uv_offset + uv_width * 2 + 2]) * 0.25f - 128;
+							subV[subPos] = (dataUV[uv_offset + 1] + dataUV[uv_offset + 3] +
+											dataUV[uv_offset + uv_width * 2 + 1] + dataUV[uv_offset + uv_width * 2 + 3]) * 0.25f - 128;
+#endif
 						}
 					}
+#if USE_Q16_15
+					DCY = stbiw__jpg_processDU_Q16_15(s, &bitBuf, &bitCnt, Y + 0,   16, fdtbl_Y, DCY, YDC_HT, YAC_HT);
+					DCY = stbiw__jpg_processDU_Q16_15(s, &bitBuf, &bitCnt, Y + 8,   16, fdtbl_Y, DCY, YDC_HT, YAC_HT);
+					DCY = stbiw__jpg_processDU_Q16_15(s, &bitBuf, &bitCnt, Y + 128, 16, fdtbl_Y, DCY, YDC_HT, YAC_HT);
+					DCY = stbiw__jpg_processDU_Q16_15(s, &bitBuf, &bitCnt, Y + 136, 16, fdtbl_Y, DCY, YDC_HT, YAC_HT);
+					DCU = stbiw__jpg_processDU_Q16_15(s, &bitBuf, &bitCnt, subU, 8, fdtbl_UV, DCU, UVDC_HT, UVAC_HT);
+					DCV = stbiw__jpg_processDU_Q16_15(s, &bitBuf, &bitCnt, subV, 8, fdtbl_UV, DCV, UVDC_HT, UVAC_HT);
+#else
 					DCY = stbiw__jpg_processDU(s, &bitBuf, &bitCnt, Y + 0,   16, fdtbl_Y, DCY, YDC_HT, YAC_HT);
 					DCY = stbiw__jpg_processDU(s, &bitBuf, &bitCnt, Y + 8,   16, fdtbl_Y, DCY, YDC_HT, YAC_HT);
 					DCY = stbiw__jpg_processDU(s, &bitBuf, &bitCnt, Y + 128, 16, fdtbl_Y, DCY, YDC_HT, YAC_HT);
 					DCY = stbiw__jpg_processDU(s, &bitBuf, &bitCnt, Y + 136, 16, fdtbl_Y, DCY, YDC_HT, YAC_HT);
-
-					// subsample U,V
-					{
-						float subU[UVTable_SIZE], subV[UVTable_SIZE];
-						int yy, xx;
-						for (yy = 0, pos = 0; yy < 8; ++yy) {
-							for (xx = 0; xx < 8; ++xx, ++pos) {
-								int j = yy * 32 + xx * 2;
-								subU[pos] = (U[j + 0] + U[j + 1] + U[j + 16] + U[j + 17]) * 0.25f;
-								subV[pos] = (V[j + 0] + V[j + 1] + V[j + 16] + V[j + 17]) * 0.25f;
-							}
-						}
-						DCU = stbiw__jpg_processDU(s, &bitBuf, &bitCnt, subU, 8, fdtbl_UV, DCU, UVDC_HT, UVAC_HT);
-						DCV = stbiw__jpg_processDU(s, &bitBuf, &bitCnt, subV, 8, fdtbl_UV, DCV, UVDC_HT, UVAC_HT);
-					}
+					DCU = stbiw__jpg_processDU(s, &bitBuf, &bitCnt, subU, 8, fdtbl_UV, DCU, UVDC_HT, UVAC_HT);
+					DCV = stbiw__jpg_processDU(s, &bitBuf, &bitCnt, subV, 8, fdtbl_UV, DCV, UVDC_HT, UVAC_HT);
+#endif
 				}
 			}
 		} else {
 			for (y = 0; y < height; y += 8) {
 				for (x = 0; x < width; x += 8) {
+#if USE_Q16_15
+					q16_15_t Y[YTable_SIZE], U[UVTable_SIZE], V[UVTable_SIZE];
+#else
 					float Y[YTable_SIZE], U[UVTable_SIZE], V[UVTable_SIZE];
-					for (row = y, pos = 0; row < y + 8; ++row) {
-						// row >= height => use last input row
+#endif
+					int row_limit = y + 8;
+					int col_limit = x + 8;
+
+					for (int row = y, pos = 0; row < row_limit; ++row) {
+						// Clamp row to not exceed height
 						int clamped_row = (row < height) ? row : height - 1;
-						int base_p = (stbi__flip_vertically_on_write ? (height - 1 - clamped_row) : clamped_row) * width * comp;
-						for (col = x; col < x + 8; ++col, ++pos) {
-							// if col >= width => use pixel from last input column
-							int p = base_p + ((col < width) ? col : (width - 1)) * comp;
-							// float r = dataR[p], g = dataG[p], b = dataB[p];
-							// RTK modify
-							uint8_t dataU = 0;
-							uint8_t dataV = 0;
-							nv12_to_uv44_value(dataUV, width, height, p, &dataU, &dataV);
-							Y[pos] = dataY[p] - 128; //+0.29900f*r + 0.58700f*g + 0.11400f*b - 128;
-							U[pos] = dataU - 128; //-0.16874f*r - 0.33126f*g + 0.50000f*b;
-							V[pos] = dataV - 128; //+0.50000f*r - 0.41869f*g - 0.08131f*b;
+						int flipped_row = stbi__flip_vertically_on_write ? (height - 1 - clamped_row) : clamped_row;
+						int base_p = flipped_row * width * comp;
+
+						for (int col = x; col < col_limit; ++col, ++pos) {
+							// Clamp column to not exceed width
+							int clamped_col = (col < width) ? col : (width - 1);
+							int p = base_p + clamped_col * comp;
+
+							// Directly access and store Y component
+#if USE_Q16_15
+							Y[pos] = FLOAT_TO_Q16_15(dataY[p] - 128.0f);
+#else
+							Y[pos] = dataY[p] - 128;
+#endif
+							// Compute UV coordinates for pixel p
+							int uv_x = clamped_col / 2;
+							int uv_y = clamped_row / 2;
+							int uv_offset = (uv_y * uv_width + uv_x) * 2;
+
+							// Access and store U and V components
+#if USE_Q16_15
+							U[pos] = FLOAT_TO_Q16_15(dataUV[uv_offset] - 128.0f);
+							V[pos] = FLOAT_TO_Q16_15(dataUV[uv_offset + 1] - 128.0f);
+#else
+							U[pos] = dataUV[uv_offset] - 128;
+							V[pos] = dataUV[uv_offset + 1] - 128;
+#endif
 						}
 					}
-
+#if USE_Q16_15
+					DCY = stbiw__jpg_processDU_Q16_15(s, &bitBuf, &bitCnt, Y, 8, fdtbl_Y,  DCY, YDC_HT, YAC_HT);
+					DCU = stbiw__jpg_processDU_Q16_15(s, &bitBuf, &bitCnt, U, 8, fdtbl_UV, DCU, UVDC_HT, UVAC_HT);
+					DCV = stbiw__jpg_processDU_Q16_15(s, &bitBuf, &bitCnt, V, 8, fdtbl_UV, DCV, UVDC_HT, UVAC_HT);
+#else
 					DCY = stbiw__jpg_processDU(s, &bitBuf, &bitCnt, Y, 8, fdtbl_Y,  DCY, YDC_HT, YAC_HT);
 					DCU = stbiw__jpg_processDU(s, &bitBuf, &bitCnt, U, 8, fdtbl_UV, DCU, UVDC_HT, UVAC_HT);
 					DCV = stbiw__jpg_processDU(s, &bitBuf, &bitCnt, V, 8, fdtbl_UV, DCV, UVDC_HT, UVAC_HT);
+#endif
 				}
 			}
 		}

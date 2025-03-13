@@ -43,7 +43,6 @@
 
 int framecnt = 0;
 int jpegcnt = 0;
-int incb[5] = {0, 0, 0, 0, 0};
 int enc_queue_cnt[5] = {0, 0, 0, 0, 0};
 int ch1framecnt = 0;
 int ch2framecnt = 0;
@@ -66,7 +65,6 @@ static int flash_sensor_id = -1;
 static isp_info_t info;
 
 #define CH_NUM 5
-#define RATE_CTRL_DEBOUNCE	1
 static int show_fps = 0;
 static int ch_fps_cnt[CH_NUM]   = {0};
 static int cb_tick[CH_NUM]   = {0};
@@ -84,106 +82,6 @@ int video_get_cb_fps(int chn)
 		chn = 0;
 	}
 	return ch_fps[chn];
-}
-
-static int video_rate_control_check_fps(int fps)
-{
-	int isp_max_fps = 0;
-	isp_get_max_fps(&isp_max_fps);
-	if (isp_max_fps > 0 && isp_max_fps < fps) {
-		return isp_max_fps;
-	}
-	// Since the min fps of VOE is not related to the isp min fps, user only needs to prevent the fps is 0
-	if (fps <= 0) {
-		return 1;
-	}
-	return fps;
-}
-void video_rate_control_process(video_ctx_t *ctx)
-{
-	int fps = 0;
-	int gop = 0;
-	static int switch_fps_up[2] = {0, 0};
-	static int switch_fps_down[2] = {0, 0};
-	float mul = (float) ctx->params.gop / ctx->rate_ctrl_p.ori_framerate;
-	rate_ctrl_s rc_ctrl;
-
-	if (ctx->rate_ctrl_p.sample_bitrate > (ctx->rate_ctrl_p.rate_ctrl.maximun_bitrate * mul)) {
-		if ((0 <= ctx->rate_ctrl_p.fps_stage_idx) && (ctx->rate_ctrl_p.fps_stage_idx <= 2)) {
-			switch_fps_down[ctx->params.stream_id]++;
-			if (switch_fps_down[ctx->params.stream_id] == RATE_CTRL_DEBOUNCE) {
-				ctx->rate_ctrl_p.fps_stage_idx++;
-				fps = video_rate_control_check_fps(ctx->rate_ctrl_p.fps_stage[ctx->rate_ctrl_p.fps_stage_idx - 1]);
-				ctx->rate_ctrl_p.current_framerate = fps;
-				ctx->rate_ctrl_p.rate_ctrl.sampling_time = gop = fps * mul;
-				VIDEO_DBG_INFO("\r\nch = %d sample rate = %ld	maximun bitrate = %ld	fps = %d\r\n",
-							   ctx->params.stream_id, ctx->rate_ctrl_p.sample_bitrate, ctx->rate_ctrl_p.rate_ctrl.maximun_bitrate, fps);
-				memset(&rc_ctrl, 0, sizeof(rate_ctrl_s));
-				rc_ctrl.fps = fps;
-				rc_ctrl.gop = gop;
-				video_ctrl(ctx->params.stream_id, VIDEO_RC_CTRL, (int)&rc_ctrl);
-				switch_fps_down[ctx->params.stream_id] = 0;
-			}
-		}
-	} else if (ctx->rate_ctrl_p.sample_bitrate < (ctx->rate_ctrl_p.rate_ctrl.minimum_bitrate * mul)) {
-		if ((1 <= ctx->rate_ctrl_p.fps_stage_idx) && (ctx->rate_ctrl_p.fps_stage_idx <= 3)) {
-			switch_fps_up[ctx->params.stream_id]++;
-			if (switch_fps_up[ctx->params.stream_id] == RATE_CTRL_DEBOUNCE) {
-				ctx->rate_ctrl_p.fps_stage_idx--;
-				if (ctx->rate_ctrl_p.fps_stage_idx) {
-					fps = video_rate_control_check_fps(ctx->rate_ctrl_p.fps_stage[ctx->rate_ctrl_p.fps_stage_idx - 1]);
-				} else {
-					fps = video_rate_control_check_fps(ctx->rate_ctrl_p.ori_framerate);
-				}
-				ctx->rate_ctrl_p.current_framerate = fps;
-				ctx->rate_ctrl_p.rate_ctrl.sampling_time = gop = fps * mul;
-				VIDEO_DBG_INFO("\r\nch = %d sample rate = %ld	minimum bitrate = %ld	fps = %d\r\n",
-							   ctx->params.stream_id, ctx->rate_ctrl_p.sample_bitrate, ctx->rate_ctrl_p.rate_ctrl.minimum_bitrate, fps);
-				memset(&rc_ctrl, 0, sizeof(rate_ctrl_s));
-				rc_ctrl.fps = fps;
-				rc_ctrl.gop = gop;
-				video_ctrl(ctx->params.stream_id, VIDEO_RC_CTRL, (int)&rc_ctrl);
-				switch_fps_up[ctx->params.stream_id] = 0;
-			}
-		}
-	} else {
-		switch_fps_up[ctx->params.stream_id] = 0;
-		switch_fps_down[ctx->params.stream_id] = 0;
-	}
-}
-
-void video_rate_control_moniter_sample_rate(video_ctx_t *ctx, uint32_t frame_size)
-{
-	static uint32_t cnt_sr[2] = {0, 0};
-	static uint32_t cnt_br[2] = {0, 0};
-	static uint32_t sum_sr[2] = {0, 0};
-	static uint32_t sum_br[2] = {0, 0};
-
-	if (frame_size > 0) {
-		cnt_br[ctx->params.stream_id]++;
-		sum_br[ctx->params.stream_id] += frame_size;
-		if (ctx->rate_ctrl_p.rate_ctrl_en) {
-			cnt_sr[ctx->params.stream_id]++;
-			sum_sr[ctx->params.stream_id] += frame_size;
-			if (cnt_sr[ctx->params.stream_id] >= ctx->rate_ctrl_p.rate_ctrl.sampling_time) {
-				ctx->rate_ctrl_p.sample_bitrate = sum_sr[ctx->params.stream_id] * 8;
-				sum_sr[ctx->params.stream_id] = 0;
-				cnt_sr[ctx->params.stream_id] = 0;
-				video_rate_control_process(ctx);
-			}
-			if (cnt_br[ctx->params.stream_id] >= ctx->rate_ctrl_p.current_framerate) {
-				ctx->rate_ctrl_p.current_bitrate = sum_br[ctx->params.stream_id] * 8;
-				sum_br[ctx->params.stream_id] = 0;
-				cnt_br[ctx->params.stream_id] = 0;
-			}
-		} else {
-			if (cnt_br[ctx->params.stream_id] >= ctx->rate_ctrl_p.current_framerate) {
-				ctx->rate_ctrl_p.current_bitrate = sum_br[ctx->params.stream_id] * 8;
-				sum_br[ctx->params.stream_id] = 0;
-				cnt_br[ctx->params.stream_id] = 0;
-			}
-		}
-	}
 }
 
 isp_statis_meta_t _meta;
@@ -243,11 +141,23 @@ void video_ch4_delay_release(int ch4_release_fail_add)
 	}
 }
 
+static void video_bps_cal(int ch, video_bps_stats_t *bps_stats, uint32_t frame_size)
+{
+	rate_ctrl_s cur_rc;
+	video_ctrl(ch, VIDEO_GET_RC_CTRL, (int)&cur_rc);
+	//calculate bitrate
+	bps_stats->cnt_br++;
+	bps_stats->sum_br += frame_size;
+	if (bps_stats->cnt_br >= cur_rc.fps) {
+		bps_stats->cur_bps = bps_stats->sum_br * 8;
+		bps_stats->sum_br = 0;
+		bps_stats->cnt_br = 0;
+	}
+}
+
 void video_frame_complete_cb(void *param1, void  *param2, uint32_t arg)
 {
-
 	enc2out_t *enc2out = (enc2out_t *)param1;
-	incb[enc2out->ch] = 1;
 	hal_video_adapter_t  *v_adp = (hal_video_adapter_t *)param2;
 	commandLine_s *cml = (commandLine_s *)&v_adp->cmd[enc2out->ch];
 	video_ctx_t *ctx = (video_ctx_t *)arg;
@@ -346,7 +256,6 @@ void video_frame_complete_cb(void *param1, void  *param2, uint32_t arg)
 			VIDEO_DBG_ERROR("Error CH%d VOE cmd %x status %x\n", enc2out->ch, enc2out->cmd, enc2out->cmd_status);
 			break;
 		}
-		incb[enc2out->ch] = 0;
 		return;
 	}
 
@@ -420,11 +329,11 @@ void video_frame_complete_cb(void *param1, void  *param2, uint32_t arg)
 			if (enc2out->codec == CODEC_H264) {
 				output_item->type = AV_CODEC_ID_H264;
 				output_item->size = enc2out->enc_len;
-				video_rate_control_moniter_sample_rate(ctx, output_item->size);
+				video_bps_cal(enc2out->ch, &(ctx->bps_stats), output_item->size);
 			} else if (enc2out->codec == CODEC_HEVC) {
 				output_item->type = AV_CODEC_ID_H265;
 				output_item->size = enc2out->enc_len;
-				video_rate_control_moniter_sample_rate(ctx, output_item->size);
+				video_bps_cal(enc2out->ch, &(ctx->bps_stats), output_item->size);
 			} else if (enc2out->codec == CODEC_RGB) {
 				output_item->type = AV_CODEC_ID_RGB888;
 				output_item->size = enc2out->width * enc2out->height * 3;
@@ -604,7 +513,6 @@ show_log:
 	if (enc2out->finish == LAST_FRAME) {
 
 	}
-	incb[enc2out->ch] = 0;
 }
 
 int video_control(void *p, int cmd, int arg)
@@ -612,17 +520,16 @@ int video_control(void *p, int cmd, int arg)
 	video_ctx_t *ctx = (video_ctx_t *)p;
 	mm_context_t *mctx = (mm_context_t *)ctx->parent;
 	mm_queue_item_t *tmp_item;
+	int ch = ctx->params.stream_id;
 	int ret = 0;
 	switch (cmd) {
 	case CMD_VIDEO_SET_PARAMS:
 		memcpy(&ctx->params, (void *)arg, sizeof(video_params_t));
-		ctx->rate_ctrl_p.current_framerate = ctx->params.fps;
 		break;
 	case CMD_VIDEO_GET_PARAMS:
 		memcpy((void *)arg, &ctx->params, sizeof(video_params_t));
 		break;
 	case CMD_VIDEO_SET_RCPARAM: {
-		int ch = ctx->params.stream_id;
 		ret = video_ctrl(ch, VIDEO_SET_RCPARAM, arg);
 	}
 	break;
@@ -630,14 +537,9 @@ int video_control(void *p, int cmd, int arg)
 		ctx->params.stream_id = arg;
 		break;
 	case CMD_VIDEO_STREAM_STOP: {
-		int ch = ctx->params.stream_id;
 		if (video_get_stream_info(ch) == 0) {
 			VIDEO_DBG_WARNING("CH %d already close\r\n", ch);
 			return OK;
-		}
-
-		while (incb[ch]) {
-			vTaskDelay(1);
 		}
 
 		if (enc_queue_cnt[ch] > 0) {
@@ -646,8 +548,7 @@ int video_control(void *p, int cmd, int arg)
 		}
 		enc_queue_cnt[ch] = 0;
 		vTaskDelay(10);
-		ctx->rate_ctrl_p.rate_ctrl_en = 0;
-
+		memset(&(ctx->meta_data), 0, sizeof(video_meta_t));
 		ret = video_close(ch);
 
 		//video deinit after all video close, takes 50ms
@@ -659,39 +560,31 @@ int video_control(void *p, int cmd, int arg)
 	}
 	break;
 	case CMD_VIDEO_FORCE_IFRAME: {
-		int ch = ctx->params.stream_id;
 		ret = video_ctrl(ch, VIDEO_FORCE_IFRAME, arg);
 		ch_forcei[ch] = 1;
 	}
 	break;
 	case CMD_VIDEO_BPS: {
-		int ch = ctx->params.stream_id;
 		ret = video_ctrl(ch, VIDEO_BPS, arg);
 	}
 	break;
 	case CMD_VIDEO_GOP: {
-		int ch = ctx->params.stream_id;
 		ret = video_ctrl(ch, VIDEO_GOP, arg);
 	}
 	break;
 	case CMD_VIDEO_FPS: {
-		int ch = ctx->params.stream_id;
 		ret = video_ctrl(ch, VIDEO_FPS, arg);
-		ctx->rate_ctrl_p.current_framerate = arg;
 	}
 	break;
 	case CMD_VIDEO_ISPFPS: {
-		int ch = ctx->params.stream_id;
 		ret = video_ctrl(ch, VIDEO_ISPFPS, arg);
 	}
 	break;
 	case CMD_VIDEO_SNAPSHOT: {
-		int ch = ctx->params.stream_id;
 		ret = video_ctrl(ch, VIDEO_JPEG_OUTPUT, arg);
 	}
 	break;
 	case CMD_VIDEO_YUV: {
-		int ch = ctx->params.stream_id;
 		int type = ctx->params.type;
 		switch (type) {
 		case 0:
@@ -723,7 +616,6 @@ int video_control(void *p, int cmd, int arg)
 	}
 	break;
 	case CMD_ISP_SET_RAWFMT: {
-		int ch = ctx->params.stream_id;
 		ret = video_ctrl(ch, VIDEO_ISP_SET_RAWFMT, arg);
 	}
 	break;
@@ -737,6 +629,13 @@ int video_control(void *p, int cmd, int arg)
 			ctx->meta_cb = (void (*)(void *))arg;
 		}
 		break;
+	case CMD_VIDEO_GET_META_DATA:
+		if(ctx->meta_data.type == 0) {
+			VIDEO_DBG_ERROR("ch%d meta data not available\r\n", ctx->params.stream_id);
+			return -1;
+		}
+		memcpy((void *)arg, &(ctx->meta_data), sizeof(video_meta_t));
+		break;
 	case CMD_VIDEO_UPDATE:
 
 		break;
@@ -744,7 +643,6 @@ int video_control(void *p, int cmd, int arg)
 
 		break;
 	case CMD_VIDEO_PRINT_INFO: {
-		int ch = ctx->params.stream_id;
 		ret = video_ctrl(ch, VIDEO_PRINT_INFO, arg);
 	}
 	break;
@@ -763,8 +661,6 @@ int video_control(void *p, int cmd, int arg)
 	case CMD_VIDEO_APPLY: {
 		int ch = arg;
 		ctx->params.stream_id = ch;
-		ctx->rate_ctrl_p.rate_ctrl_en = 0;
-
 		//video init before first vido open, take 78ms.
 		if (video_open_status() == 0) {
 			ctx->v_adp = video_init(ctx->iq_addr, ctx->sensor_addr);
@@ -852,7 +748,6 @@ int video_control(void *p, int cmd, int arg)
 	break;
 	case CMD_VIDEO_SHOW_DBG_TS_INFO: {
 		if(ctx->dbg_ts_info) {
-			int ch = ctx->params.stream_id;
 			printf("ch%d timestamp = ", ch);
 			for(int i = 0; i < ctx->dbg_ts_info->timestamp_cnt; i++) {
 				printf("%u ", ctx->dbg_ts_info->timestamp[i]);
@@ -864,24 +759,24 @@ int video_control(void *p, int cmd, int arg)
 		}
 	}
 	break;
-	case CMD_VIDEO_SET_RATE_CONTROL: {
-		memcpy(&ctx->rate_ctrl_p.rate_ctrl, (void *)arg, sizeof(rate_ctrl_t));
-		if ((ctx->rate_ctrl_p.rate_ctrl.minimum_bitrate == 0) || \
-			(ctx->rate_ctrl_p.rate_ctrl.minimum_bitrate >= ctx->rate_ctrl_p.rate_ctrl.maximun_bitrate)) {
-			ctx->rate_ctrl_p.rate_ctrl.minimum_bitrate = ctx->rate_ctrl_p.rate_ctrl.target_bitrate;
-		}
-		ctx->rate_ctrl_p.sample_bitrate = 0;
-		ctx->rate_ctrl_p.rate_ctrl_en = 1;
-		ctx->rate_ctrl_p.ori_framerate = ctx->rate_ctrl_p.current_framerate;
-		ctx->rate_ctrl_p.fps_stage_idx = 0;
+	case CMD_VIDEO_BPS_STBL_CTRL_EN: {
+		ret = video_bps_stbl_ctrl_en(ch, arg);
 	}
 	break;
-	case CMD_VIDEO_SET_RATE_CONTROL_FPS_STAGE: {
-		memcpy(ctx->rate_ctrl_p.fps_stage, (void *)arg, sizeof(ctx->rate_ctrl_p.fps_stage));
+	case CMD_VIDEO_SET_BPS_STBL_CTRL_PARAMS: {
+		ret = video_set_bps_stbl_ctrl_params(ch, (bps_stbl_ctrl_param_t*)arg, NULL, NULL);
+	}
+	break;
+	case CMD_VIDEO_SET_BPS_STBL_CTRL_FPS_STG: {
+		ret = video_set_bps_stbl_ctrl_params(ch, NULL, (uint32_t*)arg, NULL);
+	}
+	break;
+	case CMD_VIDEO_SET_BPS_STBL_CTRL_GOP_STG: {
+		ret = video_set_bps_stbl_ctrl_params(ch, NULL, NULL, (uint32_t*)arg);
 	}
 	break;
 	case CMD_VIDEO_GET_CURRENT_BITRATE: {
-		*((uint32_t *)arg) = ctx->rate_ctrl_p.current_bitrate;
+		*((uint32_t *)arg) = ctx->bps_stats.cur_bps;
 	}
 	break;
 	case CMD_VIDEO_GET_REMAIN_QUEUE_LENGTH: {
@@ -905,16 +800,15 @@ int video_control(void *p, int cmd, int arg)
 	}
 	break;
 	case CMD_VIDEO_SET_MULTI_RCCTRL: {
-		int ch = ctx->params.stream_id;
 		rate_ctrl_s *rc_ctrl = (rate_ctrl_s *)arg;
 		ret = video_ctrl(ch, VIDEO_RC_CTRL, arg);
-		if (rc_ctrl->fps) {
-			ctx->rate_ctrl_p.current_framerate = rc_ctrl->fps;
-		}
+	}
+	break;
+	case CMD_VIDEO_GET_MULTI_RCCTRL: {
+		ret = video_ctrl(ch, VIDEO_GET_RC_CTRL, arg);
 	}
 	break;
 	case CMD_VIDEO_SET_EXT_INPUT: {
-		int ch = ctx->params.stream_id;
 		return video_ext_in(ch, (uint32_t)arg);
 	}
 	break;
@@ -924,6 +818,10 @@ int video_control(void *p, int cmd, int arg)
 	}
 	case CMD_VIDEO_PRE_INIT_PARM: {
 		video_pre_init_setup_parameters((void *)arg);
+		break;
+	}
+	case CMD_VIDEO_GET_PRE_INIT_PARM: {
+		memcpy((void *)arg, (video_pre_init_params_t*)video_get_pre_init_setup_params(), sizeof(video_pre_init_params_t));
 		break;
 	}
 	case CMD_VIDEO_PRE_INIT_LOAD: {

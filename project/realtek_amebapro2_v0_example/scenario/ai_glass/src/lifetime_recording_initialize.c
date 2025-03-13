@@ -14,14 +14,46 @@
 #include "gyrosensor_api.h"
 #include "ai_glass_media.h"
 #include "media_filesystem.h"
+#include "ai_glass_dbg.h"
 
-#define I2S_INTERFACE   0
-#define AUDIO_INTERFACE 1
+// Definition of the audio interfcae
+#define I2S_INTERFACE           0
+#define AUDIO_INTERFACE         1
 
+// Definition of gyro save status
+#define GYRO_SAVE_IDLE          0x00
+#define GYRO_SAVE_START         0x01
+#define GYRO_SAVE_STOP          0x02
+#define GYRO_SAVE_SET_START     0x10
+#define GYRO_SAVE_SET_STOP      0x20
+
+// Configuration
 #define ENABLE_GET_GSENSOR_INFO 1
-#define AUDIO_SAMPLE_RATE   16000 // 48000
-#define AUDIO_SRC           I2S_INTERFACE //AUDIO_INTERFACE
-#define AUDIO_I2S_ROLE      I2S_SLAVE //I2S_MASTER
+#define AUDIO_SAMPLE_RATE       16000 // 48000
+#define AUDIO_SRC               I2S_INTERFACE //AUDIO_INTERFACE
+#define AUDIO_I2S_ROLE          I2S_SLAVE //I2S_MASTER
+
+#if ENABLE_GET_GSENSOR_INFO
+#define GSENSOR_RECORD_FAST 1
+typedef struct gyro_data_node_s {
+	gyro_data_t data;
+	struct gyro_data_node_s *next;
+} gyro_data_node_t;
+
+typedef struct gyro_data_list_s {
+	gyro_data_node_t *head;
+	gyro_data_node_t *tail;
+	gyro_data_node_t *read_ptr;
+} gyro_data_list_t;
+
+static TimerHandle_t gsensor_timer = NULL;
+static gyro_data_list_t gyro_list = {NULL, NULL};
+static int exdisk_gyro_status = GYRO_SAVE_IDLE;
+static gyro_data_t gdata[100] = {0};
+#endif
+
+static char life_recording_name[128] = {0};
+static const char *example = "ai_glass_lifetime_recording";
 
 //Modules
 //lr means lifetime recording
@@ -43,7 +75,7 @@ static video_params_t lr_video_params = {
 static audio_params_t audio_params;
 static audio_sr audio_samplerate2index(int samplerate)
 {
-	switch (rate) {
+	switch (samplerate) {
 	case 8000:
 		return ASR_8KHZ;
 	case 16000:
@@ -59,7 +91,7 @@ static audio_sr audio_samplerate2index(int samplerate)
 	case 96000:
 		return ASR_96KHZ;
 	default:
-		printf("Invalid audio samplerate %d for audio set to default value ASR_16KHZ\n\r", samplerate);
+		AI_GLASS_ERR("Invalid audio samplerate %d for audio set to default value ASR_16KHZ\n\r", samplerate);
 		return ASR_16KHZ;
 	}
 }
@@ -83,7 +115,7 @@ static int i2s_samplerate2index(int samplerate)
 	case 96000:
 		return SR_96KHZ;
 	default:
-		printf("Invalid i2s samplerate %d for i2s set to default value SR_16KHZ\n\r", samplerate);
+		AI_GLASS_ERR("Invalid i2s samplerate %d for i2s set to default value SR_16KHZ\n\r", samplerate);
 		return SR_16KHZ;
 	}
 }
@@ -113,32 +145,12 @@ static mp4_params_t lr_mp4_params = {
 	.append_header = 0,
 };
 
-static char life_recording_name[128] = {0};
-
-static const char *example = "ai_glass_lifetime_recording";
-
 #if ENABLE_GET_GSENSOR_INFO
-#define GSENSOR_RECORD_FAST 1
-typedef struct gyro_data_node_s {
-	gyro_data_t data;
-	struct gyro_data_node_s *next;
-} gyro_data_node_t;
-
-typedef struct gyro_data_list_s {
-	gyro_data_node_t *head;
-	gyro_data_node_t *tail;
-	gyro_data_node_t *read_ptr;
-} gyro_data_list_t;
-
-static TimerHandle_t gsensor_timer = NULL;
-
-static gyro_data_list_t gyro_list = {NULL, NULL};
-
 static void append_gyro_data(gyro_data_list_t *list, gyro_data_t new_data)
 {
 	gyro_data_node_t *new_node = (gyro_data_node_t *)malloc(sizeof(gyro_data_node_t));
 	if (new_node == NULL) {
-		printf("Memory allocation failed!\n");
+		AI_GLASS_ERR("Memory allocation failed!\n");
 		return;
 	}
 
@@ -276,7 +288,6 @@ static void align_gyro_data_by_timestamp(gyro_data_list_t *list, uint32_t target
 	}
 }
 
-
 static gyro_data_node_t *read_gyro_data(gyro_data_list_t *list)
 {
 	gyro_data_node_t *rd_ptr = NULL;
@@ -299,7 +310,7 @@ static void save_gyro_data_to_file(gyro_data_list_t *list, const char *filename)
 {
 	FILE *file = extdisk_fopen(filename, "wb");
 	if (file == NULL) {
-		printf("Failed to open file for writing.\n");
+		AI_GLASS_ERR("Failed to open file for writing.\n");
 		return;
 	}
 
@@ -307,7 +318,7 @@ static void save_gyro_data_to_file(gyro_data_list_t *list, const char *filename)
 		"GYROFLOW IMU LOG\n"
 		"version,1.3\n"
 		"id,amb82\n"
-		"orientation,XYz\n"
+		"orientation,Xyz\n"
 		"note,development_test\n"
 		"fwversion,FIRMWARE_0.1.0\n"
 		"timestamp,0\n"
@@ -320,7 +331,7 @@ static void save_gyro_data_to_file(gyro_data_list_t *list, const char *filename)
 		"tscale,0.001\n"
 		"gscale,0.0174533\n"
 		"ascale,10.0\n"
-		"t,gx,gy,gz,ax,ay,az\n";
+		"t,gx,gy,gz\n";
 
 	extdisk_fwrite((const char *) csv_header_data, strlen(csv_header_data), 1, file);
 
@@ -335,13 +346,13 @@ static void save_gyro_data_to_file(gyro_data_list_t *list, const char *filename)
 									 current->data.dps[1], current->data.dps[2]);
 #endif
 		if (gyro_str_size > sizeof(gyro_data_string) - 1) {
-			printf("gyro_str_size = %lu, sizeof(gyro_data_string) = %lu\r\n", gyro_str_size, sizeof(gyro_data_string) - 1);
+			AI_GLASS_MSG("gyro_str_size = %lu, sizeof(gyro_data_string) = %lu\r\n", gyro_str_size, sizeof(gyro_data_string) - 1);
 #if !IGN_ACC_DATA
-			printf(gyro_data_string, sizeof(gyro_data_string) - 1, "%lu, %f, %f, %f, %f %f %f\n", current->data.timestamp, current->data.dps[0],
-				   current->data.dps[1], current->data.dps[2], current->data.g[0], current->data.g[1], current->data.g[2]);
+			snprintf(gyro_data_string, sizeof(gyro_data_string) - 1, "%lu, %f, %f, %f, %f %f %f\n", current->data.timestamp, current->data.dps[0],
+					 current->data.dps[1], current->data.dps[2], current->data.g[0], current->data.g[1], current->data.g[2]);
 #else
-			printf(gyro_data_string, sizeof(gyro_data_string) - 1, "%lu, %f, %f, %f\n", current->data.timestamp, current->data.dps[0], current->data.dps[1],
-				   current->data.dps[2]);
+			snprintf(gyro_data_string, sizeof(gyro_data_string) - 1, "%lu, %f, %f, %f\n", current->data.timestamp, current->data.dps[0], current->data.dps[1],
+					 current->data.dps[2]);
 #endif
 		} else {
 			extdisk_fwrite((const char *) gyro_data_string, gyro_str_size, 1, file);
@@ -350,30 +361,23 @@ static void save_gyro_data_to_file(gyro_data_list_t *list, const char *filename)
 	}
 
 	extdisk_fclose(file);
-	printf("Data saved to file: %s\r\n", filename);
+	AI_GLASS_MSG("Data saved to file: %s\r\n", filename);
 }
 
 static void print_gyro_data_list(gyro_data_list_t *list)
 {
 	gyro_data_node_t *head = list->head;
 	gyro_data_node_t *tail = list->tail;
-	printf("head Timestamp: %lu\n", head->data.timestamp);
-	printf("tail Timestamp: %lu\n", tail->data.timestamp);
+	AI_GLASS_MSG("head Timestamp: %lu\n", head->data.timestamp);
+	AI_GLASS_MSG("tail Timestamp: %lu\n", tail->data.timestamp);
 }
 
-#define GYRO_SAVE_IDLE          0x00
-#define GYRO_SAVE_START         0x01
-#define GYRO_SAVE_STOP          0x02
-#define GYRO_SAVE_SET_START     0x10
-#define GYRO_SAVE_SET_STOP      0x20
-
-static int exdisk_gyro_status = GYRO_SAVE_IDLE;
 static void save_gyro_to_exdisk_thread(void *param)
 {
 	FILE *file = NULL;
-	printf("======================save_gyro_to_exdisk_thread=======================\r\n");
+	AI_GLASS_INFO("======================save_gyro_to_exdisk_thread=======================\r\n");
 	if (!(exdisk_gyro_status & GYRO_SAVE_SET_START)) {
-		printf("exdisk_gyro_status 0x%08x is invalid.\r\n", exdisk_gyro_status);
+		AI_GLASS_ERR("exdisk_gyro_status 0x%08x is invalid.\r\n", exdisk_gyro_status);
 		goto endofsave;
 	}
 	exdisk_gyro_status = GYRO_SAVE_START;
@@ -383,7 +387,7 @@ static void save_gyro_to_exdisk_thread(void *param)
 
 	file = extdisk_fopen((const char *)life_gryo_csv, "w+");
 	if (file == NULL) {
-		printf("Failed to open file for writing.\r\n");
+		AI_GLASS_ERR("Failed to open file for writing.\r\n");
 		goto endofsave;
 	}
 
@@ -420,7 +424,7 @@ static void save_gyro_to_exdisk_thread(void *param)
 	}
 
 	uint32_t video_first_ts = mp4_muxer->video_timestamp_first;
-	printf("video_first_ts = %u\r\n", video_first_ts);
+	AI_GLASS_MSG("video_first_ts = %u\r\n", video_first_ts);
 
 	while (1) {
 		gyro_data_node_t *rd_tpr = read_gyro_data(&gyro_list);
@@ -434,12 +438,12 @@ static void save_gyro_to_exdisk_thread(void *param)
 							   g_data.dps[2]);
 #endif
 			if (ret > sizeof(gyro_data_string) - 1 || ret < 0) {
-				printf("ret = %lu, sizeof(gyro_data_string) = %lu\r\n", ret, sizeof(gyro_data_string) - 1);
+				AI_GLASS_MSG("ret = %lu, sizeof(gyro_data_string) = %lu\r\n", ret, sizeof(gyro_data_string) - 1);
 #if !IGN_ACC_DATA
-				printf("%lu, %f, %f, %f, %f %f %f\n", g_data.timestamp, g_data.dps[0], g_data.dps[1], g_data.dps[2],
-					   g_data.g[0], g_data.g[1], g_data.g[2]);
+				AI_GLASS_MSG("%lu, %f, %f, %f, %f %f %f\n", g_data.timestamp, g_data.dps[0], g_data.dps[1], g_data.dps[2],
+							 g_data.g[0], g_data.g[1], g_data.g[2]);
 #else
-				printf("%lu, %f, %f, %f\n", g_data.timestamp, g_data.dps[0], g_data.dps[1], g_data.dps[2]);
+				AI_GLASS_MSG("%lu, %f, %f, %f\n", g_data.timestamp, g_data.dps[0], g_data.dps[1], g_data.dps[2]);
 #endif
 			} else {
 				extdisk_fwrite((const char *) gyro_data_string, ret, 1, file);
@@ -447,7 +451,6 @@ static void save_gyro_to_exdisk_thread(void *param)
 		} else if (exdisk_gyro_status & GYRO_SAVE_SET_STOP) {
 			break;
 		} else {
-			//printf("no gyro data is get 0x%08x\r\n", exdisk_gyro_status);
 			vTaskDelay(1);
 		}
 	}
@@ -456,7 +459,7 @@ endofsave:
 	if (file != NULL) {
 		extdisk_fclose(file);
 	}
-	printf("Data saved to file: %s\r\n", life_gryo_csv);
+	AI_GLASS_MSG("Data saved to file: %s\r\n", life_gryo_csv);
 	exdisk_gyro_status = GYRO_SAVE_STOP;
 	vTaskDelete(NULL);
 }
@@ -466,19 +469,18 @@ static int start_gyro_to_exdisk_process(void)
 	if (exdisk_gyro_status == GYRO_SAVE_IDLE) {
 		exdisk_gyro_status |= GYRO_SAVE_SET_START;
 		if (xTaskCreate(save_gyro_to_exdisk_thread, ((const char *)"save_gyro_to_exdisk_thread"), 4096, NULL, tskIDLE_PRIORITY + 4, NULL) != pdPASS) {
-			printf("\n\r%s xTaskCreate(save_gyro_to_exdisk_thread) failed\n\r", __FUNCTION__);
+			AI_GLASS_ERR("\n\r%s xTaskCreate(save_gyro_to_exdisk_thread) failed\n\r", __FUNCTION__);
 			exdisk_gyro_status = GYRO_SAVE_IDLE;
 			return -1;
 		}
-		printf("exdisk_gyro_status is idle\n\r");
+		AI_GLASS_INFO("exdisk_gyro_status is idle\n\r");
 		return 0;
 	}
-	printf("exdisk_gyro_status is not idle\n\r");
+	AI_GLASS_WARN("exdisk_gyro_status is not idle\n\r");
 	return -1;
 }
 
 // G-sensor example => need to update
-static gyro_data_t gdata[100] = {0};
 static void gyro_read_gsensor(void *parm)
 {
 	uint32_t cur_timstamp = mm_read_mediatime_ms();
@@ -493,7 +495,7 @@ static void gyro_read_gsensor(void *parm)
 		append_gyro_data(&gyro_list, gdata[i]);
 	}
 
-	printf("Read end G-sensor %lu, read_cnt = %d\r\n", mm_read_mediatime_ms(), read_cnt);
+	AI_GLASS_MSG("Read end G-sensor %lu, read_cnt = %d\r\n", mm_read_mediatime_ms(), read_cnt);
 }
 
 static void vGensorTimeCallback(TimerHandle_t xTimer)
@@ -501,13 +503,15 @@ static void vGensorTimeCallback(TimerHandle_t xTimer)
 	gyro_read_gsensor(NULL);
 	if (gsensor_timer != NULL) {
 		if (xTimerStart(gsensor_timer, 0) != pdPASS) {
-			printf("Reload G-sensor read timer\r\n");
+			AI_GLASS_INFO("Reload G-sensor read timer\r\n");
 		}
 	}
 }
+#endif
 
 int lr_gyro_deinit(void)
 {
+#if ENABLE_GET_GSENSOR_INFO
 	if (gsensor_timer != NULL) {
 		xTimerStop(gsensor_timer, 0);
 		if (xTimerDelete(gsensor_timer, 0) == pdPASS) {
@@ -517,11 +521,15 @@ int lr_gyro_deinit(void)
 	if (gyroscope_is_inited()) {
 		// Todo: deinit gyroscope
 	}
+#else
+	AI_GLASS_WARN("Please enable ENABLE_GET_GSENSOR_INFO when using lr_gyro_deinit\r\n");
+#endif
 	return 0;
 }
 
 int lr_gyro_init(void)
 {
+#if ENABLE_GET_GSENSOR_INFO
 	if (gyroscope_fifo_init() != 0) {
 		return -1;
 	}
@@ -533,21 +541,24 @@ int lr_gyro_init(void)
 
 	if (gsensor_timer != NULL) {
 		if (xTimerStart(gsensor_timer, 0) != pdPASS) {
-			printf("Reload G-sensor read timer\r\n");
+			AI_GLASS_INFO("Reload G-sensor read timer\r\n");
 			return -1;
 		}
 	} else {
-		printf("gsensor_timer create failed\r\n");
+		AI_GLASS_ERR("gsensor_timer create failed\r\n");
 		return -1;
 	}
 
-	printf("lr_gyro_init success\r\n");
+	AI_GLASS_INFO("lr_gyro_init success\r\n");
+#else
+	AI_GLASS_WARN("lr_gyro_init, Please enable ENABLE_GET_GSENSOR_INFO when using lr_gyro_init\r\n");
+#endif
 	return 0;
 }
-#endif
 
 static int get_mp4_video_timestamp(void)
 {
+#if ENABLE_GET_GSENSOR_INFO
 	if (lr_mp4_ctx != NULL) {
 #if ENABLE_GET_GSENSOR_INFO
 		mp4_ctx_t *mp4_module_ctx = (mp4_ctx_t *)(lr_mp4_ctx->priv);
@@ -555,12 +566,13 @@ static int get_mp4_video_timestamp(void)
 #if !GSENSOR_RECORD_FAST
 		align_gyro_data_by_timestamp(&gyro_list, mp4_muxer->video_timestamp_first);
 #endif
-		printf("mp4_muxer->video_timestamp_first = %u\r\n", mp4_muxer->video_timestamp_first);
-		printf("mp4_muxer->video_timestamp_end = %u\r\n",
-			   mp4_muxer->video_timestamp_first + (mp4_muxer->video_timestamp_buffer[mp4_muxer->root.video_len - 1] - mp4_muxer->video_timestamp_buffer[0]) /
-			   (mp4_muxer->video_clock_rate / configTICK_RATE_HZ));
+		AI_GLASS_MSG("mp4_muxer->video_timestamp_first = %u\r\n", mp4_muxer->video_timestamp_first);
+		AI_GLASS_MSG("mp4_muxer->video_timestamp_end = %u\r\n",
+					 mp4_muxer->video_timestamp_first + (mp4_muxer->video_timestamp_buffer[mp4_muxer->root.video_len - 1] - mp4_muxer->video_timestamp_buffer[0]) /
+					 (mp4_muxer->video_clock_rate / configTICK_RATE_HZ));
 #endif
 	}
+#endif
 	return 0;
 }
 
@@ -569,7 +581,8 @@ MP4State current_state = STATE_IDLE;
 extern void mp4_send_response_callback(void *parm);
 static int lr_mp4_end_cb(void *parm)
 {
-	printf("Record end\r\n");
+	AI_GLASS_INFO("Record end\r\n");
+#if ENABLE_GET_GSENSOR_INFO
 #if GSENSOR_RECORD_FAST
 	if (exdisk_gyro_status != GYRO_SAVE_STOP) {
 		exdisk_gyro_status |= GYRO_SAVE_SET_STOP;
@@ -590,12 +603,15 @@ static int lr_mp4_end_cb(void *parm)
 	save_gyro_data_to_file(&gyro_list, life_gryo_csv);
 	delete_whole_list(&gyro_list);
 #endif
+#else
+	current_state = STATE_END_RECORDING;
+#endif
 	return 0;
 }
 
 static int lr_mp4_stop_cb(void *parm)
 {
-	printf("Record stop\r\n");
+	AI_GLASS_INFO("Record stop\r\n");
 	current_state = STATE_IDLE;
 #if ENABLE_GET_GSENSOR_INFO
 	lr_gyro_deinit();
@@ -607,7 +623,7 @@ static int lr_mp4_stop_cb(void *parm)
 
 static int lr_mp4_error_cb(void *parm)
 {
-	printf("Lifetime recording error\r\n");
+	AI_GLASS_ERR("Lifetime recording error\r\n");
 	current_state = STATE_ERROR;
 #if ENABLE_GET_GSENSOR_INFO
 	lr_gyro_deinit();
@@ -617,25 +633,34 @@ static int lr_mp4_error_cb(void *parm)
 
 void lifetime_recording_initialize(void)
 {
-	printf("================LifeTime Record start==========================\r\n");
+	AI_GLASS_INFO("================LifeTime Record start========================== = %lu\r\n", mm_read_mediatime_ms());
 	char *cur_time_str = (char *)media_filesystem_get_current_time_string();
 	extdisk_generate_unique_filename("liferecord_", cur_time_str, ".mp4", life_recording_name, 128);
 	free(cur_time_str);
 
+	// work around, pre-open the mp4 for the file system to count the mp4 file
+	char life_record_name[128] = {0};
+	snprintf(life_record_name, sizeof(life_record_name), "%s.mp4", life_recording_name);
+	FILE *life_record_mp4 = extdisk_fopen(life_record_name, "w");
+	extdisk_fclose(life_record_mp4);
+
 	ai_glass_record_param_t *ai_record_param = NULL;
 #if ENABLE_GET_GSENSOR_INFO
+	AI_GLASS_MSG("================start initial g-sensor========================== = %lu\r\n", mm_read_mediatime_ms());
 	// Initial G-sensor
 	if (lr_gyro_init()) {
 		goto lifetime_recording_initialize_fail;
 	}
-
+	AI_GLASS_MSG("================initial g-sensor done========================== = %lu\r\n", mm_read_mediatime_ms());
 #if GSENSOR_RECORD_FAST
 	if (start_gyro_to_exdisk_process()) {
 		goto lifetime_recording_initialize_fail;
 	}
+	AI_GLASS_MSG("================start_gyro_to_exdisk_process done========================== = %lu\r\n", mm_read_mediatime_ms());
 #endif
 #endif
 
+	AI_GLASS_MSG("================record process start========================== = %lu\r\n", mm_read_mediatime_ms());
 	ai_record_param = (ai_glass_record_param_t *) malloc(sizeof(ai_glass_record_param_t));
 	memset(ai_record_param, 0x00, sizeof(ai_glass_record_param_t));
 	media_get_record_params(ai_record_param);
@@ -654,6 +679,7 @@ void lifetime_recording_initialize(void)
 	lr_video_params.width = ai_record_param->width;
 	lr_video_params.height = ai_record_param->height;
 	lr_video_params.rc_mode = ai_record_param->rc_mode;
+	AI_GLASS_MSG("LifeTime Record Max Time = %d\r\n", lr_mp4_params.record_length);
 
 #if AUDIO_SRC==AUDIO_INTERFACE
 	lr_audio_ctx = mm_module_open(&audio_module);
@@ -664,9 +690,8 @@ void lifetime_recording_initialize(void)
 		mm_module_ctrl(lr_audio_ctx, CMD_AUDIO_SET_PARAMS, (int)&audio_params);
 		mm_module_ctrl(lr_audio_ctx, MM_CMD_SET_QUEUE_LEN, 6); //queue size can be smaller 160ms
 		mm_module_ctrl(lr_audio_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_STATIC);
-		mm_module_ctrl(lr_audio_ctx, CMD_VIDEO_META_CB, (int)video_meta_cb);
 	} else {
-		printf("audio open fail\n\r");
+		AI_GLASS_ERR("audio open fail\n\r");
 		goto lifetime_recording_initialize_fail;
 	}
 #elif AUDIO_SRC==I2S_INTERFACE
@@ -681,7 +706,7 @@ void lifetime_recording_initialize(void)
 		mm_module_ctrl(lr_audio_ctx, MM_CMD_SET_QUEUE_LEN, 6); //queue size can be smaller 160ms
 		mm_module_ctrl(lr_audio_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_STATIC);
 	} else {
-		printf("i2s open fail\n\r");
+		AI_GLASS_ERR("i2s open fail\n\r");
 		goto lifetime_recording_initialize_fail;
 	}
 #endif
@@ -694,7 +719,7 @@ void lifetime_recording_initialize(void)
 		mm_module_ctrl(lr_aac_ctx, CMD_AAC_INIT_MEM_POOL, 0);
 		mm_module_ctrl(lr_aac_ctx, CMD_AAC_APPLY, 0);
 	} else {
-		printf("AAC open fail\n\r");
+		AI_GLASS_ERR("AAC open fail\n\r");
 		goto lifetime_recording_initialize_fail;
 	}
 
@@ -715,11 +740,11 @@ void lifetime_recording_initialize(void)
 		//}
 		mm_module_ctrl(lr_mp4_ctx, CMD_MP4_START, lr_mp4_params.record_file_num);
 	} else {
-		printf("MP4 open fail\n\r");
+		AI_GLASS_ERR("MP4 open fail\n\r");
 		goto lifetime_recording_initialize_fail;
 	}
 
-	printf("MP4 opened\n\r");
+	AI_GLASS_INFO("MP4 opened\n\r");
 
 	lr_video_ctx = mm_module_open(&video_module);
 	if (lr_video_ctx) {
@@ -727,7 +752,7 @@ void lifetime_recording_initialize(void)
 		mm_module_ctrl(lr_video_ctx, MM_CMD_SET_QUEUE_LEN, lr_video_params.fps * 10); //Add the queue buffer to avoid to lost data.
 		mm_module_ctrl(lr_video_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
 	} else {
-		printf("video open fail\n\r");
+		AI_GLASS_ERR("video open fail\n\r");
 		goto lifetime_recording_initialize_fail;
 	}
 
@@ -739,7 +764,7 @@ void lifetime_recording_initialize(void)
 		siso_ctrl(lr_siso_audio_aac, MMIC_CMD_SET_STACKSIZE, 44 * 1024, 0);
 		siso_start(lr_siso_audio_aac);
 	} else {
-		printf("lr siso audio aac open fail\n\r");
+		AI_GLASS_ERR("lr siso audio aac open fail\n\r");
 		goto lifetime_recording_initialize_fail;
 	}
 
@@ -751,11 +776,11 @@ void lifetime_recording_initialize(void)
 		miso_ctrl(lr_miso_video_aac_mp4, MMIC_CMD_SET_TASKPRIORITY, 4, 0);
 		miso_start(lr_miso_video_aac_mp4);
 	} else {
-		printf("miso open fail for video recording\n\r");
+		AI_GLASS_ERR("miso open fail for video recording\n\r");
 		goto lifetime_recording_initialize_fail;
 	}
 
-	printf("miso(videochn0_aac_mp4) started\n\r");
+	AI_GLASS_INFO("miso(videochn0_aac_mp4) started\n\r");
 
 	current_state = STATE_RECORDING;
 #if AUDIO_SRC==AUDIO_INTERFACE
@@ -822,104 +847,3 @@ void lifetime_recording_deinitialize(void)
 
 	current_state = STATE_IDLE;
 }
-
-static void fUC(void *arg)
-{
-	static uint32_t user_cmd = 0;
-
-	if (!strcmp(arg, "TD")) {
-		lifetime_recording_deinitialize();
-		printf("deinit %s\r\n", example);
-	} else if (!strcmp(arg, "TSR")) {
-		printf("reinit %s\r\n", example);
-		lifetime_recording_initialize();
-		// sys_reset();
-	} else {
-		printf("invalid cmd");
-	}
-
-	printf("user command 0x%lx\r\n", user_cmd);
-}
-
-//audio_pause: 0- pause aac, 1- pause opusc, 2- pause both opusc and aac
-void lr_audio_pause(int ai_glass_audio_type)
-{
-	if (ai_glass_audio_type == 0) {
-		siso_pause(lr_siso_audio_aac);
-	}
-}
-
-void lr_video_pause(void)
-{
-	miso_pause(lr_miso_video_aac_mp4, MM_OUTPUT0);
-}
-
-void lr_video_resume(void)
-{
-	miso_resume(lr_miso_video_aac_mp4);
-}
-
-void lr_audio_resume(void)
-{
-	siso_resume(lr_siso_audio_aac);
-}
-
-void lr_audio_stop(void)
-{
-	mm_module_ctrl(lr_audio_ctx, CMD_AUDIO_SET_TRX, 0);
-}
-
-void lr_audio_start(void)
-{
-	mm_module_ctrl(lr_audio_ctx, CMD_AUDIO_SET_TRX, 1);
-}
-
-static void APAAC(void *arg)
-{
-	printf("audio_pause_aac %s\r\n", example);
-	lr_audio_pause(0);
-}
-
-static void AR(void *arg)
-{
-	printf("audio_resume %s\r\n", example);
-	lr_audio_resume();
-}
-
-static void ASTOP(void *arg)
-{
-	printf("audio_stop %s\r\n", example);
-	lr_audio_stop();
-}
-
-static void ASTART(void *arg)
-{
-	printf("audio_start %s\r\n", example);
-	lr_audio_start();
-}
-
-static void VP(void *arg)
-{
-	lr_video_pause();
-}
-
-static void VR(void *arg)
-{
-	lr_video_resume();
-}
-
-static log_item_t userctrl_items[] = {
-	{"UC", fUC, },
-	{"APAAC", APAAC, },
-	{"AR", AR,},
-	{"ASTART", ASTART,},
-	{"ASTOP", ASTOP,},
-	{"VP", VP,},
-	{"VR", VR,},
-};
-
-void ai_glass_atcmd_lr_userctrl_init(void)
-{
-	log_service_add_table(userctrl_items, sizeof(userctrl_items) / sizeof(userctrl_items[0]));
-}
-

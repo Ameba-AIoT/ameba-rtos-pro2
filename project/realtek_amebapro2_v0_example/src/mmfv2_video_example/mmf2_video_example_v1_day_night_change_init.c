@@ -28,7 +28,10 @@ static mm_siso_t *siso_rgb_md         		= NULL;
 * Video type  : H264/HEVC
 *****************************************************************************/
 #define V1_CHANNEL 0
-#define V1_BPS 2*1024*1024
+#define DAY_FPS 24
+#define DAY_BPS 1.5 * 1024 * 1024
+#define NIGHT_FPS 15
+#define NIGHT_BPS 512 * 1024
 #define V1_RCMODE 2 // 1: CBR, 2: VBR
 #define USE_H265 0
 #if USE_H265
@@ -41,10 +44,12 @@ static mm_siso_t *siso_rgb_md         		= NULL;
 #define VIDEO_CODEC AV_CODEC_ID_H264
 #endif
 
+#define BPS_STABLE_CONTROL 0
+
 static video_params_t video_v1_params = {
 	.stream_id = V1_CHANNEL,
 	.type = VIDEO_TYPE,
-	.bps = V1_BPS,
+	.bps = DAY_BPS,
 	.rc_mode = V1_RCMODE,
 	.use_static_addr = 1
 };
@@ -54,7 +59,7 @@ static rtsp2_params_t rtsp2_v1_params = {
 	.u = {
 		.v = {
 			.codec_id = VIDEO_CODEC,
-			.bps      = V1_BPS
+			.bps      = DAY_BPS
 		}
 	}
 };
@@ -166,11 +171,6 @@ static md_config_t md_config_night = {
 };
 #endif
 
-#define DAY_FPS 24
-#define DAY_BPS 1.5 * 1024 * 1024
-#define NIGHT_FPS 15
-#define NIGHT_BPS 512 * 1024
-
 static rate_ctrl_s rc_ctrl_day = {
 	.bps = DAY_BPS,
 	.isp_fps = DAY_FPS,
@@ -184,6 +184,25 @@ static rate_ctrl_s rc_ctrl_night = {
 	.fps = NIGHT_FPS,
 	.gop = NIGHT_FPS,
 };
+
+#if BPS_STABLE_CONTROL
+static bps_stbl_ctrl_param_t bps_stbl_ctrl_day_params = {
+	.maximun_bitrate = DAY_BPS * 1.2,
+	.minimum_bitrate = DAY_BPS * 0.8,
+	.target_bitrate = DAY_BPS,
+	.sampling_time = DAY_FPS * 2,
+};
+static bps_stbl_ctrl_param_t bps_stbl_ctrl_night_params = {
+	.maximun_bitrate = NIGHT_BPS * 1.2,
+	.minimum_bitrate = NIGHT_BPS * 0.8,
+	.target_bitrate = NIGHT_BPS,
+	.sampling_time = NIGHT_FPS * 2,
+};
+static uint32_t bps_stbl_ctrl_day_fps_stage[3] = {DAY_FPS, DAY_FPS * 0.8,  DAY_FPS * 0.6};
+static uint32_t bps_stbl_ctrl_day_gop_stage[3] = {DAY_FPS * 2, DAY_FPS * 0.8 * 2,  DAY_FPS * 0.6 * 2}; //default set gop = fps * 2
+static uint32_t bps_stbl_ctrl_night_fps_stage[3] = {NIGHT_FPS, NIGHT_FPS * 0.8,  NIGHT_FPS * 0.6};
+static uint32_t bps_stbl_ctrl_night_gop_stage[3] = {NIGHT_FPS * 2, NIGHT_FPS * 0.8 * 2,  NIGHT_FPS * 0.6 * 2}; //default set gop = fps * 2
+#endif
 
 typedef enum {
 	DAY_MODE = 0,
@@ -208,6 +227,11 @@ void day_night_mode_change(day_night_mode_change_t mode)
 
 		//Set Encode configuration
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_MULTI_RCCTRL, (int)&rc_ctrl_day);
+#if BPS_STABLE_CONTROL
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_PARAMS, (int)&bps_stbl_ctrl_day_params);
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_FPS_STG, (int)bps_stbl_ctrl_day_fps_stage);
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_GOP_STG, (int)bps_stbl_ctrl_day_gop_stage);
+#endif
 	} else if (mode == NIGHT_MODE) {
 		//Change iq paramter
 		isp_set_gray_mode(1);
@@ -223,6 +247,11 @@ void day_night_mode_change(day_night_mode_change_t mode)
 
 		//Set Encode configuration
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_MULTI_RCCTRL, (int)&rc_ctrl_night);
+#if BPS_STABLE_CONTROL
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_PARAMS, (int)&bps_stbl_ctrl_night_params);
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_FPS_STG, (int)bps_stbl_ctrl_night_fps_stage);
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_GOP_STG, (int)bps_stbl_ctrl_night_gop_stage);
+#endif
 	}
 };
 
@@ -236,8 +265,8 @@ void mmf2_video_example_v1_day_night_change_init(void)
 	video_v1_params.resolution = VIDEO_FHD;
 	video_v1_params.width = sensor_params[USE_SENSOR].sensor_width;
 	video_v1_params.height = sensor_params[USE_SENSOR].sensor_height;
-	video_v1_params.fps = sensor_params[USE_SENSOR].sensor_fps;
-	video_v1_params.gop = sensor_params[USE_SENSOR].sensor_fps;
+	video_v1_params.fps = DAY_FPS;
+	video_v1_params.gop = DAY_FPS * 2; //default set gop = fps * 2
 #if USE_MD
 	video_v4_params.use_roi = 1;
 	video_v4_params.roi.xmin = 0;
@@ -246,9 +275,9 @@ void mmf2_video_example_v1_day_night_change_init(void)
 	video_v4_params.roi.ymax = sensor_params[USE_SENSOR].sensor_height;
 #endif
 	/*rtsp parameter setting*/
-	rtsp2_v1_params.u.v.fps = sensor_params[USE_SENSOR].sensor_fps;
+	rtsp2_v1_params.u.v.fps = video_v1_params.fps;
 #if (USE_UPDATED_VIDEO_HEAP == 0)
-	int voe_heap_size = video_voe_presetting(1, video_v1_params.width, video_v1_params.height, V1_BPS, 0,
+	int voe_heap_size = video_voe_presetting(1, video_v1_params.width, video_v1_params.height, DAY_BPS, 0,
 						0, 0, 0, 0, 0,
 						0, 0, 0, 0, 0,
 						USE_MD, MD_WIDTH, MD_HEIGHT);
@@ -318,6 +347,13 @@ void mmf2_video_example_v1_day_night_change_init(void)
 		goto mmf2_video_example_v1_day_night_change_fail;
 	}
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, V1_CHANNEL);
+
+#if BPS_STABLE_CONTROL
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_PARAMS, (int)&bps_stbl_ctrl_day_params);
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_FPS_STG, (int)bps_stbl_ctrl_day_fps_stage);
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_GOP_STG, (int)bps_stbl_ctrl_day_gop_stage);
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_BPS_STBL_CTRL_EN, 1);
+#endif
 
 #if USE_MD
 	siso_rgb_md = siso_create();

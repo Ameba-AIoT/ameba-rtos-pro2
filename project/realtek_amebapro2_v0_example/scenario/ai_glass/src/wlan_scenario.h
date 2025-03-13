@@ -23,9 +23,6 @@
 #define AI_GLASS_AP_GW_ADDR2    43
 #define AI_GLASS_AP_GW_ADDR3    1
 
-#define MAX_AP_SSID_VALUE_LEN   33
-#define MAX_AP_PASSWORD_LEN     65
-
 // AP ssid
 #define AI_GLASS_AP_SSID        "AI_GLASS_AP"
 
@@ -33,12 +30,14 @@
 #define AI_GLASS_AP_PASSWORD    "rtkaiglass"
 
 // AP channel
-#define AI_GLASS_AP_CHANNEL     157
+#define AI_GLASS_AP_CHANNEL     40
 
 // HTTP connection timeout in second
 #define HTTPD_CONNECT_TIMEOUT   15
 
 // Connection status
+#define MAX_AP_SSID_VALUE_LEN       33
+#define MAX_AP_PASSWORD_LEN         65
 #define WLAN_STAT_IDLE              0
 #define WLAN_STAT_HTTP_IDLE         1
 #define WLAN_STAT_HTTP_CONNECTED    2
@@ -52,5 +51,6 @@ int wifi_enable_ap_mode(const char *ssid, const char *password, int channel, int
 int wifi_disable_ap_mode(void);
 int wifi_get_ap_setting(rtw_softap_info_t *wifi_cfg);
 int wifi_get_connect_status(void);
+void wifi_set_up_file_delete_flag(uint8_t flag);
 
 #endif

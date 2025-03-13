@@ -91,7 +91,7 @@ static mm_siso_t *siso_aad_audio			= NULL;
 #define ENA_SLEEP_TEST 0 //for testing fcs with retention data
 
 static video_boot_stream_t video_boot_stream = {
-	.video_params[STREAM_V1].stream_id = STREAM_V1,
+	.video_params[STREAM_V1].stream_id = STREAM_ID_V1,
 	.video_params[STREAM_V1].type = CODEC_H264,
 	.video_params[STREAM_V1].resolution = 0,
 	.video_params[STREAM_V1].width  = sensor_params[USE_SENSOR].sensor_width,
@@ -111,11 +111,11 @@ static video_boot_stream_t video_boot_stream = {
 	.video_snapshot[STREAM_V1] = 0,
 	.video_drop_frame[STREAM_V1] = 0,
 	.video_params[STREAM_V1].fcs = 1,//Enable the fcs for channel 1
-	.auto_rate_control[STREAM_V1].sampling_time = sensor_params[USE_SENSOR].sensor_fps,
-	.auto_rate_control[STREAM_V1].maximun_bitrate = 2 * 1024 * 1024 * 1.2,
-	.auto_rate_control[STREAM_V1].minimum_bitrate = 2 * 1024 * 1024 * 0.8,
-	.auto_rate_control[STREAM_V1].target_bitrate = 2 * 1024 * 1024,
-	.video_params[STREAM_V2].stream_id = STREAM_V2,
+	.bps_stbl_ctrl_params[STREAM_V1].sampling_time = sensor_params[USE_SENSOR].sensor_fps,
+	.bps_stbl_ctrl_params[STREAM_V1].maximun_bitrate = 2 * 1024 * 1024 * 1.2,
+	.bps_stbl_ctrl_params[STREAM_V1].minimum_bitrate = 2 * 1024 * 1024 * 0.8,
+	.bps_stbl_ctrl_params[STREAM_V1].target_bitrate = 2 * 1024 * 1024,
+	.video_params[STREAM_V2].stream_id = STREAM_ID_V2,
 	.video_params[STREAM_V2].type = CODEC_H264,
 	.video_params[STREAM_V2].resolution = 0,
 	.video_params[STREAM_V2].width = 1280,
@@ -135,17 +135,17 @@ static video_boot_stream_t video_boot_stream = {
 	.video_params[STREAM_V2].fcs = 0,
 	.video_snapshot[STREAM_V2] = 0,
 	.video_drop_frame[STREAM_V2] = 0,
-	.auto_rate_control[STREAM_V2].sampling_time = 0,
-	.auto_rate_control[STREAM_V2].maximun_bitrate = 0,
-	.auto_rate_control[STREAM_V2].minimum_bitrate = 0,
-	.auto_rate_control[STREAM_V2].target_bitrate = 0,
-	.video_params[STREAM_V3].stream_id = STREAM_V3,
-	.video_params[STREAM_V3].type = CODEC_H264,
+	.bps_stbl_ctrl_params[STREAM_V2].sampling_time = 0,
+	.bps_stbl_ctrl_params[STREAM_V2].maximun_bitrate = 0,
+	.bps_stbl_ctrl_params[STREAM_V2].minimum_bitrate = 0,
+	.bps_stbl_ctrl_params[STREAM_V2].target_bitrate = 0,
+	.video_params[STREAM_V3].stream_id = STREAM_ID_V3,
+	.video_params[STREAM_V3].type = CODEC_NV12,
 	.video_params[STREAM_V3].resolution = 0,
-	.video_params[STREAM_V3].width = 0,
-	.video_params[STREAM_V3].height = 0,
+	.video_params[STREAM_V3].width = 640,
+	.video_params[STREAM_V3].height = 480,
 	.video_params[STREAM_V3].bps = 0,
-	.video_params[STREAM_V3].fps = 0,
+	.video_params[STREAM_V3].fps = 10,
 	.video_params[STREAM_V3].gop = 0,
 	.video_params[STREAM_V3].rc_mode = 0,
 	.video_params[STREAM_V3].minQp = 0,
@@ -159,13 +159,13 @@ static video_boot_stream_t video_boot_stream = {
 	.video_params[STREAM_V3].fcs = 0,
 	.video_snapshot[STREAM_V3] = 0,
 	.video_drop_frame[STREAM_V3] = 0,
-	.video_params[STREAM_V4].stream_id = STREAM_V4,
-	.video_params[STREAM_V4].type = 0,
+	.video_params[STREAM_V4].stream_id = STREAM_ID_V4,
+	.video_params[STREAM_V4].type = CODEC_RGB,
 	.video_params[STREAM_V4].resolution = 0,
 	.video_params[STREAM_V4].width = 640,
 	.video_params[STREAM_V4].height = 480,
 	.video_params[STREAM_V4].bps = 0,
-	.video_params[STREAM_V4].fps = 0,
+	.video_params[STREAM_V4].fps = 10,
 	.video_params[STREAM_V4].gop = 0,
 	.video_params[STREAM_V4].rc_mode = 0,
 	.video_params[STREAM_V4].minQp = 0,
@@ -302,9 +302,13 @@ static mp4_params_t mp4_v1_params = {
 	.fatfs_buf_size = 224 * 1024, /* 32kb multiple */
 };
 
-static rate_ctrl_t rate_ctrl_v1_params;
-static rate_ctrl_t rate_ctrl_v2_params;
-static uint8_t auto_rate_ctrl_en[2] = {0, 0};
+static bps_stbl_ctrl_param_t bps_stbl_ctrl_v1_params;
+static bps_stbl_ctrl_param_t bps_stbl_ctrl_v2_params;
+static uint32_t bps_stbl_ctrl_v1_fps_stage[3] = {0};
+static uint32_t bps_stbl_ctrl_v1_gop_stage[3] = {0};
+static uint32_t bps_stbl_ctrl_v2_fps_stage[3] = {0};
+static uint32_t bps_stbl_ctrl_v2_gop_stage[3] = {0};
+static uint8_t bps_stbl_ctrl_en[2] = {0, 0};
 
 #ifdef FCS_PARTITION
 void voe_fcs_change_parameters(int ch, int width, int height, int iq_id, int video_pre_init)
@@ -760,12 +764,18 @@ void mmf2_video_example_joint_test_rtsp_mp4_init_fcs(void)
 		}
 	}
 	if (isp_fcs_info->fcs_status == 1 && fcs_start_ch == 1) { //It need to change the order if the fcs channel is not zero
-		if (isp_fcs_info->auto_rate_control[STREAM_V2].sampling_time != 0) {
-			auto_rate_ctrl_en[STREAM_V2] = 1;
-			rate_ctrl_v2_params.sampling_time = isp_fcs_info->auto_rate_control[STREAM_V2].sampling_time;
-			rate_ctrl_v2_params.maximun_bitrate = isp_fcs_info->auto_rate_control[STREAM_V2].maximun_bitrate;
-			rate_ctrl_v2_params.minimum_bitrate = isp_fcs_info->auto_rate_control[STREAM_V2].minimum_bitrate;
-			rate_ctrl_v2_params.target_bitrate = isp_fcs_info->auto_rate_control[STREAM_V2].target_bitrate;
+		if (isp_fcs_info->bps_stbl_ctrl_params[STREAM_V2].sampling_time != 0) {
+			bps_stbl_ctrl_en[STREAM_V2] = 1;
+			bps_stbl_ctrl_v2_params.sampling_time = isp_fcs_info->bps_stbl_ctrl_params[STREAM_V2].sampling_time;
+			bps_stbl_ctrl_v2_params.maximun_bitrate = isp_fcs_info->bps_stbl_ctrl_params[STREAM_V2].maximun_bitrate;
+			bps_stbl_ctrl_v2_params.minimum_bitrate = isp_fcs_info->bps_stbl_ctrl_params[STREAM_V2].minimum_bitrate;
+			bps_stbl_ctrl_v2_params.target_bitrate = isp_fcs_info->bps_stbl_ctrl_params[STREAM_V2].target_bitrate;
+			bps_stbl_ctrl_v2_fps_stage[0] = video_v2_params.fps;
+			bps_stbl_ctrl_v2_fps_stage[1] = (uint32_t)(video_v2_params.fps * 0.8);
+			bps_stbl_ctrl_v2_fps_stage[2] = (uint32_t)(video_v2_params.fps * 0.6);
+			bps_stbl_ctrl_v2_gop_stage[0] = video_v2_params.gop;
+			bps_stbl_ctrl_v2_gop_stage[1] = (uint32_t)(video_v2_params.gop * 0.8);
+			bps_stbl_ctrl_v2_gop_stage[2] = (uint32_t)(video_v2_params.gop * 0.6);
 		}
 		// ------ Channel 2--------------
 		video_v2_ctx = mm_module_open(&video_module);
@@ -776,8 +786,11 @@ void mmf2_video_example_joint_test_rtsp_mp4_init_fcs(void)
 			mm_module_ctrl(video_v2_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
 			mm_module_ctrl(video_v2_ctx, CMD_VIDEO_SNAPSHOT_CB, (int)fcs_snapshot_cb);
 			mm_module_ctrl(video_v2_ctx, CMD_VIDEO_APPLY, V2_CHANNEL);	// start channel 1
-			if (auto_rate_ctrl_en[STREAM_V2]) {
-				mm_module_ctrl(video_v2_ctx, CMD_VIDEO_SET_RATE_CONTROL, (int)&rate_ctrl_v2_params);
+			if (bps_stbl_ctrl_en[STREAM_V2]) {
+				mm_module_ctrl(video_v2_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_FPS_STG, (int)bps_stbl_ctrl_v2_fps_stage);
+				mm_module_ctrl(video_v2_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_GOP_STG, (int)bps_stbl_ctrl_v2_gop_stage);
+				mm_module_ctrl(video_v2_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_PARAMS, (int)&bps_stbl_ctrl_v2_params);
+				mm_module_ctrl(video_v1_ctx, CMD_VIDEO_BPS_STBL_CTRL_EN, 1);
 			}
 		} else {
 			rt_printf("video open fail\n\r");
@@ -795,12 +808,18 @@ void mmf2_video_example_joint_test_rtsp_mp4_init_fcs(void)
 			goto mmf2_video_exmaple_joint_test_rtsp_mp4_fail;
 		}
 	} else {
-		if (isp_fcs_info->auto_rate_control[STREAM_V1].sampling_time != 0) {
-			auto_rate_ctrl_en[STREAM_V1] = 1;
-			rate_ctrl_v1_params.sampling_time = isp_fcs_info->auto_rate_control[STREAM_V1].sampling_time;
-			rate_ctrl_v1_params.maximun_bitrate = isp_fcs_info->auto_rate_control[STREAM_V1].maximun_bitrate;
-			rate_ctrl_v1_params.minimum_bitrate = isp_fcs_info->auto_rate_control[STREAM_V1].minimum_bitrate;
-			rate_ctrl_v1_params.target_bitrate = isp_fcs_info->auto_rate_control[STREAM_V1].target_bitrate;
+		if (isp_fcs_info->bps_stbl_ctrl_params[STREAM_V1].sampling_time != 0) {
+			bps_stbl_ctrl_en[STREAM_V1] = 1;
+			bps_stbl_ctrl_v1_params.sampling_time = isp_fcs_info->bps_stbl_ctrl_params[STREAM_V1].sampling_time;
+			bps_stbl_ctrl_v1_params.maximun_bitrate = isp_fcs_info->bps_stbl_ctrl_params[STREAM_V1].maximun_bitrate;
+			bps_stbl_ctrl_v1_params.minimum_bitrate = isp_fcs_info->bps_stbl_ctrl_params[STREAM_V1].minimum_bitrate;
+			bps_stbl_ctrl_v1_params.target_bitrate = isp_fcs_info->bps_stbl_ctrl_params[STREAM_V1].target_bitrate;
+			bps_stbl_ctrl_v1_fps_stage[0] = video_v1_params.fps;
+			bps_stbl_ctrl_v1_fps_stage[1] = (uint32_t)(video_v1_params.fps * 0.8);
+			bps_stbl_ctrl_v1_fps_stage[2] = (uint32_t)(video_v1_params.fps * 0.6);
+			bps_stbl_ctrl_v1_gop_stage[0] = video_v1_params.gop;
+			bps_stbl_ctrl_v1_gop_stage[1] = (uint32_t)(video_v1_params.gop * 0.8);
+			bps_stbl_ctrl_v1_gop_stage[2] = (uint32_t)(video_v1_params.gop * 0.6);
 		}
 		// ------ Channel 1--------------
 		video_v1_ctx = mm_module_open(&video_module);
@@ -811,8 +830,11 @@ void mmf2_video_example_joint_test_rtsp_mp4_init_fcs(void)
 			mm_module_ctrl(video_v1_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
 			mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SNAPSHOT_CB, (int)fcs_snapshot_cb);
 			mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, V1_CHANNEL);	// start channel 0
-			if (auto_rate_ctrl_en[STREAM_V1]) {
-				mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_RATE_CONTROL, (int)&rate_ctrl_v1_params);
+			if (bps_stbl_ctrl_en[STREAM_V1]) {
+				mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_FPS_STG, (int)bps_stbl_ctrl_v1_fps_stage);
+				mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_GOP_STG, (int)bps_stbl_ctrl_v1_gop_stage);
+				mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_PARAMS, (int)&bps_stbl_ctrl_v1_params);
+				mm_module_ctrl(video_v1_ctx, CMD_VIDEO_BPS_STBL_CTRL_EN, 1);
 				mp4_v1_params.append_header = 1;//enable appending header, since the auto rate control may update the video header
 			}
 		} else {

@@ -326,10 +326,10 @@ int video_boot_open(int ch_index, video_boot_params_t *v_stream)
 	int codec = 0;
 	int ret = OK;
 
-	int enc_in_w = (video_boot_stream.video_params[ch_index].width + 15) & ~15;  //force 16 aligned
-	int enc_in_h = video_boot_stream.video_params[ch_index].height;
-	int enc_out_w = video_boot_stream.video_params[ch_index].width;  //will crop enc_in_w to enc_out_w
-	int enc_out_h = video_boot_stream.video_params[ch_index].height;
+	int enc_in_w = (v_stream->width + 15) & ~15;  //force 16 aligned
+	int enc_in_h = v_stream->height;
+	int enc_out_w = v_stream->width;  //will crop enc_in_w to enc_out_w
+	int enc_out_h = v_stream->height;
 	int enc_out_w_offset = (enc_in_w - enc_out_w) / 2;
 
 	int out_rsvd_size = (enc_in_w * enc_in_h) / VIDEO_RSVD_DIVISION;
@@ -350,22 +350,22 @@ int video_boot_open(int ch_index, video_boot_params_t *v_stream)
 		break;
 	}
 
-	bps = video_boot_stream.video_params[ch_index].bps;
+	bps = v_stream->bps;
 
-	if (video_boot_stream.video_params[ch_index].rc_mode) {
-		rcMode = video_boot_stream.video_params[ch_index].rc_mode - 1;
+	if (v_stream->rc_mode) {
+		rcMode = v_stream->rc_mode - 1;
 		if (rcMode) {
 			minQp = 25;
 			maxQp = 48;
-			bps = video_boot_stream.video_params[ch_index].bps / 2;
+			bps = v_stream->bps / 2;
 		}
 	}
 
-	if (video_boot_stream.video_params[ch_index].minQp > 0 && video_boot_stream.video_params[ch_index].minQp <= 51) {
-		minQp = video_boot_stream.video_params[ch_index].minQp;
+	if (v_stream->minQp > 0 && v_stream->minQp <= 51) {
+		minQp = v_stream->minQp;
 	}
-	if (video_boot_stream.video_params[ch_index].maxQp > 0 && video_boot_stream.video_params[ch_index].maxQp <= 51) {
-		maxQp = video_boot_stream.video_params[ch_index].maxQp;
+	if (v_stream->maxQp > 0 && v_stream->maxQp <= 51) {
+		maxQp = v_stream->maxQp;
 	}
 
 	hal_video_adapter_t *v_adp = hal_video_get_adp();
@@ -374,7 +374,7 @@ int video_boot_open(int ch_index, video_boot_params_t *v_stream)
 	v_adp->cmd[ch]->width = enc_out_w;
 	v_adp->cmd[ch]->height = enc_out_h;
 	v_adp->cmd[ch]->horOffsetSrc = enc_out_w_offset;
-	v_adp->cmd[ch]->rotation = video_boot_stream.video_params[ch_index].rotation;
+	v_adp->cmd[ch]->rotation = v_stream->rotation;
 	v_adp->cmd[ch]->bitPerSecond = bps;//video_boot_stream.video_params[ch].bps;
 	v_adp->cmd[ch]->qpMin = minQp;
 	v_adp->cmd[ch]->qpMax = maxQp;
@@ -429,7 +429,9 @@ int video_boot_open(int ch_index, video_boot_params_t *v_stream)
 		v_adp->cmd[ch]->osd = 1;
 	}
 
-	if (video_boot_stream.video_snapshot[ch_index]) {
+	bool isNormalSnapshotEn = (ch != 3) && video_boot_stream.video_snapshot[ch_index];
+	bool isExtraSnapshotEn = (ch == 3) && video_boot_stream.extra_video_snapshot;
+	if (isNormalSnapshotEn || isExtraSnapshotEn) {
 		v_adp->cmd[ch]->CodecType = v_stream->type | CODEC_JPEG;
 		v_adp->cmd[ch]->JpegMode = MODE_SNAPSHOT;
 		//Disable the ring buffer with JPEG SNAPSHOT. Setup the jpg_buf_size and jpg_rsvd_size as the same size
@@ -470,9 +472,11 @@ int video_boot_open(int ch_index, video_boot_params_t *v_stream)
 		v_adp->cmd[ch]->gray_mode = video_boot_stream.fcs_isp_gray_mode;
 	}
 
-	if (video_boot_stream.video_drop_frame[ch_index]) {
+	int dropFrameNum = (ch == 3) ? video_boot_stream.extra_video_drop_frame : video_boot_stream.video_drop_frame[ch_index];
+
+	if (dropFrameNum) {
 		v_adp->cmd[ch]->all_init_iq_set_flag = 1;
-		v_adp->cmd[ch]->drop_frame_num = video_boot_stream.video_drop_frame[ch_index];
+		v_adp->cmd[ch]->drop_frame_num = dropFrameNum;
 	}
 
 	if (video_boot_stream.voe_scale_up_en == 0) {
@@ -567,7 +571,7 @@ int video_boot_open(int ch_index, video_boot_params_t *v_stream)
 		}
 		v_adp->cmd[ch]->IDRuserDataDuration = 1;
 #endif
-		if (video_boot_stream.video_snapshot[ch_index]) {
+		if (isNormalSnapshotEn || isExtraSnapshotEn) {
 			v_adp->cmd[ch]->JPGuserData = video_boot_stream.fcs_meta_total_size;
 		}
 		if (v_adp->cmd[ch]->EncuserData > VIDEO_BOOT_META_REV_BUF) {
@@ -591,6 +595,7 @@ int video_boot_open(int ch_index, video_boot_params_t *v_stream)
 		hal_video_set_isp_init_items(ch, &init_items);
 	} else {
 		video_isp_initial_items_t init_items;
+		v_adp->cmd[ch]->all_init_iq_set_flag = 1;
 		init_items.init_brightness = 0;
 		init_items.init_contrast = 50;
 		init_items.init_flicker = 1;
@@ -699,6 +704,15 @@ int video_btldr_process(voe_fcs_load_ctrl_t *pvoe_fcs_ld_ctrl, int *code_start)
 				fcs_ch = i;
 			}
 		}
+		if (video_boot_stream.extra_video_params.fcs) {
+			if (video_boot_open(MAX_FCS_CHANNEL, &video_boot_stream.extra_video_params) != OK) {
+				dbg_printf("error: ch%d open fail\r\n", video_boot_stream.extra_video_params.stream_id);
+				return NOK;
+			}
+		}
+		if ((fcs_ch == -1) && (video_boot_stream.extra_video_params.fcs == 1)) { //Get the first start channel
+			fcs_ch = video_boot_stream.extra_video_params.stream_id;
+		}
 		__DSB();
 
 		pvoe_fcs_peri_info_t fcs_peri_info_for_ram = pvoe_fcs_ld_ctrl->p_fcs_peri_info;
@@ -745,7 +759,7 @@ int video_btldr_process(voe_fcs_load_ctrl_t *pvoe_fcs_ld_ctrl, int *code_start)
 	}
 	return ret;
 }
-extern void hal_voe_set_kmfw_base_addr(u32 val);
+
 int video_btldr_fcs_terminated(voe_fcs_load_ctrl_t *pvoe_fcs_ld_ctrl)
 {
 

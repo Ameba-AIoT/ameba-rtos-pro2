@@ -100,4 +100,6 @@ void mmf2_video_example_av_mp4_httpfs_init(void);
 
 void mmf2_video_example_fd_lm_mfn_sim_rtsp_init(void);
 
+void mmf2_video_example_vipnn_classify_rtsp_init(void);
+
 #endif /* MMF2_VIDEO_EXAMPLE_H */

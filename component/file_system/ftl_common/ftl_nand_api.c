@@ -282,6 +282,7 @@ int bbm_find_remap_block(bbm_info_attr *bbm, int block, int *remab_block)
 				if (ret == BBM_RET_OK) {
 					bbm->pbbt[i].remap_block = rba;
 					*remab_block = bbm->pbbt[i].remap_block;
+					ret = bbm_update_table(bbm);
 					break;
 				} else {
 					ret = BBM_RET_FAIL;
@@ -431,7 +432,7 @@ int ftl_write_nand(int block, int page, unsigned char *buf, int size, int offset
 				printf("Recover the data to other block %d\r\n", remap_block);
 			}
 		}
-		ret = bbm_update_table(bbm);//Update the bad blcoj result
+		//ret = bbm_update_table(bbm);//Update the bad blcoj result
 	}
 
 	return ret;

@@ -271,266 +271,167 @@ void *__wrap_memset(void *dst0, int val, size_t length)
 #include "strproc.h"
 char *__wrap_strcat(char *dest,  char const *src)
 {
-	if ((dest == NULL) || (src == NULL)) {
-		return NULL;
-	}
 	return strcat(dest, src);
 }
 
 char *__wrap_strchr(const char *s, int c)
 {
-	if (s == NULL) {
-		return NULL;
-	}
 	return strchr(s, c);
 }
 
 int __wrap_strcmp(char const *cs, char const *ct)
 {
-	if ((cs != NULL) && (ct != NULL)) {
-		return strcmp(cs, ct);
-	} else if ((cs == NULL) && (ct == NULL)) {
-		return 0;
-	} else {
-		return (cs == NULL) ? -1 : 1;
-	}
+	return strcmp(cs, ct);
 }
 
 int __wrap_strncmp(char const *cs, char const *ct, size_t count)
 {
-	if ((cs != NULL) && (ct != NULL)) {
-		return strncmp(cs, ct, count);
-	} else if ((cs == NULL) && (ct == NULL)) {
-		return 0;
-	} else {
-		return (cs == NULL) ? -1 : 1;
-	}
+	return strncmp(cs, ct, count);
 }
 
 int __wrap_strnicmp(char const *s1, char const *s2, size_t len)
 {
-	if ((s1 != NULL) && (s2 != NULL)) {
-		return strnicmp(s1, s2, len);
-	} else if ((s1 == NULL) && (s2 == NULL)) {
-		return 0;
-	} else {
-		return (s1 == NULL) ? -1 : 1;
-	}
+	return strnicmp(s1, s2, len);
 }
 
 
 char *__wrap_strcpy(char *dest, char const *src)
 {
-	if ((dest == NULL) || (src == NULL)) {
-		return NULL;
-	}
 	return strcpy(dest, src);
 }
 
 
 char *__wrap_strncpy(char *dest, char const *src, size_t count)
 {
-	if ((dest == NULL) || (src == NULL)) {
-		return NULL;
-	}
 	return strncpy(dest, src, count);
 }
 
 
 size_t __wrap_strlcpy(char *dst, char const *src, size_t s)
 {
-	if ((dst == NULL) || (src == NULL)) {
-		return 0;
-	}
 	return strlcpy(dst, src, s);
 }
 
 
 size_t __wrap_strlen(char const *s)
 {
-	if (s == NULL) {
-		return 0;
-	}
 	return strlen(s);
 }
 
 
 size_t __wrap_strnlen(char const *s, size_t count)
 {
-	if (s == NULL) {
-		return 0;
-	}
 	return strnlen(s, count);
 }
 
 
 char *__wrap_strncat(char *dest, char const *src, size_t count)
 {
-	if ((dest == NULL) || (src == NULL)) {
-		return NULL;
-	}
 	return strncat(dest, src, count);
 }
 
 char *__wrap_strpbrk(char const *cs, char const *ct)
 {
-	if ((cs == NULL) || (ct == NULL)) {
-		return NULL;
-	}
 	return strpbrk(cs, ct);
 }
 
 
 size_t __wrap_strspn(char const *s, char const *accept)
 {
-	if ((s == NULL) || (accept == NULL)) {
-		return 0;
-	}
 	return strspn(s, accept);
 }
 
 
 char *__wrap_strstr(char const *s1, char const *s2)
 {
-	if ((s1 == NULL) || (s2 == NULL)) {
-		return NULL;
-	}
 	return strstr(s1, s2);
 }
 
 
 char *__wrap_strtok(char *s, char const *ct)
 {
-	if (ct == NULL) {
-		return NULL;
-	}
 	return strtok(s, ct);
 }
 
 
 size_t __wrap_strxfrm(char *dest, const char *src, size_t n)
 {
-	if ((dest == NULL) || (src == NULL)) {
-		return 0;
-	}
 	return strxfrm(dest, src, n);
 }
 
 char *__wrap_strsep(char **s, const char *ct)
 {
-	if (s == NULL || *s == NULL || ct == NULL) {
-		return NULL;
-	}
 	return strsep(s, ct);
 }
 
 double __wrap_strtod(const char *str, char **endptr)
 {
-	if (str == NULL) {
-		return 0;
-	}
 	return strtod(str, endptr);
 }
 
 float __wrap_strtof(const char *str, char **endptr)
 {
-	if (str == NULL) {
-		return 0;
-	}
 	return strtof(str, endptr);
 }
 
 
 long double __wrap_strtold(const char *str, char **endptr)
 {
-	if (str == NULL) {
-		return 0;
-	}
 	return strtold(str, endptr);
 }
 
 long __wrap_strtol(const char *nptr, char **endptr, int base)
 {
-	if (nptr == NULL) {
-		return 0;
-	}
 	return strtol(nptr, endptr, base);
 }
 
 
 long long __wrap_strtoll(const char *nptr, char **endptr, int base)
 {
-	if (nptr == NULL) {
-		return 0;
-	}
 	return strtoll(nptr, endptr, base);
 }
 
 
 unsigned long __wrap_strtoul(const char *nptr, char **endptr, int base)
 {
-	if (nptr == NULL) {
-		return 0;
-	}
 	return strtoul(nptr, endptr, base);
 }
 
 
 unsigned long long __wrap_strtoull(const char *nptr, char **endptr, int base)
 {
-	if (nptr == NULL) {
-		return 0;
-	}
 	return strtoull(nptr, endptr, base);
 }
 
 int __wrap_atoi(const char *num)
 {
-	if (num == NULL) {
-		return 0;
-	}
 	return atoi(num);
 }
 
 unsigned int __wrap_atoui(const char *num)
 {
-	if (num == NULL) {
-		return 0;
-	}
 	return atoui(num);
 }
 
 long __wrap_atol(const char *num)
 {
-	if (num == NULL) {
-		return 0;
-	}
 	return atol(num);
 }
 
 unsigned long __wrap_atoul(const char *num)
 {
-	if (num == NULL) {
-		return 0;
-	}
 	return atoul(num);
 }
 
 
 unsigned long long __wrap_atoull(const char *num)
 {
-	if (num == NULL) {
-		return 0;
-	}
 	return atoull(num);
 }
 
 
 double __wrap_atof(const char *str)
 {
-	if (str == NULL) {
-		return 0;
-	}
 	return atof(str);
 }
 
