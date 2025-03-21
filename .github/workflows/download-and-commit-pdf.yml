@@ -1,0 +1,34 @@
+name: Download RTD PDF
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Runs weekily at midnight UTC / Minute/Hour/Day of Month/Month/Day of Week
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  download-rtd-pdf:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Remove Existing files (if exists)
+        run: |
+          rm -rf doc/rtd_offline_documents.pdf
+
+      - name: Download RTD PDF
+        run: |
+          curl -L -o doc/rtd_offline_documents.pdf -H "Authorization: Token ${{ secrets.RTD_SHARE_PAT }}" "${{ secrets.RTD_PDF_URL }}"
+
+      - name: Commit and Push Changes
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions@github.com"
+          git remote set-url origin https://${GH_PAT}@github.com/Ameba-AIoT/ameba-rtos-pro2.git
+          git add doc/rtd_offline_documents.pdf
+          git commit -m "Update RTD PDF [$(date)]" || echo "No changes to commit"
+          git push
+

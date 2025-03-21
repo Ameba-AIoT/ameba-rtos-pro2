@@ -7,6 +7,8 @@ PLease refer to this document for the compile environment of the SDK.
 ### Online documents
 - [Application Notes](https://ameba-doc-rtos-pro2-sdk.readthedocs-hosted.com/en/latest/)
 - [Realtek SDK Scenario readme](project/realtek_amebapro2_v0_example/scenario/ai_glass/Readme.md)
+- [pdf - Private AI glass application documents](doc/rtd_offline_documents.pdf)
+- [web - Private AI glass application documents](https://ameba-doc-ai-glass-doc.readthedocs-hosted.com/en/latest/)
 
 ### downloadable tools
 - [msys64_v10_3 tools](https://github.com/Ameba-AIoT/ameba-tool-rtos-pro2/releases/tag/msys64_v10_3) A cmake envidoment setup for Windows OS.
