@@ -50,6 +50,7 @@ list(
 list(
 	APPEND scn_sources
 	${prj_root}/src/test_model/model_yolo.c
+	${prj_root}/src/test_model/model_yolov9.c
 	${prj_root}/src/test_model/model_yamnet.c
 	${prj_root}/src/test_model/model_yamnet_s.c
 	${prj_root}/src/test_model/model_landmark_sim.c

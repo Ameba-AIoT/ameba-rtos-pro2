@@ -464,7 +464,7 @@ struct rxi316_dram_ctrl_info rxi316_ddr3_dramc_info = {
 	0,          // cke_nop;
 	0,          // stc_cke;  // default 0: dynamic cke for power saving; 1: for performance profile
 	0,          // stc_odt;
-	0,          // cmd_2t_en; (dfi_ratio=2,cmd_2t_en=1)
+	1,          // cmd_2t_en; (dfi_ratio=2,cmd_2t_en=1)
 	0,          // rtw_2t_dis;
 	0,          // half_csn;
 	2,          // rd_pipe;
@@ -1399,6 +1399,12 @@ void hal_dramc_init(DRAMC_TypeDef *dramc_dev, struct rxi316_dram_device_info *rx
 
 	// nWR setting
 	sdram_wr = rxi316_dram_info->timing->nWR;
+
+	//D.I.C(output driver impedance control) = RZQ/3, Rtt_Norm = RZQ/2
+	if ((rxi316_dram_info->dev->device_type) == DDR_3) {
+		mr1_bit2 = 0;
+		mr1_wr_lpddr23 = 3;
+	}
 
 	dramc_dev->mr1 = (
 						 (dll_en          << PCTL_MR1_DLL_EN_BFO)   |    // mr1[0]
@@ -2356,6 +2362,54 @@ void hal_ddr3_phy_init(uint32_t dram_period_ps)
 	/*Enable PAD*/
 	cpu_read_modify_write((volatile uint32_t *)REG_SYS_DDRPHY_CTRL, 0x2, 0x2);
 
+	//Set 0 OCD force value = 0x18(89ohm)
+	//Set 1 OCD force value = 0x11(120ohm)
+	//Set 2 OCD force vaule = 0x0A(200ohm||200ohm)
+	//0x26 default OCD value for all Sets
+	dpi_dev_map->DPI_OCDP0_SET0 = 0x260A1118;
+	dpi_dev_map->DPI_OCDN0_SET0 = 0x260A1118;
+	dpi_dev_map->DPI_OCDP0_SET1 = 0x260A1118;
+	dpi_dev_map->DPI_OCDN0_SET1 = 0x260A1118;
+
+	//Set 0 ODT force value = 0x00(DEFAULT)
+	dpi_dev_map->DPI_ODT_TTCP0_SET0 = 0x00000000;
+	dpi_dev_map->DPI_ODT_TTCN0_SET0 = 0x00000000;
+	dpi_dev_map->DPI_ODT_TTCP0_SET1 = 0x00000000;
+	dpi_dev_map->DPI_ODT_TTCN0_SET1 = 0x00000000;
+
+	/*DQ/DQS/CLK ODT Selection, 目前選擇Set 0*/
+	dpi_dev_map->DPI_DQ_ODT_SEL_0 = 0xFFFF0000;
+	dpi_dev_map->DPI_DQ_ODT_SEL_1 = 0xFFFF0000;
+	dpi_dev_map->DPI_DQS_P_ODT_SEL_0 = 0xFFFF0000;
+	dpi_dev_map->DPI_DQS_P_ODT_SEL_1 = 0xFFFF0000;
+	dpi_dev_map->DPI_DQS_N_ODT_SEL_0 = 0xFFFF0000;
+	dpi_dev_map->DPI_DQS_N_ODT_SEL_1 = 0xFFFF0000;
+	dpi_dev_map->DPI_CLK_ODT_SEL = 0xFFFF0000;
+
+	/*DQ/DQS/CLK OCD Selection目前選擇Set 0*/
+	dpi_dev_map->DPI_DQ_OCD_SEL_0 = 0xFFFF0000;
+	dpi_dev_map->DPI_DQ_OCD_SEL_1 = 0xFFFF0000;
+	dpi_dev_map->DPI_DQS_OCD_SEL_0 = 0x00000000;
+	dpi_dev_map->DPI_DQS_OCD_SEL_1 = 0x00000000;
+	dpi_dev_map->DPI_CK_OCD_SEL = 0x00000000;
+
+	/*CA PAD OCD Selection目前選擇Set 1, 可以修改force value調整檔位(0x18)*/
+	dpi_dev_map->DPI_CKE_OCD_SEL = 0xFFFF1111;
+	dpi_dev_map->DPI_ADR_OCD_SEL = 0x11FF11FF;
+	dpi_dev_map->DPI_OCD_SEL_0 = 0x11111111;
+	dpi_dev_map->DPI_OCD_SEL_1 = 0x11111111;
+	dpi_dev_map->DPI_OCD_SEL_2 = 0x11111111;
+	dpi_dev_map->DPI_OCD_SEL_3 = 0x11111111;
+	dpi_dev_map->DPI_OCD_SEL_4 = 0x11111111;
+	dpi_dev_map->DPI_OCD_SEL_5 = 0x11111111;
+	dpi_dev_map->DPI_OCD_SEL_6 = 0x11111111;
+	dpi_dev_map->DPI_OCD_SEL_7 = 0x11111111;
+	dpi_dev_map->DPI_OCD_SEL_8 = 0x11111111;
+	dpi_dev_map->DPI_ODT_SEL_0 = 0xFFFFFF22;
+	dpi_dev_map->DPI_CKE_ODT_SEL = 0xFFFF1111;
+	dpi_dev_map->DPI_ADR_ODT_SEL = 0x11FF1111;
+
+#if 0
 	dram_r480_calibration(DDR_3);
 	dram_zq_calibration(DDR_3);
 
@@ -2385,7 +2439,7 @@ void hal_ddr3_phy_init(uint32_t dram_period_ps)
 	dpi_dev_map->DPI_CKE_ODT_SEL = 0xffff2222;
 	dpi_dev_map->DPI_ADR_ODT_SEL = 0x22ff2277;
 	dpi_dev_map->DPI_CLK_ODT_SEL = 0x00003333;
-
+#endif
 	cpu_read_modify_write(&dpi_dev_map->DPI_DPI_CTRL_2, 0x10C00000, 0x10C00000);
 	cpu_read_modify_write(&dpi_dev_map->DPI_CRT_CTL, 0x0, 0x40800);
 	cpu_read_modify_write(&dpi_dev_map->DPI_CRT_CTL, 0x0, 0x4);
@@ -2403,11 +2457,11 @@ void hal_ddr3_phy_init(uint32_t dram_period_ps)
 	dpi_dev_map->DPI_READ_CTRL1 = 0x6;
 
 	/*DCK*/
-	cpu_read_modify_write(&dpi_dev_map->DPI_PLL_PI0, 0x16 << DPI_SHIFT_POST_PI_SEL0, DPI_MASK_POST_PI_SEL0);
+	cpu_read_modify_write(&dpi_dev_map->DPI_PLL_PI0, 0x12 << DPI_SHIFT_POST_PI_SEL0, DPI_MASK_POST_PI_SEL0);
 	dpi_dev_map->DPI_PLL_CTL1 |= (1 << 0);
 
 	/*DCS*/
-	cpu_read_modify_write(&dpi_dev_map->DPI_PLL_PI2, 0x1F << DPI_SHIFT_POST_PI_SEL10, DPI_MASK_POST_PI_SEL10);
+	cpu_read_modify_write(&dpi_dev_map->DPI_PLL_PI2, 0x1A << DPI_SHIFT_POST_PI_SEL10, DPI_MASK_POST_PI_SEL10);
 	dpi_dev_map->DPI_PLL_CTL1 |= (1 << 10);
 
 	/*DQS0, DQS1*/

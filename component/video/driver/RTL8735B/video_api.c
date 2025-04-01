@@ -616,7 +616,15 @@ int video_set_bps_stbl_ctrl_params(int ch, bps_stbl_ctrl_param_t *bps_stbl_ctrl_
 	}
 	bps_stbl_ctrl_t *bps_stbl_ctrl = voe_info.ch_info[ch].bps_stbl_ctrl;
 	if(bps_stbl_ctrl_param) {
-		memcpy(&(bps_stbl_ctrl->params), (void *)bps_stbl_ctrl_param, sizeof(bps_stbl_ctrl_param_t));
+		int rcMode = voe_info.ch_info[ch].param->rc_mode - 1;
+		if (rcMode) { //VBR
+			bps_stbl_ctrl->params.minimum_bitrate = bps_stbl_ctrl_param->minimum_bitrate / 2;
+			bps_stbl_ctrl->params.maximun_bitrate = bps_stbl_ctrl_param->maximun_bitrate / 2;
+			bps_stbl_ctrl->params.target_bitrate = bps_stbl_ctrl_param->target_bitrate / 2;
+			bps_stbl_ctrl->params.sampling_time = bps_stbl_ctrl_param->sampling_time;
+		} else { //CBR
+			memcpy(&(bps_stbl_ctrl->params), (void *)bps_stbl_ctrl_param, sizeof(bps_stbl_ctrl_param_t));
+		}
 		if ((bps_stbl_ctrl_param->minimum_bitrate == 0) || (bps_stbl_ctrl_param->minimum_bitrate >= bps_stbl_ctrl_param->maximun_bitrate)) {
 			bps_stbl_ctrl_param->minimum_bitrate = bps_stbl_ctrl_param->target_bitrate;
 		}
@@ -657,7 +665,7 @@ static void video_bps_stbl_ctrl_update_fps_gop(int ch, int fps, int gop)
 static int video_bps_stbl_ctrl_get_fps_stage(bps_stbl_ctrl_t *bps_stbl_ctrl)
 {
 	int cur_fps = bps_stbl_ctrl->current_framerate;
-	for(int i = 0; i < 3; i++) {
+	for(int i = 0; i < BPS_STBL_CTRL_STG_CNT; i++) {
 		if(cur_fps == bps_stbl_ctrl->fps_stage[i]) {
 			return i;
 		}
@@ -681,7 +689,8 @@ static void video_bps_stbl_ctrl_process(int ch, bps_stbl_ctrl_t *bps_stbl_ctrl, 
 	//calculate sample bitrate
 	bps_stbl_ctrl->stats_info.cnt_sr++;
 	bps_stbl_ctrl->stats_info.sum_sr += frame_size;
-	if (bps_stbl_ctrl->stats_info.cnt_sr < bps_stbl_ctrl->params.sampling_time) {
+	uint32_t sampling_frame_count = bps_stbl_ctrl->params.sampling_time * cur_fps / 1000;
+	if (bps_stbl_ctrl->stats_info.cnt_sr < sampling_frame_count) {
 		return;
 	}
 	bps_stbl_ctrl->sample_bitrate = bps_stbl_ctrl->stats_info.sum_sr * 8 / bps_stbl_ctrl->stats_info.cnt_sr * bps_stbl_ctrl->current_framerate;
@@ -703,7 +712,7 @@ static void video_bps_stbl_ctrl_process(int ch, bps_stbl_ctrl_t *bps_stbl_ctrl, 
 	
 	if (bps_stbl_ctrl->sample_bitrate > bps_stbl_ctrl_param->maximun_bitrate) {
 		//if not min fps (fps stage 0~1), cut fps, raise fps stage
-		if ((0 <= bps_stbl_ctrl->fps_stage_idx) && (bps_stbl_ctrl->fps_stage_idx <= 1)) {
+		if ((0 <= bps_stbl_ctrl->fps_stage_idx) && (bps_stbl_ctrl->fps_stage_idx <= (BPS_STBL_CTRL_STG_CNT - 2))) {
 			bps_stbl_ctrl->switch_fps_down++;
 			if (bps_stbl_ctrl->switch_fps_down >= BPS_STBL_CTRL_DEBOUNCE) {
 				bps_stbl_ctrl->fps_stage_idx++;
@@ -717,7 +726,7 @@ static void video_bps_stbl_ctrl_process(int ch, bps_stbl_ctrl_t *bps_stbl_ctrl, 
 		}
 	} else if (bps_stbl_ctrl->sample_bitrate < bps_stbl_ctrl_param->minimum_bitrate) {
 		//if not max fps (fps stage 1~2), add fps, lower fps stage
-		if ((1 <= bps_stbl_ctrl->fps_stage_idx) && (bps_stbl_ctrl->fps_stage_idx <= 2)) {
+		if ((1 <= bps_stbl_ctrl->fps_stage_idx) && (bps_stbl_ctrl->fps_stage_idx <= (BPS_STBL_CTRL_STG_CNT - 1))) {
 			bps_stbl_ctrl->switch_fps_up++;
 			if (bps_stbl_ctrl->switch_fps_up >= BPS_STBL_CTRL_DEBOUNCE) {
 				bps_stbl_ctrl->fps_stage_idx--;
@@ -823,6 +832,10 @@ static void video_rc_callback(int ch, bps_stbl_ctrl_t *bps_stbl_ctrl, uint32_t f
 	
 	uint64_t rc_update_duration = (hal_read_systime_us() - voe_info.ch_info[ch].rc_info->update_time) / 1000;
 	if ((rc_update_duration > (1000 / cur_fps)) && atomic_exchange(&(voe_info.ch_info[ch].rc_info->update_flag), false)) {
+		if(voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps != 0 && (voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps > voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps)) {
+			video_dprintf(VIDEO_LOG_MSG,"[%s] invalid fps(%d) > ispfps(%d)\r\n", __FUNCTION__, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps);
+			voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps = 0;
+		}
 		// if update_flag = ture, update rc parameters and set update_flag to false
 		int ret = hal_video_set_rc(&(voe_info.ch_info[ch].rc_info->temp_rc_ctrl), ch);
 		if(ret == OK) {
@@ -862,16 +875,48 @@ int video_set_rc(int ch, rate_ctrl_s *rc_ctrl)
 	video_rc_update_param(ch, &(voe_info.ch_info[ch].rc_info->temp_rc_ctrl), rc_ctrl);
 	if(rc_ctrl->bps) {
 		int rcMode = voe_info.ch_info[ch].param->rc_mode - 1;
+		int bps;
 		if (rcMode) { //VBR
-			voe_info.ch_info[ch].rc_info->temp_rc_ctrl.bps = rc_ctrl->bps / 2;
+			bps = rc_ctrl->bps / 2;
 		} else { //CBR
-			voe_info.ch_info[ch].rc_info->temp_rc_ctrl.bps = rc_ctrl->bps;
+			bps = rc_ctrl->bps;
+		}
+		if(bps >= 10000) { //encoder HW limit
+			voe_info.ch_info[ch].rc_info->temp_rc_ctrl.bps = bps;
+		} else {
+			video_dprintf(VIDEO_LOG_MSG, "[%s] ch%d invlid bps setting\r\n", __FUNCTION__, ch);
 		}
 	}
 	//video_dprintf(VIDEO_LOG_MSG, "[%s] rc fps = %d, isp_fps = %d, gop = %d, bps = %d\r\n", __FUNCTION__, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps,
 	//		voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.gop, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.bps);
 	atomic_store(&(voe_info.ch_info[ch].rc_info->update_flag), true);
 	return OK;
+}
+
+int video_get_realfps(int ch, int* isp_fps, int* enc_fps)
+{
+	int ispfpsx100, encfpsx100;
+	int ret = hal_video_get_realfps(ch, &ispfpsx100, &encfpsx100); //FPS are multiplied with 100
+	if(ret == OK) {
+		*isp_fps = ispfpsx100 / 100;
+		*enc_fps = encfpsx100 / 100;
+	}	
+	return ret;
+}
+
+int video_wait_target_fps(int ch, int target_fps, int timeout)
+{
+	int ispfps, encfps, wait_time = 0, delay = 67;
+	while(wait_time < timeout) {
+		video_get_realfps(ch, &ispfps, &encfps);
+		if(ispfps == target_fps) {
+			return OK;
+		}
+		vTaskDelay(delay);
+		wait_time += delay;
+	}
+	video_dprintf(VIDEO_LOG_MSG, "[%s] ch%d wait target fps fail\r\n", __FUNCTION__, ch);
+	return NOK;
 }
 
 int video_set_roi_region(int ch, int x, int y, int width, int height, int value)

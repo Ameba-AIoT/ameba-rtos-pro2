@@ -19,6 +19,8 @@
 #define HTTP_PORT                   8080 //80
 #define HTTPS_PORT                  8080 //443
 
+#define HTTP_OTA_TEST               1
+
 // CONFIG_USE_POLARSSL in platform_opts.h, default CONFIG_USE_POLARSSL = 0
 // These are the certificate, key provide by TLS
 // User could use their cert since the test cert treaed unsafety for some user
@@ -56,14 +58,21 @@ static uint8_t delete_file_after_upload = DELETE_FILE_AFTER_UPLOAD;
 #define WRITE_STATUS_EOF        3
 #define WRITE_STATUS_RERROR     4
 
+#define WRITE_TASK_COMPLETED_BIT    (0x01)
+#define WRITE_TASK_SUCCESS_BIT      (0x02)
+#define READ_TASK_COMPLETED_BIT     (0x04)
+#define READ_TASK_SUCCESS_BIT       (0x08)
+#define TASK_NOTIFY_COMPLETED_MASK  (WRITE_TASK_COMPLETED_BIT | READ_TASK_COMPLETED_BIT)
+
 // For Queue method
 #define QUEUE_LENGTH            3
 #define QUEUE_ITEM_SIZE         HTTP_DATA_BUF_SIZE
 
 typedef struct {
 	int id;
+	uint8_t fileread;
 	uint8_t message[QUEUE_ITEM_SIZE];
-} Message_t;
+} file_msg_t;
 
 static QueueHandle_t file_queue = NULL;
 static TaskHandle_t core_taskhandle = NULL;
@@ -77,6 +86,246 @@ extern struct netif xnetif[NET_IF_NUM];
 #endif
 static rtw_softap_info_t softAP_config = {0};
 static uint8_t wifi_pass_word[MAX_AP_PASSWORD_LEN] = {0};
+
+#if defined(HTTP_OTA_TEST) && HTTP_OTA_TEST
+#include <ota_8735b.h>
+#include "httpc.h"
+#define OTA_STATE_IDLE                      0
+#define OTA_STATE_ERROR                     1
+#define OTA_STATE_RECV_START_SIGNAL         2
+#define OTA_STATE_DOWNLOAD_FW_IN_PROGRESS   3
+#define OTA_STATE_DOWNLOAD_FW_COMPLETED     4
+#define OTA_STATE_REBOOT                    5
+
+#define OTA_STATUS_BUFFER_SIZE 64
+
+static int http_ota_status = OTA_STATE_IDLE;
+static int convert_ota_status_to_string(int ota_status, char *ota_status_str)
+{
+	int ret = 0;
+	if (ota_status_str) {
+		switch (ota_status) {
+		case OTA_STATE_IDLE:
+			strcpy(ota_status_str, "OTA_STATE_IDLE");
+			break;
+		case OTA_STATE_ERROR:
+			strcpy(ota_status_str, "OTA_STATE_ERROR");
+			break;
+		case OTA_STATE_RECV_START_SIGNAL:
+			strcpy(ota_status_str, "OTA_STATE_RECV_START_SIGNAL");
+			break;
+		case OTA_STATE_DOWNLOAD_FW_IN_PROGRESS:
+			strcpy(ota_status_str, "OTA_STATE_DOWNLOAD_FW_IN_PROGRESS");
+			break;
+		case OTA_STATE_DOWNLOAD_FW_COMPLETED:
+			strcpy(ota_status_str, "OTA_STATE_DOWNLOAD_FW_COMPLETED");
+			break;
+		case OTA_STATE_REBOOT:
+			strcpy(ota_status_str, "OTA_STATE_REBOOT");
+			break;
+		default:
+			ret = -1;
+			break;
+		}
+	} else {
+		ret = -1;
+	}
+	return ret;
+}
+
+static int server_port = 3000;
+static const char *server_host = "192.168.43.2";
+static void ota_httpc_send_thread(void *param)
+{
+	/* To avoid gcc warnings */
+	(void) param;
+
+#if defined(configENABLE_TRUSTZONE) && (configENABLE_TRUSTZONE == 1) && defined(CONFIG_SSL_CLIENT_PRIVATE_IN_TZ) && (CONFIG_SSL_CLIENT_PRIVATE_IN_TZ == 1)
+	extern void rtw_create_secure_context(u32 secure_stack_size);
+	rtw_create_secure_context(STACKSIZE * 2);
+	extern int NS_ENTRY secure_mbedtls_platform_set_calloc_free(void);
+	secure_mbedtls_platform_set_calloc_free();
+	extern void NS_ENTRY secure_set_ns_device_lock(void (*device_mutex_lock_func)(uint32_t), void (*device_mutex_unlock_func)(uint32_t));
+	secure_set_ns_device_lock(device_mutex_lock, device_mutex_unlock);
+#endif
+
+	struct httpc_conn *conn = NULL;
+
+	// Delay to wait for IP by DHCP
+	WLAN_SCEN_MSG("HTTP Client OTA TESTING THREADS\r\n");
+
+#if USE_HTTPS
+	conn = httpc_conn_new(HTTPC_SECURE_TLS, NULL, NULL, NULL);
+#else
+	conn = httpc_conn_new(HTTPC_SECURE_NONE, NULL, NULL, NULL);
+#endif
+	char *iot_json = NULL;
+	if (conn) {
+		while (httpd_is_running()) {
+			vTaskDelay(1000);
+#if USE_HTTPS
+			if (httpc_conn_connect(conn, (char *)server_host, server_port, 2000) != 0)
+#else
+			if (httpc_conn_connect(conn, (char *)server_host, server_port, 2000) != 0)
+#endif
+			{
+				WLAN_SCEN_ERR("ERROR: httpc_conn_connect\r\n");
+				continue;
+			} else {
+				WLAN_SCEN_MSG("Connect Successfully\r\n");
+			}
+
+			if (http_ota_status != OTA_STATE_IDLE) {
+				WLAN_SCEN_ERR("HTTP OTA status is not in the idle status\r\n");
+				httpc_conn_close(conn);
+				continue;
+			} else {
+				cJSON *IOTJSObject = cJSON_CreateObject();
+				cJSON_AddItemToObject(IOTJSObject, "OTA_state", cJSON_CreateString("OTA_STATE_IDLE"));
+				iot_json = cJSON_Print(IOTJSObject);
+				cJSON_Delete(IOTJSObject);
+				// HTTP GET request
+				// start a header and add Host (added automatically), Content-Type and Content-Length (added by input param)
+				httpc_request_write_header_start(conn, (char *)"POST", (char *)"/api/connectedclients", (char *)"application/json", strlen(iot_json));
+				// add other required header fields if necessary
+				httpc_request_write_header(conn, (char *)"Connection", (char *)"keep-alive");
+				// finish and send header
+				httpc_request_write_header_finish(conn);
+				httpc_request_write_data(conn, (uint8_t *)iot_json, strlen(iot_json));
+
+				// receive response header
+				if (httpc_response_read_header(conn) == 0) {
+					httpc_conn_dump_header(conn);
+					// receive response body
+					if (httpc_response_is_status(conn, (char *)"200 OK")) {
+						uint8_t buf[1024];
+						int read_size = 0;
+						uint32_t total_size = 0;
+
+						while (1) {
+							memset(buf, 0, sizeof(buf));
+							read_size = httpc_response_read_data(conn, buf, sizeof(buf) - 1);
+
+							if (read_size > 0) {
+								total_size += read_size;
+								WLAN_SCEN_WARN("%s", buf);
+							} else {
+								break;
+							}
+
+							if (conn->response.content_len && (total_size >= conn->response.content_len)) {
+								break;
+							}
+						}
+					}
+				}
+				httpc_conn_close(conn);
+			}
+		}
+	}
+
+	httpc_conn_free(conn);
+	free(iot_json);
+	vTaskDelete(NULL);
+}
+
+static void ota_httpc_process_thread(void *param)
+{
+	int ret = -1;
+
+	ret = http_update_ota((char *)server_host, server_port, (char *)"api/uploadfile");
+
+	http_ota_status = OTA_STATE_DOWNLOAD_FW_COMPLETED;
+
+	WLAN_SCEN_MSG("[%s] Update task exit\r\n", __FUNCTION__);
+	if (!ret) {
+		WLAN_SCEN_MSG("[%s] Ready to reboot\r\n", __FUNCTION__);
+		http_ota_status = OTA_STATE_REBOOT;
+	} else {
+		WLAN_SCEN_MSG("[%s] OTA Failed ret = %d, but reboot\r\n", __FUNCTION__, ret);
+		http_ota_status = OTA_STATE_ERROR;
+	}
+	ota_platform_reset();
+	vTaskDelete(NULL);
+}
+
+#define SERVER_READ_BUF_SIZE    100
+#define SERVER_READ_SLICE_SIZE  2
+static void ota_start_cb(struct httpd_conn *conn)
+{
+	char *user_agent = NULL;
+
+	// test log to show brief header parsing
+	httpd_conn_dump_header(conn);
+	WLAN_SCEN_MSG("ota_start_cb \r\n");
+	// test log to show extra User-Agent header field
+	if (httpd_request_get_header_field(conn, (char *)"User-Agent", &user_agent) != -1) {
+		WLAN_SCEN_MSG("\nUser-Agent=[%s]\n", user_agent);
+		httpd_free(user_agent);
+	}
+
+	uint8_t ota_read_buf[SERVER_READ_BUF_SIZE] = {0};
+	if (httpd_request_is_method(conn, (char *)"POST")) {
+		int slice_len = 0;
+		int read_len = 0;
+		WLAN_SCEN_MSG("Content Length.%d\r\n", conn->request.content_len);
+		if (http_ota_status == OTA_STATE_IDLE) {
+			http_ota_status = OTA_STATE_RECV_START_SIGNAL;
+		} else {
+			httpd_response_method_not_allowed(conn, NULL);
+			goto endofota;
+		}
+
+		while (read_len < conn->request.content_len) {
+			slice_len = (conn->request.content_len - read_len) > SERVER_READ_SLICE_SIZE ? conn->request.content_len - read_len : SERVER_READ_SLICE_SIZE;
+			int true_len = httpd_request_read_data(conn, ota_read_buf + read_len, slice_len);
+			WLAN_SCEN_MSG("Content Length.%d/%d\r\n", true_len, conn->request.content_len);
+			read_len += slice_len;
+			if (read_len + SERVER_READ_SLICE_SIZE >= SERVER_READ_BUF_SIZE) {
+				break;
+			}
+		}
+
+		httpd_response_write_header_start(conn, (char *)"200 OK", (char *)"text/plain", 0);
+		httpd_response_write_header(conn, (char *)"Access-Control-Allow-Origin", (char *)"*");
+		//httpd_response_write_header(conn, (char *)"Access-Control-Allow-Methods", (char *)"GET, POST, OPTIONS");
+		//httpd_response_write_header(conn, (char *)"Access-Control-Allow-Headers", (char *)"Content-Type");
+		//httpd_response_write_header(conn, (char *)"Access-Control-Allow-Credentials", (char *)"true");
+		httpd_response_write_header(conn, (char *)"Connection", (char *)"close");
+		httpd_response_write_header_finish(conn);
+
+		WLAN_SCEN_MSG("[OTA] Received start OTA signal from UI.%s\r\n", ota_read_buf);
+
+		if (strstr((const char *)ota_read_buf, "start_ota")) {
+			WLAN_SCEN_MSG("[OTA] Received start OTA signal from UI.\r\n");
+			if (http_ota_status == OTA_STATE_RECV_START_SIGNAL) {
+				WLAN_SCEN_MSG("[OTA] Change Status.\r\n");
+				if (xTaskCreate(ota_httpc_process_thread, (const char *)"ota_httpc_process_thread", 1024, NULL, tskIDLE_PRIORITY + 7, NULL) != pdPASS) {
+					http_ota_status = OTA_STATE_IDLE;
+					WLAN_SCEN_ERR("\n\r[%s] Create update task failed", __FUNCTION__);
+				}
+			}
+		} else {
+			http_ota_status = OTA_STATE_IDLE;
+		}
+	} else if (httpd_request_is_method(conn, (char *)"OPTIONS")) {
+		// Handle pre-flight OPTIONS request for CORS
+		httpd_response_write_header_start(conn, (char *)"204 No Content", NULL, 0);
+
+		// Add CORS headers for preflight request
+		httpd_response_write_header(conn, (char *)"Access-Control-Allow-Origin", (char *)"*");
+		//httpd_response_write_header(conn, (char *)"Access-Control-Allow-Methods", (char *)"GET, POST, OPTIONS");
+		//httpd_response_write_header(conn, (char *)"Access-Control-Allow-Headers", (char *)"Content-Type");
+		//httpd_response_write_header(conn, (char *)"Access-Control-Allow-Credentials", (char *)"true");
+		httpd_response_write_header_finish(conn);
+	} else {
+		// HTTP/1.1 405 Method Not Allowed
+		httpd_response_method_not_allowed(conn, NULL);
+	}
+endofota:
+	httpd_conn_close(conn);
+}
+#endif
 
 static void pingpong_cb(struct httpd_conn *conn)
 {
@@ -220,16 +469,10 @@ exit:
 	return ret;
 }
 
-static void transfer_file_normal_internal(struct httpd_conn *conn, char *filename)
+static void transfer_file_normal_internal(struct httpd_conn *conn, FILE *http_file)
 {
-	FILE *http_file = extdisk_fopen(filename, "r");
-	if (http_file == NULL) {
-		return;
-	}
-	int br = 0;
-	extdisk_fseek(http_file, 0, SEEK_SET);
 	while (1) {
-		br = extdisk_fread(data_buf, 1, HTTP_DATA_BUF_SIZE, http_file);
+		int br = extdisk_fread(data_buf, 1, HTTP_DATA_BUF_SIZE, http_file);
 
 		if (br < 0) {
 			WLAN_SCEN_ERR("Read ERROR, error num %d\r\n", br);
@@ -253,119 +496,124 @@ static void transfer_file_normal_internal(struct httpd_conn *conn, char *filenam
 		}
 	}
 
-	if (http_file) {
-		extdisk_fclose(http_file);
-		http_file = NULL;
-	}
-
 	return;
 }
 
 static void http_file_send_thread(void *pvParameters)
 {
-	char *filename = (char *)pvParameters;
-	FILE *http_file = extdisk_fopen(filename, "r");
-	if (http_file == NULL) {
-		WLAN_SCEN_ERR("[Reader Task] Read ERROR\n");
-		WLAN_SCEN_ERR("[Reader Task] Send notify READ_STATUS_ERROR to Writer Task Handle for error\r\n");
-		xTaskNotify(send_taskhandle, TASK_NOTIFY_ERROR, eSetValueWithOverwrite); // Notify error
-	}
-	int reader_status = READ_STATUS_ERROR;
-	Message_t message;
+	FILE *http_file = (FILE *)pvParameters;
+	file_msg_t msg = {0};
+	uint32_t notifyValue;
+	int send_success = 1;
 
 	extdisk_fseek(http_file, 0, SEEK_SET);
 	while (1) {
+		// Check for stop signal from writer task
+		if (xTaskNotifyWait(0, 0, &notifyValue, 0) == pdPASS) {
+			if (notifyValue == TASK_NOTIFY_ERROR || notifyValue == TASK_NOTIFY_WERROR) {
+				WLAN_SCEN_ERR("[Reader Task] Stopping read due to writer error.\r\n");
+				send_success = 0;
+				break;
+			}
+		}
+
 		// Read data from the file
-		int br = extdisk_fread(message.message, 1, QUEUE_ITEM_SIZE, http_file);
-		if (br < 0) {
-			reader_status = READ_STATUS_ERROR;
-			break;
+		if (msg.fileread == 0) {
+			int br = extdisk_fread(msg.message, 1, QUEUE_ITEM_SIZE, http_file);
+			if (br < 0) {
+				WLAN_SCEN_ERR("[Reader Task] Read ERROR\r\n");
+				WLAN_SCEN_ERR("[Reader Task] Send notify READ_STATUS_ERROR to Writer Task Handle for error\r\n");
+				if (send_taskhandle) {
+					xTaskNotify(send_taskhandle, TASK_NOTIFY_ERROR, eSetValueWithOverwrite); // Notify error
+				}
+				send_success = 0;
+				break;
+			}
+
+			if (br == 0) { // EOF detected
+				WLAN_SCEN_MSG("[Reader Task] EOF Detected\r\n");
+				WLAN_SCEN_MSG("[Reader Task] Send notify 0 to Writer Task Handle for EOF\r\n");
+				msg.id = 0;
+				if (file_queue) {
+					xQueueSend(file_queue, &msg, portMAX_DELAY);
+				}
+				break;
+			}
+
+			// Fill in the message metadata
+			msg.fileread = 1;
+			msg.id = br; // Use the number of bytes read as the ID
 		}
 
-		if (br == 0) { // EOF detected
-			reader_status = READ_STATUS_EOF;
-			break;
-		}
-
-		// Fill in the message metadata
-		message.id = br; // Use the number of bytes read as the ID
-
-		// Send the message to the queue
-		if (xQueueSend(file_queue, &message, portMAX_DELAY) != pdPASS) {
-			WLAN_SCEN_ERR("Failed to enqueue message.\r\n");
+		if (file_queue) {
+			if (xQueueSend(file_queue, &msg, 20) != pdPASS) {
+				WLAN_SCEN_INFO("[Reader Task] enqueue message full\r\n");
+			} else {
+				msg.fileread = 0;
+			}
+		} else {
+			WLAN_SCEN_ERR("[Reader Task] Queue is not valid.\r\n");
+			send_success = 0;
 			break;
 		}
 	}
 
-	if (reader_status == READ_STATUS_ERROR) {
-		WLAN_SCEN_ERR("[Reader Task] Read ERROR\n");
-		WLAN_SCEN_ERR("[Reader Task] Send notify READ_STATUS_ERROR to Writer Task Handle for error\r\n");
-		xTaskNotify(send_taskhandle, TASK_NOTIFY_ERROR, eSetValueWithOverwrite); // Notify error
-	} else if (reader_status == READ_STATUS_EOF) {
-		WLAN_SCEN_MSG("[Reader Task] EOF Detected\r\n");
-		WLAN_SCEN_MSG("[Reader Task] Send notify 0 to Writer Task Handle for EOF\r\n");
-		// Signal end of sending by sending a zero-length message
-		message.id = 0;
-		xQueueSend(file_queue, &message, portMAX_DELAY);
-	}
-	if (http_file) {
-		extdisk_fclose(http_file);
-		http_file = NULL;
-	}
-
+	// Notify completion to core taskhandle
+	xTaskNotify(core_taskhandle, READ_TASK_COMPLETED_BIT | (send_success ? READ_TASK_SUCCESS_BIT : 0), eSetBits);
 	vTaskDelete(NULL);
 }
 
-// Receiver Task
 static void http_file_read_thread(void *pvParameters)
 {
 	struct httpd_conn *conn = (struct httpd_conn *)pvParameters;
-	Message_t receivedMessage;
+	file_msg_t rcv_msg;
 	int writer_status = 0;
 	int total_bw = 0;
+	int rcv_success = 1;
 
 	while (1) {
-		// Receive data from the queue
-		if (xQueueReceive(file_queue, &receivedMessage, portMAX_DELAY) == pdPASS) {
-			if (receivedMessage.id == 0) {
+		if (xQueueReceive(file_queue, &rcv_msg, portMAX_DELAY) == pdPASS) {
+			if (rcv_msg.id == 0) {
 				writer_status = WRITE_STATUS_EOF;
 				WLAN_SCEN_MSG("Get total time = %d\r\n", total_bw);
 				break;
 			}
-			// Count the total read file size
-			total_bw += receivedMessage.id;
+			total_bw += rcv_msg.id;
 			int send_timeout = 3000;
 			if (conn->sock != -1) {
 				setsockopt(conn->sock, SOL_SOCKET, SO_SNDTIMEO, &send_timeout, sizeof(send_timeout));
 			}
-			// Send data over the connection
-			int ret = httpd_response_write_data(conn, receivedMessage.message, receivedMessage.id);
+			int ret = httpd_response_write_data(conn, rcv_msg.message, rcv_msg.id);
 			if (ret <= 0) {
 				writer_status = WRITE_STATUS_ERROR;
+				WLAN_SCEN_ERR("[WRITER TASK] httpd_response_write_data ret = %d\r\n", ret);
+				xTaskNotify(read_taskhandle, TASK_NOTIFY_WERROR, eSetValueWithOverwrite);
+				rcv_success = 0;
 				break;
 			}
+		} else {
+			WLAN_SCEN_ERR("[WRITER TASK] xQueueReceive fail\r\n");
+			xTaskNotify(read_taskhandle, TASK_NOTIFY_ERROR, eSetValueWithOverwrite);
+			rcv_success = 0;
+			break;
 		}
 	}
 
 	if (writer_status == WRITE_STATUS_EOF) {
 		WLAN_SCEN_MSG("[WRITER TASK] EOF received from reader.\r\n");
-		xTaskNotify(core_taskhandle, TASK_NOTIFY_END, eSetValueWithOverwrite);  // Notify main callback of completion
-	} else if (writer_status == WRITE_STATUS_RERROR) {
-		WLAN_SCEN_ERR("[WRITER TASK] Reader reported an error.\r\n");
-		xTaskNotify(core_taskhandle, TASK_NOTIFY_ERROR, eSetValueWithOverwrite);
 	} else if (writer_status == WRITE_STATUS_ERROR) {
 		WLAN_SCEN_ERR("[WRITER TASK] httpd response write data error.\r\n");
-		xTaskNotify(core_taskhandle, TASK_NOTIFY_WERROR, eSetValueWithOverwrite);
 	}
 
+	xTaskNotify(core_taskhandle, WRITE_TASK_COMPLETED_BIT | (rcv_success ? WRITE_TASK_SUCCESS_BIT : 0), eSetBits);
 	vTaskDelete(NULL);
 }
-
 
 static void media_getfile_cb(struct httpd_conn *conn)
 {
 	char *filename = NULL;
 	char *user_agent = NULL;
+	FILE *http_file = NULL;
 
 	// test log to show brief header parsing
 	httpd_conn_dump_header(conn);
@@ -380,7 +628,12 @@ static void media_getfile_cb(struct httpd_conn *conn)
 	// GET homepage
 	if (httpd_request_is_method(conn, (char *)"GET")) {
 		if (httpd_request_get_path_key(conn, (char *)"media/", &filename) != -1) {
-			//http_file = extdisk_fopen(filename, "r");
+			http_file = extdisk_fopen(filename, "r");
+			if (http_file == NULL) {
+				httpd_response_bad_request(conn, (char *)"Bad Request: No such file");
+				goto http_end;
+			}
+			//extdisk_fseek(http_file, 0, SEEK_SET);
 
 			// Write HTTP headers
 			httpd_response_write_header_start(conn, (char *)"200 OK", (char *)"text/plain", 0);
@@ -391,18 +644,18 @@ static void media_getfile_cb(struct httpd_conn *conn)
 			httpd_response_write_header(conn, (char *)"Connection", (char *)"close");
 			httpd_response_write_header_finish(conn);
 
-			file_queue = xQueueCreate(QUEUE_LENGTH, sizeof(Message_t));
+			file_queue = xQueueCreate(QUEUE_LENGTH, sizeof(file_msg_t));
 			if (file_queue == NULL) {
 				WLAN_SCEN_WARN("Failed to create queue.\r\n");
-				transfer_file_normal_internal(conn, filename);
+				transfer_file_normal_internal(conn, http_file);
 				goto http_end;
 			}
 
 			core_taskhandle = xTaskGetCurrentTaskHandle();
 
-			if (xTaskCreate(http_file_send_thread, "Sender", 8192, (void *)filename, 5, &read_taskhandle) != pdPASS) {
+			if (xTaskCreate(http_file_send_thread, "Sender", 8192, (void *)http_file, 5, &read_taskhandle) != pdPASS) {
 				WLAN_SCEN_WARN("Failed to create ReaderTask\n");
-				transfer_file_normal_internal(conn, filename);
+				transfer_file_normal_internal(conn, http_file);
 				vQueueDelete(file_queue);
 				file_queue = NULL;
 				goto http_end;
@@ -413,29 +666,34 @@ static void media_getfile_cb(struct httpd_conn *conn)
 				vTaskDelete(read_taskhandle);
 				vQueueDelete(file_queue);
 				file_queue = NULL;
-				transfer_file_normal_internal(conn, filename);
+				transfer_file_normal_internal(conn, http_file);
 				goto http_end;
 			}
 
-			int status = ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-			if (status == TASK_NOTIFY_END) {
-				WLAN_SCEN_MSG("Write %s completed successfully\r\n", filename);
-			} else if (status == TASK_NOTIFY_ERROR) {
-				WLAN_SCEN_ERR("Write %s failed.\r\n", filename);
-			} else if (status == TASK_NOTIFY_WERROR) {
-				WLAN_SCEN_ERR("Write %s failed.\r\n [WRITE_TASK]", filename);
-				vTaskDelete(read_taskhandle);
-			}
+			// Wait for both tasks to signal completion
+			uint32_t notifyValue = 0;
+			do {
+				notifyValue |= ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+				WLAN_SCEN_MSG("wait notify notifyValue = %lx\r\n", notifyValue);
+			} while ((notifyValue & TASK_NOTIFY_COMPLETED_MASK) != TASK_NOTIFY_COMPLETED_MASK);
+
 			vQueueDelete(file_queue);
 			file_queue = NULL;
 			send_taskhandle = NULL;
 			read_taskhandle = NULL;
-			//extdisk_fclose(http_file);
-			//http_file = NULL;
-			if (delete_file_after_upload) {
-				extdisk_remove(filename);
-				// Save filelist to EMMC
-				extdisk_save_file_cntlist();
+			extdisk_fclose(http_file);
+			http_file = NULL;
+			if ((notifyValue & (WRITE_TASK_SUCCESS_BIT | READ_TASK_SUCCESS_BIT)) == (WRITE_TASK_SUCCESS_BIT | READ_TASK_SUCCESS_BIT)) {
+				WLAN_SCEN_MSG("Http send %s completed successfully\r\n", filename);
+				if (delete_file_after_upload) {
+					extdisk_remove(filename);
+					extdisk_save_file_cntlist();
+					WLAN_SCEN_MSG("Delete file %s\r\n", filename);
+				} else {
+					WLAN_SCEN_MSG("Keep file %s\r\n", filename);
+				}
+			} else {
+				WLAN_SCEN_WARN("Http send %s fail, ret = %lx\r\n", filename, notifyValue);
 			}
 		} else {
 			// HTTP/1.1 400 Bad Request
@@ -461,10 +719,10 @@ http_end:
 		httpd_free(filename);
 		filename = NULL;
 	}
-	//if (http_file) {
-	//extdisk_fclose(http_file);
-	//http_file = NULL;
-	//}
+	if (http_file) {
+		extdisk_fclose(http_file);
+		http_file = NULL;
+	}
 	httpd_conn_close(conn);
 	WLAN_SCEN_MSG("[%s] httpd_conn_end (close files): %lu ms\r\n", __func__, rtw_get_current_time() - start_time_httpd_request_get_header_field);
 }
@@ -584,6 +842,9 @@ set_http:
 		httpd_reg_page_callback((char *)"/media/*", media_getfile_cb);
 		httpd_reg_page_callback((char *)"/pingpong", pingpong_cb);
 		httpd_reg_page_callback((char *)"/media-list", media_list_cb);
+#if defined(HTTP_OTA_TEST) && HTTP_OTA_TEST
+		httpd_reg_page_callback((char *)"/ota-start", ota_start_cb);
+#endif
 		httpd_setup_priority(5);
 		httpd_setup_idle_timeout(HTTPD_CONNECT_TIMEOUT);
 #if defined(USE_HTTPS) && USE_HTTPS
@@ -602,6 +863,12 @@ set_http:
 			httpd_clear_page_callbacks();
 			return WLAN_SET_FAIL;
 		}
+#if defined(HTTP_OTA_TEST) && HTTP_OTA_TEST
+		if (xTaskCreate(ota_httpc_send_thread, (const char *)"ota_httpc_send_thread", 1024, NULL, tskIDLE_PRIORITY + 5, NULL) != pdPASS) {
+			WLAN_SCEN_ERR("\n\r[%s] Create update task failed", __FUNCTION__);
+			return WLAN_SET_FAIL;
+		}
+#endif
 	}
 	return WLAN_SET_OK;
 }

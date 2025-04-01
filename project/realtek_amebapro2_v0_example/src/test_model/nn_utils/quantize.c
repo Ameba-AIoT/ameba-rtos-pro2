@@ -11,12 +11,22 @@ float u8_to_f(uint8_t val, uint8_t zero_p, float scale)
 
 float s8_to_f(int8_t val, int q)
 {
-	return (float)val / (float)(1 << q);
+	if(q>0){
+		return (float)val / (float)(1 << q);
+	}
+	else{
+		return (float)val * (float)(1 << -q);
+	}
 }
 
 float s16_to_f(int16_t val, int q)
 {
-	return (float)val / (float)(1 << q);
+	if(q>0){
+		return (float)val / (float)(1 << q);
+	}
+	else{
+		return (float)val * (float)(1 << -q);
+	}
 }
 
 float bf16_to_f(__fp16 val)
@@ -62,12 +72,22 @@ uint8_t f_to_u8(float val, uint8_t zero_p, float scale)
 
 int8_t f_to_s8(float val, int q)
 {
-	return (int8_t)(val * (1 << q));
+	if(q>0){
+		return (int8_t)(val * (1 << q));
+	}
+	else{
+		return (int8_t)(val / (1 << -q));
+	}
 }
 
 int16_t f_to_s16(float val, int q)
 {
-	return (int16_t)(val * (1 << q));
+	if(q>0){
+		return (int16_t)(val * (1 << q));
+	}
+	else{
+		return (int16_t)(val / (1 << -q));
+	}
 }
 
 __fp16 f_to_bf16(float val)

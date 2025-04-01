@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: dcc49762c18540465eea2071081082bfd4919e31
+* [amebapro2][sdk] update sc5356 iq for ai glass
+
 SHA-1: 3bdb4ad349d02ce7267c05b47b3684c1f9702b79
 * [amebapro2][sdk] optimize the iq, uart, wifi transmit in ai glass
 

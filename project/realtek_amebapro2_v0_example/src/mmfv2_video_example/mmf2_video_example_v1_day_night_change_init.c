@@ -187,21 +187,21 @@ static rate_ctrl_s rc_ctrl_night = {
 
 #if BPS_STABLE_CONTROL
 static bps_stbl_ctrl_param_t bps_stbl_ctrl_day_params = {
-	.maximun_bitrate = DAY_BPS * 1.2,
-	.minimum_bitrate = DAY_BPS * 0.8,
-	.target_bitrate = DAY_BPS,
-	.sampling_time = DAY_FPS * 2,
+	.maximun_bitrate = (uint32_t)(DAY_BPS * 1.2),
+	.minimum_bitrate = (uint32_t)(DAY_BPS * 0.8),
+	.target_bitrate = (uint32_t)(DAY_BPS),
+	.sampling_time = 2000,
 };
 static bps_stbl_ctrl_param_t bps_stbl_ctrl_night_params = {
-	.maximun_bitrate = NIGHT_BPS * 1.2,
-	.minimum_bitrate = NIGHT_BPS * 0.8,
-	.target_bitrate = NIGHT_BPS,
-	.sampling_time = NIGHT_FPS * 2,
+	.maximun_bitrate = (uint32_t)(NIGHT_BPS * 1.2),
+	.minimum_bitrate = (uint32_t)(NIGHT_BPS * 0.8),
+	.target_bitrate = (uint32_t)(NIGHT_BPS),
+	.sampling_time = 2000,
 };
-static uint32_t bps_stbl_ctrl_day_fps_stage[3] = {DAY_FPS, DAY_FPS * 0.8,  DAY_FPS * 0.6};
-static uint32_t bps_stbl_ctrl_day_gop_stage[3] = {DAY_FPS * 2, DAY_FPS * 0.8 * 2,  DAY_FPS * 0.6 * 2}; //default set gop = fps * 2
-static uint32_t bps_stbl_ctrl_night_fps_stage[3] = {NIGHT_FPS, NIGHT_FPS * 0.8,  NIGHT_FPS * 0.6};
-static uint32_t bps_stbl_ctrl_night_gop_stage[3] = {NIGHT_FPS * 2, NIGHT_FPS * 0.8 * 2,  NIGHT_FPS * 0.6 * 2}; //default set gop = fps * 2
+static uint32_t bps_stbl_ctrl_day_fps_stage[BPS_STBL_CTRL_STG_CNT] = {DAY_FPS, (uint32_t)(DAY_FPS * 0.8), (uint32_t)(DAY_FPS * 0.6)};
+static uint32_t bps_stbl_ctrl_day_gop_stage[BPS_STBL_CTRL_STG_CNT] = {DAY_FPS * 2, (uint32_t)(DAY_FPS * 0.8 * 2), (uint32_t)(DAY_FPS * 0.6 * 2)}; //default set gop = fps * 2
+static uint32_t bps_stbl_ctrl_night_fps_stage[BPS_STBL_CTRL_STG_CNT] = {NIGHT_FPS, (uint32_t)(NIGHT_FPS * 0.8), (uint32_t)(NIGHT_FPS * 0.6)};
+static uint32_t bps_stbl_ctrl_night_gop_stage[BPS_STBL_CTRL_STG_CNT] = {NIGHT_FPS * 2, (uint32_t)(NIGHT_FPS * 0.8 * 2), (uint32_t)(NIGHT_FPS * 0.6 * 2)}; //default set gop = fps * 2
 #endif
 
 typedef enum {
@@ -224,9 +224,10 @@ void day_night_mode_change(day_night_mode_change_t mode)
 		//Set ISP FPS. raise maxfps first. minfps cannot set larger than maxfps.
 		isp_set_max_fps(DAY_FPS);
 		isp_set_min_fps(DAY_FPS);
-
-		//Set Encode configuration
-		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_MULTI_RCCTRL, (int)&rc_ctrl_day);
+		if(video_wait_target_fps(V1_CHANNEL, DAY_FPS, 500) == OK) {
+			//Set Encode configuration
+			mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_MULTI_RCCTRL, (int)&rc_ctrl_day);
+		}
 #if BPS_STABLE_CONTROL
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_PARAMS, (int)&bps_stbl_ctrl_day_params);
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_FPS_STG, (int)bps_stbl_ctrl_day_fps_stage);
@@ -244,9 +245,10 @@ void day_night_mode_change(day_night_mode_change_t mode)
 		//Set ISP FPS. lower minfps first. minfps cannot set larger than maxfps.
 		isp_set_min_fps(NIGHT_FPS);
 		isp_set_max_fps(NIGHT_FPS);
-
-		//Set Encode configuration
-		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_MULTI_RCCTRL, (int)&rc_ctrl_night);
+		if(video_wait_target_fps(V1_CHANNEL, NIGHT_FPS, 500) == OK) {
+			//Set Encode configuration
+			mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_MULTI_RCCTRL, (int)&rc_ctrl_night);
+		}
 #if BPS_STABLE_CONTROL
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_PARAMS, (int)&bps_stbl_ctrl_night_params);
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_FPS_STG, (int)bps_stbl_ctrl_night_fps_stage);
@@ -266,7 +268,15 @@ void mmf2_video_example_v1_day_night_change_init(void)
 	video_v1_params.width = sensor_params[USE_SENSOR].sensor_width;
 	video_v1_params.height = sensor_params[USE_SENSOR].sensor_height;
 	video_v1_params.fps = DAY_FPS;
-	video_v1_params.gop = DAY_FPS * 2; //default set gop = fps * 2
+	video_v1_params.gop = DAY_FPS;
+#if BPS_STABLE_CONTROL
+	video_v1_params.fps = bps_stbl_ctrl_day_fps_stage[0];
+	video_v1_params.gop = bps_stbl_ctrl_day_gop_stage[0];
+	rc_ctrl_day.fps = bps_stbl_ctrl_day_fps_stage[0];
+	rc_ctrl_day.gop = bps_stbl_ctrl_day_gop_stage[0];
+	rc_ctrl_night.fps = bps_stbl_ctrl_night_fps_stage[0];
+	rc_ctrl_night.gop = bps_stbl_ctrl_night_gop_stage[0];
+#endif
 #if USE_MD
 	video_v4_params.use_roi = 1;
 	video_v4_params.roi.xmin = 0;

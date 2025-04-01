@@ -66,4 +66,12 @@ list(
     APPEND scn_libs
 )
 
+list(
+    APPEND _wrapper
+		"-Wl,-wrap,get_fattime"
+)
+
+list(JOIN _wrapper " " function_wrapper)
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${function_wrapper}" CACHE INTERNAL "")
+
 

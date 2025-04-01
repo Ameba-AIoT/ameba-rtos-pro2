@@ -91,8 +91,8 @@ typedef struct ai_glass_snapshot_param_s {
 	uint8_t     rotation;
 } ai_glass_snapshot_param_t;
 
-#define MAX_LIFESNAP_WIDTH          WIDTH_12M
-#define MAX_LIFESNAP_HEIGHT         HEIGHT_12M
+#define MAX_LIFESNAP_WIDTH          sensor_params[USE_SENSOR].sensor_width
+#define MAX_LIFESNAP_HEIGHT         sensor_params[USE_SENSOR].sensor_height
 #define MAX_AISNAP_WIDTH            sensor_params[USE_SENSOR].sensor_width
 #define MAX_AISNAP_HEIGHT           sensor_params[USE_SENSOR].sensor_height
 #define MAX_RECORD_WIDTH            ((sensor_params[USE_SENSOR].sensor_width > WIDTH_2K) ? WIDTH_2K : sensor_params[USE_SENSOR].sensor_width)
@@ -129,8 +129,8 @@ typedef struct ai_glass_snapshot_param_s {
 #define DEFAULT_AISNAP_ROTATION     0
 
 #define DEFAULT_LIFESNAP_TYPE       VIDEO_JPEG
-#define DEFAULT_LIFESNAP_WIDTH      WIDTH_12M
-#define DEFAULT_LIFESNAP_HEIGHT     HEIGHT_12M
+#define DEFAULT_LIFESNAP_WIDTH      sensor_params[USE_SENSOR].sensor_width
+#define DEFAULT_LIFESNAP_HEIGHT     sensor_params[USE_SENSOR].sensor_height
 #define DEFAULT_LIFESNAP_QLEVEL     8
 #define DEFAULT_LIFESNAP_MINQP      0
 #define DEFAULT_LIFESNAP_MAXQP      0

@@ -394,6 +394,11 @@ int vipnn_control(void *p, int cmd, int arg)
 			ctx->params.model->set_nms_thresh((void *)arg);
 		}
 		break;
+	case CMD_VIPNN_SET_DESIRED_CLASS:
+		if (ctx->params.model->set_desired_class) {
+			ctx->params.model->set_desired_class((nn_desired_class_t *)arg);
+		}
+		break;
 	case CMD_VIPNN_SET_OUTPUT:
 		ctx->module_out_en = (bool)arg;
 		((mm_context_t *)ctx->parent)->module->output_type = MM_TYPE_VSINK;

@@ -746,8 +746,23 @@ void lifetime_recording_initialize(void)
 
 	AI_GLASS_INFO("MP4 opened\n\r");
 
+	video_pre_init_params_t ai_glass_pre_init_params = {0};
 	lr_video_ctx = mm_module_open(&video_module);
 	if (lr_video_ctx) {
+		mm_module_ctrl(lr_video_ctx, CMD_VIDEO_GET_PRE_INIT_PARM, (int)&ai_glass_pre_init_params);
+		// Init ISP parameters
+		ai_glass_pre_init_params.isp_init_enable = 1;
+		ai_glass_pre_init_params.init_isp_items.init_brightness = 0;
+		ai_glass_pre_init_params.init_isp_items.init_contrast = 50;
+		ai_glass_pre_init_params.init_isp_items.init_flicker = 1;
+		ai_glass_pre_init_params.init_isp_items.init_hdr_mode = 0;
+		ai_glass_pre_init_params.init_isp_items.init_mirrorflip = 0xf3; // flip and mirror
+		ai_glass_pre_init_params.init_isp_items.init_saturation = 50;
+		ai_glass_pre_init_params.init_isp_items.init_wdr_level = 50;
+		ai_glass_pre_init_params.init_isp_items.init_wdr_mode = 2;
+		ai_glass_pre_init_params.init_isp_items.init_mipi_mode = 0;
+		mm_module_ctrl(lr_video_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&ai_glass_pre_init_params);
+
 		mm_module_ctrl(lr_video_ctx, CMD_VIDEO_SET_PARAMS, (int)&lr_video_params);
 		mm_module_ctrl(lr_video_ctx, MM_CMD_SET_QUEUE_LEN, lr_video_params.fps * 10); //Add the queue buffer to avoid to lost data.
 		mm_module_ctrl(lr_video_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);

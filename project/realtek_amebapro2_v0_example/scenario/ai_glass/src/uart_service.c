@@ -72,15 +72,15 @@ typedef struct serial_service_s {
 static serial_service_t srobj = {0};
 
 // uart cmd callback function
-static CallbackEntry_t uartcmdcb_table[UART_UART_CMD_COUNT];
+static callback_entry_t uartcmdcb_table[UART_RX_OPC_COUNT];
 
 // Buffer for DMA
 static uint8_t uart_txbuf[UART_MAX_PIC_SIZE] __attribute__((aligned(32))) = {0};
 //static uint8_t uart_rxbuf[UART_MAX_PIC_SIZE] __attribute__((aligned(32))) = {0};
 
-StreamBufferHandle_t uart_rx_stream = NULL;
+static StreamBufferHandle_t uart_rx_stream = NULL;
 
-static uint8_t CalculateChecksum(uint8_t sync_word, uint8_t seq_number, uint16_t resp_opcode, uart_params_t *params_array, uint16_t *length)
+static uint8_t calculate_checksum(uint8_t sync_word, uint8_t seq_number, uint16_t resp_opcode, uart_params_t *params_array, uint16_t *length)
 {
 	uint8_t checksum = 0;
 
@@ -347,11 +347,11 @@ static int create_tx_uart_queue(int queue_length, int critical_queue_length, int
 static int uart_send_ack(uint8_t recv_seq_number, uint16_t recv_opcode, uint8_t status)
 {
 	uartackpacket_t *ack_packet;
-	if (!IS_VALID_UART_CMD(recv_opcode)) {
+	if (!IS_VALID_UART_RX_OPC(recv_opcode)) {
 		UART_SRV_ERR("[UART WARNING] Received cmd packet with invalid opcode 0x%04x\r\n", recv_opcode);
 		return UART_OK;
 	}
-	if (IS_NO_ACK_UART_CMD(recv_opcode)) {
+	if (IS_NO_ACK_UART_RX_OPC(recv_opcode)) {
 		UART_SRV_MSG("Received cmd packet with no ack opcode 0x%04x\r\n", recv_opcode);
 		return UART_OK;
 	}
@@ -359,7 +359,7 @@ static int uart_send_ack(uint8_t recv_seq_number, uint16_t recv_opcode, uint8_t 
 	if (ret == pdPASS) {
 		// Initialize and populate ack_packet only if it's successfully received
 		ack_packet->length = ACK_DATA_LEN; // length not including sync_word(1), seq_number(1), length(2), and checksum(1)
-		ack_packet->opcode = UART_OPC_RESP_ACK;
+		ack_packet->opcode = UART_TX_OPC_ACK;
 		ack_packet->recv_opcode = recv_opcode;
 		ack_packet->status = status;
 
@@ -428,7 +428,7 @@ static void uart_service_receive_handler(uint8_t received_byte)
 		rx_current_opcode |= (uint16_t)received_byte << 8;
 		rx_current_checksum += received_byte;
 		index++;
-		if (rx_current_opcode == UART_OPC_CMD_ACK) {
+		if (rx_current_opcode == UART_RX_OPC_ACK) {
 			UART_SRV_INFO("get ack packet rx_current_opcode\r\n");
 			if (xQueueReceive(rx_uart_ack_recycle, (void *)&rx_ack_pkt, 0) == pdPASS) {
 				if (rx_current_len != ACK_DATA_LEN) {
@@ -439,8 +439,8 @@ static void uart_service_receive_handler(uint8_t received_byte)
 				rx_ack_pkt->sync_word = UART_SYNC_WORD;
 				rx_ack_pkt->seq_number = rx_current_seq;
 			}
-		} else if (IS_VALID_UART_CMD(rx_current_opcode)) {
-			QueueHandle_t *queuerecycle = (IS_CRITICAL_UART_CMD(rx_current_opcode) ? &rx_critical_recycle : &rx_uart_recycle);
+		} else if (IS_VALID_UART_RX_OPC(rx_current_opcode)) {
+			QueueHandle_t *queuerecycle = (IS_CRITICAL_UART_RX_OPC(rx_current_opcode) ? &rx_critical_recycle : &rx_uart_recycle);
 			if (xQueueReceive((*queuerecycle), (void *)&rx_pkt, 0) == pdPASS) {
 				if (rx_pkt->uart_pkt.data_buf) {
 					free(rx_pkt->uart_pkt.data_buf);
@@ -469,7 +469,7 @@ static void uart_service_receive_handler(uint8_t received_byte)
 		if (index == (4 + rx_current_len)) {
 			uint8_t exp_checksum = 0XFF - rx_current_checksum + 1;
 			if (rx_ack_pkt) {
-				if (exp_checksum == received_byte && IS_VALID_UART_RESP(rx_ack_pkt->recv_opcode) && rx_ack_pkt->recv_opcode != UART_OPC_RESP_ACK) {
+				if (exp_checksum == received_byte && IS_VALID_UART_TX_OPC(rx_ack_pkt->recv_opcode) && rx_ack_pkt->recv_opcode != UART_TX_OPC_ACK) {
 					rx_ack_pkt->checksum = received_byte;
 					// Check sum and ack will be verify in thread, to reduce the irq loading
 					rx_ack_pkt->get_ts = xTaskGetTickCountFromISR();
@@ -479,14 +479,14 @@ static void uart_service_receive_handler(uint8_t received_byte)
 					// Ack check sum fail, send back to recycle queue
 					xQueueSend(rx_uart_ack_recycle, (void *)&rx_ack_pkt, 0);
 					rx_ack_pkt = NULL;
-					UART_SRV_WARN("rx ack check 0x%02x, 0x%02x, 0x%02x\r\n", rx_current_checksum, 0XFF - rx_current_checksum + 1, received_byte);
+					UART_SRV_WARN("rx ack check 0x%02x, 0x%02x, 0x%02x, 0x%02x\r\n", rx_ack_pkt->recv_opcode, rx_current_checksum, 0XFF - rx_current_checksum + 1, received_byte);
 				}
-			} else if (rx_current_opcode != UART_OPC_CMD_ACK) {
+			} else if (rx_current_opcode != UART_RX_OPC_ACK) {
 				// TODO: Check if the sequence is valid or not
 				uart_send_ack(rx_current_seq, rx_current_opcode, rx_current_status);
 				if (rx_pkt) {
-					QueueHandle_t *queuerecycle = (IS_CRITICAL_UART_CMD(rx_current_opcode) ? &rx_critical_recycle : &rx_uart_recycle);
-					QueueHandle_t *queueready = (IS_CRITICAL_UART_CMD(rx_current_opcode) ? &rx_critical_ready : &rx_uart_ready);
+					QueueHandle_t *queuerecycle = (IS_CRITICAL_UART_RX_OPC(rx_current_opcode) ? &rx_critical_recycle : &rx_uart_recycle);
+					QueueHandle_t *queueready = (IS_CRITICAL_UART_RX_OPC(rx_current_opcode) ? &rx_critical_ready : &rx_uart_ready);
 					if (exp_checksum == received_byte) {
 						rx_pkt->uart_pkt.checksum = received_byte;
 						// Check sum and ack will be verify in thread, to reduce the irq loading
@@ -542,7 +542,6 @@ static void uart_service_irq(uint32_t id, SerialIrq event)
 {
 	serial_t *sobj = (void *)id;
 	uint32_t xBytesGet = 0;
-	uint32_t xBytesSent = 0;
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
 	if (event == RxIrq) {
@@ -556,7 +555,7 @@ static void uart_service_irq(uint32_t id, SerialIrq event)
 			}
 		}
 		if (xBytesGet > 0 && xBytesGet <= UART_MAX_BUF_SIZE) {
-			xBytesSent = xStreamBufferSendFromISR(uart_rx_stream, rx_uart_tmp_buf, xBytesGet, NULL);
+			xStreamBufferSendFromISR(uart_rx_stream, rx_uart_tmp_buf, xBytesGet, NULL);
 			if (xHigherPriorityTaskWoken) {
 				taskYIELD();
 			}
@@ -575,8 +574,8 @@ static void process_uart_cmd_thread(void *params)
 	while (1) {
 		if (xQueueReceive(rx_uart_ready, (void *)&recv_pkt, portMAX_DELAY) == pdPASS) {
 			UART_SRV_INFO("Get cmd packet\r\n");
-			if (uartcmdcb_table[recv_pkt->uart_pkt.opcode - UART_OPC_CMD_MIN].callback != NULL) {
-				uartcmdcb_table[recv_pkt->uart_pkt.opcode - UART_OPC_CMD_MIN].callback(recv_pkt);
+			if (uartcmdcb_table[recv_pkt->uart_pkt.opcode - UART_RX_OPC_MIN].callback != NULL) {
+				uartcmdcb_table[recv_pkt->uart_pkt.opcode - UART_RX_OPC_MIN].callback(recv_pkt);
 			} else {
 				UART_SRV_MSG("the callbacck function for 0x%04x critical command is not registered yet\r\n", recv_pkt->uart_pkt.opcode);
 			}
@@ -605,8 +604,8 @@ static void process_uart_critical_thread(void *params)
 	while (1) {
 		if (xQueueReceive(rx_critical_ready, (void *)&recv_pkt, portMAX_DELAY) == pdPASS) {
 			UART_SRV_INFO("Get critical packet\r\n");
-			if (uartcmdcb_table[recv_pkt->uart_pkt.opcode - UART_OPC_CMD_MIN].callback != NULL) {
-				uartcmdcb_table[recv_pkt->uart_pkt.opcode - UART_OPC_CMD_MIN].callback(recv_pkt);
+			if (uartcmdcb_table[recv_pkt->uart_pkt.opcode - UART_RX_OPC_MIN].callback != NULL) {
+				uartcmdcb_table[recv_pkt->uart_pkt.opcode - UART_RX_OPC_MIN].callback(recv_pkt);
 			} else {
 				UART_SRV_MSG("the callbacck function for 0x%04x critical command is not registered yet\r\n", recv_pkt->uart_pkt.opcode);
 			}
@@ -645,7 +644,7 @@ static void process_uart_ack_thread(void *params)
 				.length = 2,
 				.next = &status_params
 			};
-			int ret = uart_send_packet(UART_OPC_RESP_ACK, &opcode_params, true, 10000);
+			int ret = uart_send_packet(UART_TX_OPC_ACK, &opcode_params, true, 10000);
 			if (ret != UART_OK) {
 				// Handle error, e.g., log or attempt recovery
 				UART_SRV_ERR("Error sending ACK packet: 0x%02x\r\n", ret);
@@ -808,7 +807,6 @@ int uart_send_packet(uint16_t resp_opcode, uart_params_t *params_head, bool igno
 	uint8_t sync_word = UART_SYNC_WORD;
 	int retry_time = PACKET_RESEND_TIME;
 	uint8_t tx_seq = 0;
-	timeout = 10000;
 
 ResendPacket:
 	// Try to take the resp mutex if not sending an ACK response
@@ -830,7 +828,7 @@ ResendPacket:
 	if (tx_seq == 0) {
 		tx_seq = get_expected_tx_seq_number();
 	}
-	uint8_t checksum = CalculateChecksum(sync_word, tx_seq, resp_opcode, params_head, &length);
+	uint8_t checksum = calculate_checksum(sync_word, tx_seq, resp_opcode, params_head, &length);
 
 	// Array of data to be sent
 	struct {
@@ -844,7 +842,7 @@ ResendPacket:
 	};
 
 #if SEND_ACK_SHOW
-	if (resp_opcode == UART_OPC_RESP_ACK) {
+	if (resp_opcode == UART_TX_OPC_ACK) {
 		send_print = 1;
 	}
 #endif
@@ -876,7 +874,7 @@ ResendPacket:
 		goto end;
 	}
 
-	if (resp_opcode == UART_OPC_RESP_ACK) {
+	if (resp_opcode == UART_TX_OPC_ACK) {
 		UART_SRV_MSG("send ack\r\n");
 	}
 
@@ -911,7 +909,7 @@ ResendPacket:
 			}
 		}
 RegetAck:
-		tmp_ret = xQueueReceive(rx_uart_ack_ready, (void *)&ack_packet, 100);
+		tmp_ret = xQueueReceive(rx_uart_ack_ready, (void *)&ack_packet, timeout / 3);
 		if (tmp_ret == pdTRUE) {
 			if (ack_packet->get_ts >= packet_send_time) {
 				if (ack_packet->recv_opcode != resp_opcode) {
@@ -926,8 +924,8 @@ RegetAck:
 					UART_SRV_MSG("rx ack recv_opcode = 0x%02x\r\n", ack_packet->recv_opcode);
 					UART_SRV_MSG("rx ack status = 0x%02x\r\n", ack_packet->status);
 					UART_SRV_MSG("rx ack checksum = 0x%02x\r\n", ack_packet->checksum);
-					UART_SRV_MSG("rx ack packet_send_time = 0x%02x\r\n", packet_send_time);
-					UART_SRV_MSG("rx ack get timestamp = 0x%08x\r\n", ack_packet->get_ts);
+					UART_SRV_MSG("rx ack packet_send_time = 0x%08lx\r\n", packet_send_time);
+					UART_SRV_MSG("rx ack get timestamp = 0x%08lx\r\n", ack_packet->get_ts);
 					xQueueSend(rx_uart_ack_recycle, (void *)&ack_packet, 0);
 					if (ack_packet->status != AI_GLASS_CMD_COMPLETE) {
 						ret = UART_ACK_TIMEOUT;
@@ -975,7 +973,7 @@ void uart_service_send_pwron_cmd(void)
 			.length = 1,
 			.next = NULL
 		};
-		uart_send_packet(UART_OPC_RESP_POWER_ON, &pwr_start_pkt, false, 2000);
+		uart_send_packet(UART_TX_OPC_RESP_POWER_ON, &pwr_start_pkt, false, 2000);
 	} else {
 		UART_SRV_WARN("the uart service is not initialed yet, send fail\r\n");
 	}
@@ -1116,14 +1114,15 @@ void uart_service_deinit(void)
 	return;
 }
 
-int uart_service_rx_cmd_reg(uint16_t uart_cmd_type, Callback_t uart_cmd_fun)
+int uart_service_rx_cmd_reg(uint16_t uart_cmd_type, callback_t uart_cmd_fun)
 {
-	if (IS_VALID_UART_CMD(uart_cmd_type)) {
+	if (IS_VALID_UART_RX_OPC(uart_cmd_type)) {
 		UART_SRV_MSG("uart_cmd_type found\r\n");
-		uartcmdcb_table[uart_cmd_type - UART_OPC_CMD_MIN].opcode = uart_cmd_type;
-		uartcmdcb_table[uart_cmd_type - UART_OPC_CMD_MIN].callback = uart_cmd_fun;
+		uartcmdcb_table[uart_cmd_type - UART_RX_OPC_MIN].opcode = uart_cmd_type;
+		uartcmdcb_table[uart_cmd_type - UART_RX_OPC_MIN].callback = uart_cmd_fun;
 		return UART_OK;
 	}
+
 	UART_SRV_WARN("uart_cmd_type not found\r\n");
 	return UART_REG_CALLBACK_FAIL;
 }

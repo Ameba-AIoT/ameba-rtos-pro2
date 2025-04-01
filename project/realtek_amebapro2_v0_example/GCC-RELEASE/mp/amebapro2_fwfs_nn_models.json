@@ -52,6 +52,12 @@
 		"file":"yolov7_tiny.nb"
 
 	},
+	"yolov9_tiny":{
+		"name" : "yolov9_tiny.nb",
+		"source":"binary",
+		"file":"yolov9_tiny_hybrid.nb"
+
+	},
 	"scrfd640":{
 		"name" : "scrfd.nb",
 		"source":"binary",

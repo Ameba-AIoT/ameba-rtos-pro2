@@ -14,9 +14,11 @@
 #include "avcodec.h"
 
 #include "img_sample/input_image_640x360x3.h"
+#include "img_sample/input_image_416x416x3.c"
 #include "nn_utils/class_name.h"
 #include "model_yolo.h"
 #include "model_nanodet.h"
+#include "model_yolov9.h"
 
 #include "hal_video.h"
 #include "hal_isp.h"
@@ -88,7 +90,7 @@ static rtsp2_params_t rtsp2_v1_params = {
 #define NN_BPS 1024*1024 //don't care for NN
 #define NN_TYPE VIDEO_RGB
 
-/* model selection: yolov4_tiny, yolov7_tiny, nanodet_plus_m
+/* model selection: yolov4_tiny, yolov7_tiny, nanodet_plus_m, yolov9_tiny
  * please make sure the choosed model is also selected in amebapro2_fwfs_nn_models.json */
 #define NN_MODEL_OBJ    yolov4_tiny
 /* RGB video resolution
@@ -101,7 +103,11 @@ define_model(yolov4_tiny_320p)
 
 static float nn_confidence_thresh = 0.5;
 static float nn_nms_thresh = 0.3;
-static int desired_class_list[] = {0, 2, 5, 7};
+static int desired_class_list[] = {0, 2, 5, 7}; //represent the objects to be detected, please refer to yolov9/data/coco.yaml for the category of class id
+static nn_desired_class_t desired_class_param = {
+	.class_info = desired_class_list,
+	.len = (sizeof(desired_class_list) / sizeof(int))
+};
 
 static video_params_t video_v4_params = {
 	.stream_id 		= NN_CHANNEL,
@@ -349,6 +355,7 @@ void mmf2_video_example_vipnn_rtsp_init(void)
 		mm_module_ctrl(vipnn_ctx, CMD_VIPNN_SET_DISPPOST, (int)nn_set_object);
 		mm_module_ctrl(vipnn_ctx, CMD_VIPNN_SET_CONFIDENCE_THRES, (int)&nn_confidence_thresh);
 		mm_module_ctrl(vipnn_ctx, CMD_VIPNN_SET_NMS_THRES, (int)&nn_nms_thresh);
+		mm_module_ctrl(vipnn_ctx, CMD_VIPNN_SET_DESIRED_CLASS, (int)&desired_class_param);
 		mm_module_ctrl(vipnn_ctx, CMD_VIPNN_SET_RES_SIZE, sizeof(objdetect_res_t));		// result size
 		mm_module_ctrl(vipnn_ctx, CMD_VIPNN_SET_RES_MAX_CNT, MAX_DETECT_OBJ_NUM);		// result max count
 

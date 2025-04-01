@@ -6,7 +6,7 @@ set(CMAKE_C_COMPILER_WORKS 1)
 set(CMAKE_C_COMPILER "gcc" )
 set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu99 -O3")
 
-set(viplite "VIPLiteDrv_1.8.0")
+set(viplite "VIPLiteDrv_2.0.0")
 set (prj_root "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 set (sdk_root "${CMAKE_CURRENT_SOURCE_DIR}/../../../..")
 
@@ -14,6 +14,7 @@ list(
 	APPEND src
 	src/main.c
 	src/model_yolo_sim.c
+	src/model_yolov9_sim.c
 	src/model_nanodet_sim.c
 	src/model_scrfd_sim.c
 	src/img_render.c
@@ -34,7 +35,8 @@ list(
 
 	${sdk_root}/component/media/mmfv2
 
-	${prj_root}/src/${viplite}/sdk/inc
+	${prj_root}/src/${viplite}/include/nbg_linker
+	${prj_root}/src/${viplite}/include
 	${prj_root}/src/${viplite}/driver/inc
 	${prj_root}/src/${viplite}/hal/inc
 	${prj_root}/src/${viplite}/hal/user

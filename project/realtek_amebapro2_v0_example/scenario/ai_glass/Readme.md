@@ -113,10 +113,7 @@ This scenario is intended for a templete for ai glass scenario
 - Here we set the ram disk size to 1024*1024*2 since we only need 2M to store a 720P jpeg (720 * 1280 * 3 / 2 ~ 1.3MB)
 1024*1024*2
 
-7. \component\file_system\fatfs\r0.14\diskio.c
-- DWORD get_fattime(void) modified to weak function __attribute__((weak)) DWORD get_fattime(void)
-
-8. \component\soc\8735b\fwlib\rtl8735b\lib\source\ram\video\voe_bin
+7. \component\soc\8735b\fwlib\rtl8735b\lib\source\ram\video\voe_bin
 - user could replace the iq in this folder to get a better video vision
 - under project\realtek_amebapro2_v0_example\scenario\ai_glass\src\iq, there is some pre-setting iq firmware for some sensor
 

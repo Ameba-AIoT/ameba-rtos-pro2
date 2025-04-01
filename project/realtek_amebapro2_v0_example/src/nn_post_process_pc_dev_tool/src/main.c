@@ -10,6 +10,7 @@
 #include "nn_utils/tensor.h"
 
 #include "model_yolo_sim.h"
+#include "model_yolov9_sim.h"
 #include "model_nanodet_sim.h"
 #include "model_scrfd_sim.h"
 #include "img_render.h"
@@ -66,6 +67,53 @@ static void yolo_pc_configure_tensor_param(nn_tensor_param_t *input_param, nn_te
 	output_param->format[1].zero_point = 193;
 #endif
 
+#endif  /* CONFIG_PARAM_FROM_NB_FILE */
+}
+
+static void yolov9_pc_configure_tensor_param(nn_tensor_param_t *input_param, nn_tensor_param_t *output_param)
+{
+#if CONFIG_PARAM_FROM_NB_FILE
+
+	/* Configure the model parameter from nb file */
+	char *nbg_filename = "../../test_model/model_nb/yolov9_tiny_hybrid.nb";
+	config_param_from_nb_file(nbg_filename, input_param, output_param);
+
+#else  /* CONFIG_PARAM_FROM_NB_FILE */
+
+	/* Configure the model parameter manually */
+	// input
+	input_param->count = 1;
+	input_param->dim[0].size[0] = 416;
+	input_param->dim[0].size[1] = 416;
+
+	output_param->count = 2;
+	output_param->dim[0].num = 3;
+	output_param->dim[0].size[0] = 3549;
+	output_param->dim[0].size[1] = 4;
+	output_param->dim[0].size[2] = 1;
+#if NON_QUANT_MODE
+	output_param->format[0].buf_type = VIP_BUFFER_FORMAT_FP32;
+	output_param->format[0].type = VIP_BUFFER_QUANTIZE_NONE;
+#else
+	output_param->format[0].buf_type = VIP_BUFFER_FORMAT_UINT8;
+	output_param->format[0].type = VIP_BUFFER_QUANTIZE_TF_ASYMM;
+	output_param->format[0].scale = 1.624492;
+	output_param->format[0].zero_point = 0;
+#endif
+
+	output_param->dim[1].num = 3;
+	output_param->dim[1].size[0] = 3549;
+	output_param->dim[1].size[1] = 80;
+	output_param->dim[1].size[2] = 1;
+#if NON_QUANT_MODE
+	output_param->format[1].buf_type = VIP_BUFFER_FORMAT_FP32;
+	output_param->format[1].type = VIP_BUFFER_QUANTIZE_NONE;
+#else
+	output_param->format[1].buf_type = VIP_BUFFER_FORMAT_INT16;
+	output_param->format[1].type = VIP_BUFFER_QUANTIZE_DYNAMIC_FIXED_POINT;
+	output_param->format[1].fix_point_pos = 15;
+#endif
+	
 #endif  /* CONFIG_PARAM_FROM_NB_FILE */
 }
 
@@ -190,6 +238,49 @@ int yolo_simulation(void)
 	free(res_buf);
 }
 
+int yolov9_simulation(void)
+{
+	// configure tensor param
+	nn_tensor_param_t input_param, output_param;
+	yolov9_pc_configure_tensor_param(&input_param, &output_param); // >>> user need to configure this function!!!
+
+	// set anchor box and model input size
+	yolov9_get_network_filename_init();
+	yolov9_preprocess(0, 0, 0, &input_param);
+	// prepare Acuity pre-generated output tensor from file
+	char *acuity_tensor_name[16]; // >>> user need to configure acuity tensor path!!!
+	acuity_tensor_name[0] = "../data/yolov9_data/iter_0_attach_Mul__model.22_Mul_out0_0_out0_1_4_3549.tensor";
+	acuity_tensor_name[1] = "../data/yolov9_data/iter_0_attach_Sigmoid__model.22_Sigmoid_out0_1_out0_1_80_3549.tensor";
+	void *pp_tensor_out[16];
+	memset(pp_tensor_out, 0, sizeof(pp_tensor_out));
+	acuity_output_tensor_conversion(acuity_tensor_name, pp_tensor_out, &output_param);
+	// prepare result buffer for decode
+	vipnn_out_buf_t *res_buf = (vipnn_out_buf_t *)malloc(sizeof(vipnn_out_buf_t) + sizeof(objdetect_res_t) * MAX_DETECT_OBJ_NUM);
+	if (!res_buf) {
+		printf("fail to allocate memory \r\n");
+		return -1;
+	}
+	res_buf->res_size = sizeof(objdetect_res_t);
+	res_buf->res_max_cnt = MAX_DETECT_OBJ_NUM;
+	vipnn_out_buf_t *out = (vipnn_out_buf_t *)res_buf;
+	out->res_cnt = 0;
+
+	// post-process
+	int post_res_cnt = yolov9_postprocess((void *)pp_tensor_out, &output_param, (void *)((uint8_t *)&out->res[0] + out->res_cnt * res_buf->res_size));
+	out->res_cnt += post_res_cnt;
+	printf("out_cnt: %d\n", out->res_cnt);
+	// rendering
+	image_rendering(out, "../data/yolov9_data/horses_416x416.jpg", "../data/yolov9_data/prediction.jpg", OBJDECT_TYPE);
+
+	// release
+	for (int i = 0; i < (sizeof(pp_tensor_out) / sizeof(void *)); i++) {
+		if (pp_tensor_out[i]) {
+			free(pp_tensor_out[i]);
+		}
+	}
+	free(res_buf);
+}
+
 int nanodet_simulation(void)
 {
 	// configure tensor param
@@ -290,6 +381,7 @@ int scrfd_simulation(void)
 int main()
 {
 	yolo_simulation();
+	yolov9_simulation();
 	nanodet_simulation();
 	scrfd_simulation();
 

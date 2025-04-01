@@ -19,8 +19,6 @@
 #include "mmf2_mediatime_8735b.h"
 #include "ai_glass_dbg.h"
 
-#define ENABLE_FILE_TIME_FUNCTION   1 // If enable this flag, please set original get_fattime to weak function
-
 #define MAX_TAG_LEN                 32
 #define MAX_FILE_LEN                128
 
@@ -45,8 +43,7 @@ static float gps_altitude = 0;
 
 time_t media_filesystem_gpstime_to_time_t(uint32_t gps_week, uint32_t gps_seconds);
 
-#if ENABLE_FILE_TIME_FUNCTION
-unsigned long get_fattime(void)
+unsigned long __wrap_get_fattime(void)
 {
 	time_t cur_time = gps_timeinfo + mm_read_mediatime_ms() / 1000;
 	struct tm *timeinfo = gmtime(&cur_time);
@@ -61,7 +58,6 @@ unsigned long get_fattime(void)
 
 	return time_abs;
 }
-#endif
 
 static int show_utc_format_time(time_t rawtime)
 {

@@ -167,10 +167,10 @@ static void check_cmd_sample_fun(uartcmdpacket_t *param)
 	AI_GLASS_MSG("cmd exp_seq_number = 0x%02x\r\n", param->exp_seq_number);
 }
 
-// For UART_OPC_CMD_QUERY_INFO
+// For UART_RX_OPC_CMD_QUERY_INFO
 static void uart_service_get_query_info(uartcmdpacket_t *param)
 {
-	AI_GLASS_INFO("get UART_OPC_CMD_QUERY_INFO\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_QUERY_INFO\r\n");
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 	uint8_t temp_protocal_version = 0;
 	uint8_t temp_wifi_ic_type = 0;
@@ -229,27 +229,27 @@ static void uart_service_get_query_info(uartcmdpacket_t *param)
 		.length = 2,
 		.next = &bufchk_param
 	};
-	uart_send_packet(UART_OPC_RESP_QUERY_INFO, &pic_param, false, 2000);
-	AI_GLASS_INFO("end of UART_OPC_CMD_QUERY_INFO\r\n");
+	uart_send_packet(UART_TX_OPC_RESP_QUERY_INFO, &pic_param, false, 2000);
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_QUERY_INFO\r\n");
 }
 
-// For UART_OPC_CMD_POWER_DOWN
+// For UART_RX_OPC_CMD_POWER_DOWN
 static void uart_service_get_power_down(uartcmdpacket_t *param)
 {
-	AI_GLASS_INFO("get UART_OPC_CMD_POWER_DOWN\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_POWER_DOWN\r\n");
 	// Todo: get power down command
 	int ret = 0;
 	// Save filelist to EMMC
 	ai_glass_init_external_disk();
 	ret = extdisk_save_file_cntlist();
 	AI_GLASS_MSG("Save FILE Cnt List status: %d\r\n", ret);
-	AI_GLASS_INFO("end of UART_OPC_CMD_POWER_DOWN\r\n");
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_POWER_DOWN\r\n");
 }
 
-// For UART_OPC_CMD_GET_POWER_STATE
+// For UART_RX_OPC_CMD_GET_POWER_STATE
 static void uart_service_get_power_state(uartcmdpacket_t *param)
 {
-	AI_GLASS_INFO("get UART_OPC_CMD_GET_POWER_STATE\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_POWER_STATE\r\n");
 	uint8_t power_result = 0;
 	switch (wifi_get_connect_status()) {
 	case WLAN_STAT_IDLE:
@@ -270,8 +270,8 @@ static void uart_service_get_power_state(uartcmdpacket_t *param)
 		.length = 1,
 		.next = NULL
 	};
-	uart_send_packet(UART_OPC_RESP_GET_POWER_STATE, &power_param, false, 200);
-	AI_GLASS_INFO("end of UART_OPC_CMD_GET_POWER_STATE\r\n");
+	uart_send_packet(UART_TX_OPC_RESP_GET_POWER_STATE, &power_param, false, 200);
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_GET_POWER_STATE\r\n");
 }
 
 typedef struct snapshot_pkt_s {
@@ -287,7 +287,6 @@ typedef struct snapshot_pkt_s {
 
 static void parser_record_param(ai_glass_record_param_t *rec_buf, uint8_t *raw_buf)
 {
-	uint32_t temp_data = 0;
 	if (rec_buf) {
 		rec_buf->type = raw_buf[0];
 		rec_buf->width = raw_buf[1] | (raw_buf[2] << 8);
@@ -347,8 +346,6 @@ static void parser_snapshot_pkt2param(ai_glass_snapshot_param_t *snap_buf, uint8
 
 static void parser_life_snapshot_param(ai_glass_snapshot_param_t *snap_buf, uint8_t *raw_buf)
 {
-	snapshot_pkt_t aisnap_buf = {0};
-	uint32_t temp_data = 0;
 	if (snap_buf) {
 		snap_buf->type = raw_buf[0];
 		snap_buf->width = raw_buf[1] | (raw_buf[2] << 8) | (raw_buf[3] << 16) | (raw_buf[4] << 24);
@@ -365,10 +362,10 @@ static void parser_life_snapshot_param(ai_glass_snapshot_param_t *snap_buf, uint
 }
 
 
-// For UART_OPC_CMD_UPDATE_WIFI_INFO
+// For UART_RX_OPC_CMD_UPDATE_WIFI_INFO
 static void uart_service_update_wifi_info(uartcmdpacket_t *param)
 {
-	AI_GLASS_INFO("get UART_OPC_CMD_UPDATE_WIFI_INFO\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_UPDATE_WIFI_INFO\r\n");
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 	uint8_t info_mode = query_pkt->data_buf[0];
 	uint16_t info_size = query_pkt->data_buf[1] | (query_pkt->data_buf[2] << 8);
@@ -424,17 +421,17 @@ static void uart_service_update_wifi_info(uartcmdpacket_t *param)
 		.length = 1,
 		.next = NULL
 	};
-	uart_send_packet(UART_OPC_RESP_UPDATE_WIFI_INFO, &info_pkt, false, 2000);
-	AI_GLASS_INFO("end of UART_OPC_CMD_UPDATE_WIFI_INFO\r\n");
+	uart_send_packet(UART_TX_OPC_RESP_UPDATE_WIFI_INFO, &info_pkt, false, 2000);
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_UPDATE_WIFI_INFO\r\n");
 }
 
-// For UART_OPC_CMD_SET_GPS
+// For UART_RX_OPC_CMD_SET_GPS
 static void uart_service_set_gps(uartcmdpacket_t *param)
 {
-	AI_GLASS_INFO("get UART_OPC_CMD_SET_GPS\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_SET_GPS\r\n");
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 
-	AI_GLASS_MSG("get UART_OPC_CMD_SET_GPS packet length = %d\r\n", query_pkt->length);
+	AI_GLASS_MSG("get UART_RX_OPC_CMD_SET_GPS packet length = %d\r\n", query_pkt->length);
 	uint32_t gps_week = 0, gps_seconds = 0;
 	float gps_latitude = 0, gps_longitude = 0, gps_altitude = 0;
 	uint8_t *raw_buf = (uint8_t *)query_pkt->data_buf;
@@ -460,14 +457,14 @@ static void uart_service_set_gps(uartcmdpacket_t *param)
 		.next = NULL
 	};
 	status = AI_GLASS_CMD_COMPLETE;
-	uart_send_packet(UART_OPC_RESP_SET_GPS, &set_gps_status_param, false, 2000);
-	AI_GLASS_INFO("end of UART_OPC_CMD_SET_GPS\r\n");
+	uart_send_packet(UART_TX_OPC_RESP_SET_GPS, &set_gps_status_param, false, 2000);
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_SET_GPS\r\n");
 }
 
-// For UART_OPC_CMD_SNAPSHOT
+// For UART_RX_OPC_CMD_SNAPSHOT
 static void uart_service_snapshot(uartcmdpacket_t *param)
 {
-	AI_GLASS_MSG("get UART_OPC_CMD_SNAPSHOT = %lu\r\n", mm_read_mediatime_ms());
+	AI_GLASS_MSG("get UART_RX_OPC_CMD_SNAPSHOT = %lu\r\n", mm_read_mediatime_ms());
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 
 	uint8_t status = 0;
@@ -508,7 +505,7 @@ static void uart_service_snapshot(uartcmdpacket_t *param)
 			status = AI_GLASS_PROC_FAIL;
 		}
 		AI_GLASS_MSG("snapshot send pkt time = %lu\r\n", mm_read_mediatime_ms());
-		uart_send_packet(UART_OPC_RESP_SNAPSHOT, &snapshot_status_param, false, 2000);
+		uart_send_packet(UART_TX_OPC_RESP_SNAPSHOT, &snapshot_status_param, false, 2000);
 		if (ret == 0) {
 			while (ai_snapshot_deinitialize()) {
 				AI_GLASS_MSG("wait for ai snapshot deinit\r\n");
@@ -542,24 +539,24 @@ static void uart_service_snapshot(uartcmdpacket_t *param)
 		} else {
 			status = AI_GLASS_PROC_FAIL;
 		}
-		uart_send_packet(UART_OPC_RESP_SNAPSHOT, &snapshot_status_param, false, 2000);
+		uart_send_packet(UART_TX_OPC_RESP_SNAPSHOT, &snapshot_status_param, false, 2000);
 		// Save filelist to EMMC
 		extdisk_save_file_cntlist();
 		aiglass_mass_storage_init();
 	} else {
 		AI_GLASS_WARN("Not implement yet\r\n");
 		status = AI_GLASS_PROC_FAIL;
-		uart_send_packet(UART_OPC_RESP_SNAPSHOT, &snapshot_status_param, false, 2000);
+		uart_send_packet(UART_TX_OPC_RESP_SNAPSHOT, &snapshot_status_param, false, 2000);
 	}
 	xSemaphoreGive(video_proc_sema);
 endofsnapshot:
-	AI_GLASS_INFO("end of UART_OPC_CMD_SNAPSHOT\r\n");
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_SNAPSHOT\r\n");
 }
 
-// For UART_OPC_CMD_GET_FILE_NAME
+// For UART_RX_OPC_CMD_GET_FILE_NAME
 static void uart_get_file_name(uartcmdpacket_t *param)
 {
-	AI_GLASS_INFO("get UART_OPC_CMD_GET_FILE_NAME\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_FILE_NAME\r\n");
 	uint8_t result = AI_GLASS_CMD_COMPLETE;
 	uint16_t name_length = strlen("ai_snapshot.jpg");
 	uint32_t file_length = 0;
@@ -600,15 +597,15 @@ static void uart_get_file_name(uartcmdpacket_t *param)
 		.length = 1,
 		.next = &length_param
 	};
-	uart_send_packet(UART_OPC_RESP_GET_FILE_NAME, &result_param, false, 2000);
+	uart_send_packet(UART_TX_OPC_RESP_GET_FILE_NAME, &result_param, false, 2000);
 
-	AI_GLASS_INFO("end of UART_OPC_CMD_GET_FILE_NAME\r\n");
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_GET_FILE_NAME\r\n");
 }
 
-// For UART_OPC_CMD_GET_PICTURE_DATA Todo
+// For UART_RX_OPC_CMD_GET_PICTURE_DATA Todo
 static void uart_get_pic_data(uartcmdpacket_t *param)
 {
-	AI_GLASS_INFO("get UART_OPC_CMD_GET_PICTURE_DATA\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_PICTURE_DATA\r\n");
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 	uint32_t file_offset = query_pkt->data_buf[0] | (query_pkt->data_buf[1] << 8) | (query_pkt->data_buf[2] << 16) | (query_pkt->data_buf[3] << 24);
 	uint8_t packet_num = query_pkt->data_buf[4];
@@ -664,12 +661,12 @@ static void uart_get_pic_data(uartcmdpacket_t *param)
 					}
 					if (ramdisk_feof(ai_snapshot_rfile)) {
 						num_data = 0xFF;
-						uart_send_packet(UART_OPC_RESP_GET_PICTURE_DATA, &cnt_param, false, 2000);
+						uart_send_packet(UART_TX_OPC_RESP_GET_PICTURE_DATA, &cnt_param, false, 2000);
 						break;
 					} else {
 						num_data = i;
 					}
-					uart_send_packet(UART_OPC_RESP_GET_PICTURE_DATA, &cnt_param, false, 2000);
+					uart_send_packet(UART_TX_OPC_RESP_GET_PICTURE_DATA, &cnt_param, false, 2000);
 				}
 				ramdisk_fclose(ai_snapshot_rfile);
 				ai_snapshot_rfile = NULL;
@@ -687,13 +684,13 @@ static void uart_get_pic_data(uartcmdpacket_t *param)
 		result = AI_GLASS_PROC_FAIL;
 	}
 
-	AI_GLASS_INFO("end of UART_OPC_CMD_GET_PICTURE_DATA\r\n");
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_GET_PICTURE_DATA\r\n");
 }
 
-// For UART_OPC_CMD_TRANS_PIC_STOP Todo
+// For UART_RX_OPC_CMD_TRANS_PIC_STOP Todo
 static void uart_get_trans_pic_stop(uartcmdpacket_t *param)
 {
-	AI_GLASS_INFO("get UART_OPC_CMD_TRANS_PIC_STOP\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_TRANS_PIC_STOP\r\n");
 	//uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 	uint8_t result = AI_GLASS_CMD_COMPLETE;
 	uart_params_t result_param = {
@@ -712,20 +709,20 @@ static void uart_get_trans_pic_stop(uartcmdpacket_t *param)
 	} else {
 		result = AI_GLASS_BUSY;
 	}
-	uart_send_packet(UART_OPC_RESP_TRANS_PIC_STOP, &result_param, false, 2000);
-	AI_GLASS_INFO("end of UART_OPC_CMD_TRANS_PIC_STOP\r\n");
+	uart_send_packet(UART_TX_OPC_RESP_TRANS_PIC_STOP, &result_param, false, 2000);
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_TRANS_PIC_STOP\r\n");
 }
 
-// For UART_OPC_CMD_RECORD_SYNC_TS
+// For UART_RX_OPC_CMD_RECORD_SYNC_TS
 static void uart_service_record_sync_ts(uartcmdpacket_t *param)
 {
-	AI_GLASS_INFO("get UART_OPC_CMD_RECORD_SYNC_TS\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_RECORD_SYNC_TS\r\n");
 	// Todo: will use in the future
 	//uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
-	AI_GLASS_INFO("end of UART_OPC_CMD_RECORD_SYNC_TS\r\n");
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_RECORD_SYNC_TS\r\n");
 }
 
-// For UART_OPC_CMD_RECORD_START Todo no need two timer
+// For UART_RX_OPC_CMD_RECORD_START Todo no need two timer
 static void mp4_send_response_callback(struct tmrTimerControl *parm)
 {
 	uint8_t record_resp_status = AI_GLASS_CMD_COMPLETE;
@@ -747,8 +744,8 @@ static void mp4_send_response_callback(struct tmrTimerControl *parm)
 				aiglass_mass_storage_init();
 				send_response_timer_setstop = 1;
 				xSemaphoreGive(send_response_timermutex);
-				uart_send_packet(UART_OPC_RESP_RECORD_STOP, &record_resp_pkt, false, 2000);
-				AI_GLASS_MSG("mp4_send_response_callback UART_OPC_RESP_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
+				uart_send_packet(UART_TX_OPC_RESP_RECORD_STOP, &record_resp_pkt, false, 2000);
+				AI_GLASS_MSG("mp4_send_response_callback UART_TX_OPC_RESP_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
 				xSemaphoreGive(video_proc_sema);
 			} else {
 				if (current_state == STATE_RECORDING || current_state == STATE_IDLE) {
@@ -759,11 +756,11 @@ static void mp4_send_response_callback(struct tmrTimerControl *parm)
 					.length = 1,
 					.next = NULL
 				};
-				uart_send_packet(UART_OPC_RESP_RECORD_CONT, &record_resp_pkt, false, 2000);
-				AI_GLASS_MSG("mp4_send_response_callback UART_OPC_RESP_RECORD_CONT %lu\r\n", mm_read_mediatime_ms());
+				uart_send_packet(UART_TX_OPC_RESP_RECORD_CONT, &record_resp_pkt, false, 2000);
+				AI_GLASS_MSG("mp4_send_response_callback UART_TX_OPC_RESP_RECORD_CONT %lu\r\n", mm_read_mediatime_ms());
 				if (send_response_timer != NULL) {
 					if (xTimerStart(send_response_timer, 0) != pdPASS) {
-						AI_GLASS_ERR("Send UART_OPC_RESP_RECORD_CONT timer failed\r\n");
+						AI_GLASS_ERR("Send UART_TX_OPC_RESP_RECORD_CONT timer failed\r\n");
 					}
 				}
 				xSemaphoreGive(send_response_timermutex);
@@ -772,13 +769,13 @@ static void mp4_send_response_callback(struct tmrTimerControl *parm)
 			xSemaphoreGive(send_response_timermutex);
 		}
 	} else {
-		AI_GLASS_ERR("Send UART_OPC_RESP_RECORD_CONT timer mutex failed\r\n");
+		AI_GLASS_ERR("Send UART_TX_OPC_RESP_RECORD_CONT timer mutex failed\r\n");
 	}
 	return;
 }
 static void uart_service_record_start(uartcmdpacket_t *param)
 {
-	AI_GLASS_INFO("get UART_OPC_CMD_RECORD_START = %lu\r\n", mm_read_mediatime_ms());
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_RECORD_START = %lu\r\n", mm_read_mediatime_ms());
 	ai_glass_init_external_disk();
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 	AI_GLASS_MSG("Opcode (hex): 0x%x\r\n", query_pkt->opcode);
@@ -797,7 +794,7 @@ static void uart_service_record_start(uartcmdpacket_t *param)
 			AI_GLASS_MSG("Recording has started, not starting another recording\r\n");
 			record_start_status = AI_GLASS_CMD_COMPLETE;
 			aiglass_mass_storage_init();
-			uart_send_packet(UART_OPC_CMD_RECORD_START, &record_start_pkt, false, 2000);
+			uart_send_packet(UART_RX_OPC_CMD_RECORD_START, &record_start_pkt, false, 2000);
 			xSemaphoreGive(video_proc_sema);
 		} else if (current_state == STATE_IDLE) {
 			lifetime_recording_initialize();
@@ -807,35 +804,35 @@ static void uart_service_record_start(uartcmdpacket_t *param)
 				if (xSemaphoreTake(send_response_timermutex, portMAX_DELAY) == pdTRUE) {
 					if (xTimerStart(send_response_timer, 0) != pdPASS) {
 						record_start_status = AI_GLASS_PROC_FAIL;
-						uart_send_packet(UART_OPC_CMD_RECORD_START, &record_start_pkt, false, 2000);
-						AI_GLASS_ERR("Send UART_OPC_CMD_RECORD_START timer failed\r\n");
+						uart_send_packet(UART_RX_OPC_CMD_RECORD_START, &record_start_pkt, false, 2000);
+						AI_GLASS_ERR("Send UART_RX_OPC_CMD_RECORD_START timer failed\r\n");
 						lifetime_recording_deinitialize();
 						aiglass_mass_storage_init();
 						xSemaphoreGive(video_proc_sema);
 					} else {
 						record_start_status = AI_GLASS_CMD_COMPLETE;
 						send_response_timer_setstop = 0;
-						uart_send_packet(UART_OPC_CMD_RECORD_START, &record_start_pkt, false, 2000);
+						uart_send_packet(UART_RX_OPC_CMD_RECORD_START, &record_start_pkt, false, 2000);
 					}
 					xSemaphoreGive(send_response_timermutex);
 				} else {
 					record_start_status = AI_GLASS_PROC_FAIL;
-					uart_send_packet(UART_OPC_CMD_RECORD_START, &record_start_pkt, false, 2000);
-					AI_GLASS_ERR("Send UART_OPC_CMD_RECORD_START timer mutex failed\r\n");
+					uart_send_packet(UART_RX_OPC_CMD_RECORD_START, &record_start_pkt, false, 2000);
+					AI_GLASS_ERR("Send UART_RX_OPC_CMD_RECORD_START timer mutex failed\r\n");
 					lifetime_recording_deinitialize();
 					aiglass_mass_storage_init();
 					xSemaphoreGive(video_proc_sema);
 				}
 			} else {
 				record_start_status = AI_GLASS_PROC_FAIL;
-				uart_send_packet(UART_OPC_CMD_RECORD_START, &record_start_pkt, false, 2000);
+				uart_send_packet(UART_RX_OPC_CMD_RECORD_START, &record_start_pkt, false, 2000);
 				AI_GLASS_ERR("Failed to create send_response_timer\r\n");
 				aiglass_mass_storage_init();
 				xSemaphoreGive(video_proc_sema);
 			}
 		} else {
 			record_start_status = AI_GLASS_PROC_FAIL;
-			uart_send_packet(UART_OPC_CMD_RECORD_START, &record_start_pkt, false, 2000);
+			uart_send_packet(UART_RX_OPC_CMD_RECORD_START, &record_start_pkt, false, 2000);
 			AI_GLASS_ERR("Failed because of the known record status\r\n");
 			aiglass_mass_storage_init();
 			xSemaphoreGive(video_proc_sema);
@@ -843,16 +840,16 @@ static void uart_service_record_start(uartcmdpacket_t *param)
 	} else {
 		AI_GLASS_WARN("AI glass is snapshot or record, current record busy fail\r\n");
 		record_start_status = AI_GLASS_BUSY;
-		uart_send_packet(UART_OPC_CMD_RECORD_START, &record_start_pkt, false, 2000);
+		uart_send_packet(UART_RX_OPC_CMD_RECORD_START, &record_start_pkt, false, 2000);
 	}
 
-	AI_GLASS_INFO("end of UART_OPC_CMD_RECORD_START\r\n");
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_RECORD_START\r\n");
 }
 
-// For UART_OPC_CMD_RECORD_STOP Todo
+// For UART_RX_OPC_CMD_RECORD_STOP Todo
 static void uart_service_record_stop(uartcmdpacket_t *param)
 {
-	AI_GLASS_MSG("get UART_OPC_CMD_RECORD_STOP %u\r\n", mm_read_mediatime_ms());
+	AI_GLASS_MSG("get UART_RX_OPC_CMD_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
 	uint8_t record_stop_status = AI_GLASS_CMD_COMPLETE;
 	if (current_state == STATE_RECORDING) {
 		if (xSemaphoreTake(send_response_timermutex, portMAX_DELAY) == pdTRUE) {
@@ -878,14 +875,14 @@ static void uart_service_record_stop(uartcmdpacket_t *param)
 		.length = 1,
 		.next = NULL
 	};
-	uart_send_packet(UART_OPC_RESP_RECORD_STOP, &record_stop_pkt, false, 2000);
-	AI_GLASS_MSG("end of UART_OPC_CMD_RECORD_STOP %u\r\n", mm_read_mediatime_ms());
+	uart_send_packet(UART_TX_OPC_RESP_RECORD_STOP, &record_stop_pkt, false, 2000);
+	AI_GLASS_MSG("end of UART_RX_OPC_CMD_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
 }
 
-// For UART_OPC_CMD_SET_WIFI_MODE
+// For UART_RX_OPC_CMD_SET_WIFI_MODE
 static void uart_set_ap_mode(uartcmdpacket_t *param)
 {
-	AI_GLASS_MSG("get UART_OPC_CMD_SET_WIFI_MODE %u\r\n", mm_read_mediatime_ms());
+	AI_GLASS_MSG("get UART_RX_OPC_CMD_SET_WIFI_MODE %lu\r\n", mm_read_mediatime_ms());
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 	uint8_t mode = query_pkt->data_buf[0];
 	uint8_t result = AI_GLASS_CMD_COMPLETE;
@@ -917,7 +914,7 @@ static void uart_set_ap_mode(uartcmdpacket_t *param)
 	} else {
 		result = AI_GLASS_PARAMS_ERR;
 	}
-	AI_GLASS_MSG("UART_OPC_CMD_SET_WIFI_MODE set mode %d done %u\r\n", mode, mm_read_mediatime_ms());
+	AI_GLASS_MSG("UART_RX_OPC_CMD_SET_WIFI_MODE set mode %d done %lu\r\n", mode, mm_read_mediatime_ms());
 	uart_params_t resv1_param = {
 		.data = (uint8_t *)wifi_reserve_buf,
 		.length = 5,
@@ -963,18 +960,18 @@ static void uart_set_ap_mode(uartcmdpacket_t *param)
 		.length = 1,
 		.next = &ssidlen_param
 	};
-	uart_send_packet(UART_OPC_RESP_SET_WIFI_MODE, &result_param, false, 2000);
+	uart_send_packet(UART_TX_OPC_RESP_SET_WIFI_MODE, &result_param, false, 2000);
 	if (mode == 1 && result == AI_GLASS_CMD_COMPLETE) {
 		deinitial_media(); // To save power
 	}
-	AI_GLASS_MSG("end of UART_OPC_CMD_SET_WIFI_MODE %u\r\n", mm_read_mediatime_ms());
+	AI_GLASS_MSG("end of UART_RX_OPC_CMD_SET_WIFI_MODE %lu\r\n", mm_read_mediatime_ms());
 }
 
-// For UART_OPC_CMD_GET_SD_INFO
+// For UART_RX_OPC_CMD_GET_SD_INFO
 static void uart_get_sd_info(uartcmdpacket_t *param)
 {
 	ai_glass_init_external_disk();
-	AI_GLASS_INFO("get UART_OPC_CMD_GET_SD_INFO\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_SD_INFO\r\n");
 	uint64_t device_used_bytes = fatfs_get_used_space_byte();
 	uint64_t device_total_bytes = device_used_bytes + fatfs_get_free_space_byte();
 	uint32_t device_used_Kbytes = (uint32_t)(device_used_bytes / 1024);
@@ -991,38 +988,38 @@ static void uart_get_sd_info(uartcmdpacket_t *param)
 		.length = 4,
 		.next = &total_param
 	};
-	uart_send_packet(UART_OPC_RESP_GET_SD_INFO, &used_param, false, 2000);
-	AI_GLASS_INFO("end of UART_OPC_CMD_GET_SD_INFO\r\n");
+	uart_send_packet(UART_TX_OPC_RESP_GET_SD_INFO, &used_param, false, 2000);
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_GET_SD_INFO\r\n");
 }
 
-// For UART_OPC_CMD_DELETE_FILE Todo
+// For UART_RX_OPC_CMD_DELETE_FILE Todo
 static void uart_delete_file(uartcmdpacket_t *param)
 {
-	AI_GLASS_INFO("get UART_OPC_CMD_DELETE_FILE\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_DELETE_FILE\r\n");
 	ai_glass_init_external_disk();
 	// Todo: will use in the future
 	//check_cmd_sample_fun(param);
 	//uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 
-	AI_GLASS_INFO("end of UART_OPC_CMD_DELETE_FILE\r\n");
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_DELETE_FILE\r\n");
 }
 
-// For UART_OPC_CMD_DELETE_ALL_FILES Todo
+// For UART_RX_OPC_CMD_DELETE_ALL_FILES Todo
 static void uart_delete_all_file(uartcmdpacket_t *param)
 {
-	AI_GLASS_INFO("get UART_OPC_CMD_DELETE_ALL_FILES\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_DELETE_ALL_FILES\r\n");
 	ai_glass_init_external_disk();
 	// Todo: will use in the future
 	//check_cmd_sample_fun(param);
 	//uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 
-	AI_GLASS_INFO("end of UART_OPC_CMD_DELETE_ALL_FILES\r\n");
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_DELETE_ALL_FILES\r\n");
 }
 
-// For UART_OPC_CMD_GET_FILE_CNT
+// For UART_RX_OPC_CMD_GET_FILE_CNT
 static void uart_get_file_cnt(uartcmdpacket_t *param)
 {
-	AI_GLASS_INFO("get UART_OPC_CMD_GET_FILE_CNT\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_FILE_CNT\r\n");
 	ai_glass_init_external_disk();
 	uint8_t result = AI_GLASS_CMD_COMPLETE;
 	uint16_t film_num = extdisk_get_filecount(SYS_COUNT_FILM_LABEL);
@@ -1046,8 +1043,8 @@ static void uart_get_file_cnt(uartcmdpacket_t *param)
 		.length = 1,
 		.next = &snapshotfile_param
 	};
-	uart_send_packet(UART_OPC_RESP_GET_FILE_CNT, &result_param, false, 2000);
-	AI_GLASS_INFO("end of UART_OPC_CMD_GET_FILE_CNT\r\n");
+	uart_send_packet(UART_TX_OPC_RESP_GET_FILE_CNT, &result_param, false, 2000);
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_GET_FILE_CNT\r\n");
 }
 
 static int send_packet(const sliding_pkt_t *spacket)
@@ -1074,22 +1071,22 @@ static int send_packet(const sliding_pkt_t *spacket)
 	AI_GLASS_MSG("send seq %u \r\n", spacket->seq);
 	AI_GLASS_MSG("send label %02x \r\n", spacket->spayload->label);
 	AI_GLASS_MSG("send pkt length %u \r\n", spacket->spayload->length);
-	uart_send_packet(UART_OPC_RESP_GET_PICTURE_DATA_SLIDING_WINDOW, &seq_param, true, 200);
+	uart_send_packet(UART_TX_OPC_RESP_GET_PICTURE_DATA_SLIDING_WINDOW, &seq_param, true, 200);
 	return 0;
 }
 
 static void uart_get_pic_data_sliding_window(uartcmdpacket_t *param)
 {
-	AI_GLASS_INFO("get UART_OPC_CMD_GET_PICTURE_DATA SLIDING WINDOW\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_PICTURE_DATA SLIDING WINDOW\r\n");
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 	uint32_t file_offset = query_pkt->data_buf[0] | (query_pkt->data_buf[1] << 8) | (query_pkt->data_buf[2] << 16) | (query_pkt->data_buf[3] << 24);
 	uint32_t file_length = query_pkt->data_buf[4] | (query_pkt->data_buf[5] << 8) | (query_pkt->data_buf[6] << 16) | (query_pkt->data_buf[7] << 24);
 	uint32_t start_pic_packet_seq_num = query_pkt->data_buf[8] | (query_pkt->data_buf[9] << 8) | (query_pkt->data_buf[10] << 16) | (query_pkt->data_buf[11] << 24);
 	uint16_t max_window_size = query_pkt->data_buf[12] | (query_pkt->data_buf[13] << 8);
 
-	AI_GLASS_MSG("file_offset = %u\r\n", file_offset);
-	AI_GLASS_MSG("file_length = %u\r\n", file_length);
-	AI_GLASS_MSG("start_pic_packet_seq_num = %u\r\n", start_pic_packet_seq_num);
+	AI_GLASS_MSG("file_offset = %lu\r\n", file_offset);
+	AI_GLASS_MSG("file_length = %lu\r\n", file_length);
+	AI_GLASS_MSG("start_pic_packet_seq_num = %lu\r\n", start_pic_packet_seq_num);
 	AI_GLASS_MSG("max_window_size = %u\r\n", max_window_size);
 	uint16_t tmp_pic_size = uart_pic_size - EMPTY_PACKET_LEN;
 	uint16_t pic_buf_size = tmp_pic_size * MAX_WINDOW_SIZE;
@@ -1148,12 +1145,12 @@ static void uart_get_pic_data_sliding_window(uartcmdpacket_t *param)
 	} else {
 		AI_GLASS_ERR("data buffer allocate fail\r\n");
 	}
-	AI_GLASS_INFO("get UART_OPC_CMD_GET_PICTURE_DATA SLIDING WINDOW END\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_PICTURE_DATA SLIDING WINDOW END\r\n");
 }
 
 static void uart_get_pic_data_sliding_window_ack(uartcmdpacket_t *param)
 {
-	AI_GLASS_INFO("get UART_OPC_CMD_GET_PICTURE_DATA SLIDING WINDOW_ACK\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_PICTURE_DATA SLIDING WINDOW_ACK\r\n");
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 
 	ack_info_t ack_info = {0};
@@ -1170,10 +1167,10 @@ static void uart_get_pic_data_sliding_window_ack(uartcmdpacket_t *param)
 	}
 
 	AI_GLASS_MSG("length = %u\r\n", query_pkt->length);
-	AI_GLASS_MSG("ack_seq = %u\r\n", ack_info.ack_seq);
+	AI_GLASS_MSG("ack_seq = %lu\r\n", ack_info.ack_seq);
 	AI_GLASS_MSG("window_size = %u\r\n", ack_info.window_size);
 	AI_GLASS_MSG("packet_label = %u\r\n", ack_info.label);
-	AI_GLASS_MSG("extend_length = %u\r\n", ack_info.extend_length);
+	AI_GLASS_MSG("extend_length = %lu\r\n", ack_info.extend_length);
 
 	if (uart_sliding_window) {
 		sliding_on_ack_received(uart_sliding_window, &ack_info, extend_ack_info);
@@ -1200,31 +1197,31 @@ static void uart_get_pic_data_sliding_window_ack(uartcmdpacket_t *param)
 		} else {
 			result = AI_GLASS_BUSY;
 		}
-		uart_send_packet(UART_OPC_RESP_TRANS_PIC_STOP, &result_param, false, 2000);
+		uart_send_packet(UART_TX_OPC_RESP_TRANS_PIC_STOP, &result_param, false, 2000);
 	}
 }
 
 void uart_fun_regist(void)
 {
-	uart_service_rx_cmd_reg(UART_OPC_CMD_QUERY_INFO, uart_service_get_query_info);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_POWER_DOWN, uart_service_get_power_down);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_GET_POWER_STATE, uart_service_get_power_state);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_UPDATE_WIFI_INFO, uart_service_update_wifi_info);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_SET_GPS, uart_service_set_gps);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_SNAPSHOT, uart_service_snapshot);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_GET_FILE_NAME, uart_get_file_name);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_GET_PICTURE_DATA, uart_get_pic_data);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_TRANS_PIC_STOP, uart_get_trans_pic_stop);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_RECORD_START, uart_service_record_start);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_RECORD_SYNC_TS, uart_service_record_sync_ts);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_RECORD_STOP, uart_service_record_stop);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_GET_FILE_CNT, uart_get_file_cnt);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_DELETE_FILE, uart_delete_file);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_DELETE_ALL_FILES, uart_delete_all_file);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_GET_SD_INFO, uart_get_sd_info);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_SET_WIFI_MODE, uart_set_ap_mode);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW, uart_get_pic_data_sliding_window);
-	uart_service_rx_cmd_reg(UART_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW_ACK, uart_get_pic_data_sliding_window_ack);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_QUERY_INFO, uart_service_get_query_info);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_POWER_DOWN, uart_service_get_power_down);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_GET_POWER_STATE, uart_service_get_power_state);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_UPDATE_WIFI_INFO, uart_service_update_wifi_info);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_SET_GPS, uart_service_set_gps);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_SNAPSHOT, uart_service_snapshot);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_GET_FILE_NAME, uart_get_file_name);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_GET_PICTURE_DATA, uart_get_pic_data);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_TRANS_PIC_STOP, uart_get_trans_pic_stop);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_RECORD_START, uart_service_record_start);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_RECORD_SYNC_TS, uart_service_record_sync_ts);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_RECORD_STOP, uart_service_record_stop);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_GET_FILE_CNT, uart_get_file_cnt);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_DELETE_FILE, uart_delete_file);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_DELETE_ALL_FILES, uart_delete_all_file);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_GET_SD_INFO, uart_get_sd_info);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_SET_WIFI_MODE, uart_set_ap_mode);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW, uart_get_pic_data_sliding_window);
+	uart_service_rx_cmd_reg(UART_RX_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW_ACK, uart_get_pic_data_sliding_window_ack);
 }
 
 static void ai_glass_init_external_disk(void)
@@ -1340,7 +1337,6 @@ void fENABLEMSC(void *arg)
 
 void fENABLEAPMODE(void *arg)
 {
-	rtw_softap_info_t wifi_cfg = {0};
 	ai_glass_init_external_disk();
 	if (wifi_enable_ap_mode(AI_GLASS_AP_SSID, AI_GLASS_AP_PASSWORD, AI_GLASS_AP_CHANNEL, 20) == WLAN_SET_OK) {
 		deinitial_media(); // For saving power

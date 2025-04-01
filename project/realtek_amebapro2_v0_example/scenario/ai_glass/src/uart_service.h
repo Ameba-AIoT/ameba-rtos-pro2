@@ -37,126 +37,145 @@
 #define MAX_UARTACK_QUEUE_SIZE	20
 // Uart Opcode CMD
 typedef enum {
-	UART_OPC_CMD_ACK                = 0x0000,
-	UART_OPC_CMD_MIN                = 0x8400, // define the min value of opcode command
-	UART_OPC_CMD_QUERY_INFO         = 0x8400,
-	//UART_OPC_CMD_POWER_ON           = 0x8401,
-	UART_OPC_CMD_POWER_DOWN         = 0x8402,
-	UART_OPC_CMD_GET_POWER_STATE    = 0x8403,
-	UART_OPC_CMD_UPDATE_WIFI_INFO   = 0x8404,
-	UART_OPC_CMD_SET_GPS            = 0x8405,
-	UART_OPC_CMD_SNAPSHOT           = 0x8406,
-	UART_OPC_CMD_GET_FILE_NAME      = 0x8407,
-	UART_OPC_CMD_GET_PICTURE_DATA   = 0x8408,
-	UART_OPC_CMD_TRANS_PIC_STOP     = 0x8409,
-	UART_OPC_CMD_RECORD_START       = 0x840A,
-	//UART_OPC_CMD_RECORD_CONT        = 0x840B,
-	UART_OPC_CMD_RECORD_SYNC_TS     = 0x840C,
-	UART_OPC_CMD_RECORD_STOP        = 0x840D,
-	UART_OPC_CMD_GET_FILE_CNT       = 0x840E,
-	UART_OPC_CMD_DELETE_FILE        = 0x840F,
-	UART_OPC_CMD_DELETE_ALL_FILES   = 0x8410,
-	UART_OPC_CMD_GET_SD_INFO        = 0x8411,
-	UART_OPC_CMD_SET_WIFI_MODE      = 0x8412,
-	UART_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW        = 0x8413,
-	UART_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW_ACK    = 0x8414,
-	UART_OPC_CMD_MAX                = 0x8414, // define the max value of opcode command
-} uart_cmd_e;
+	UART_RX_OPC_ACK                     = 0x0000,
+	UART_RX_OPC_MIN                             = 0x0631, // define the min value of opcode command
+	UART_RX_OPC_RESP_START_BT_SOC_FW_UPGRADE    = 0x0631,
+	//UART_RX_OPC_RESP_TRANSFER_UPGRADE_DATA      = 0x0632,
+	UART_RX_OPC_RESP_FINISH_BT_SOC_FW_UPGRADE   = 0x0633,
+	UART_RX_OPC_CMD_QUERY_INFO          = 0x8400,
+	//UART_RX_OPC_CMD_POWER_ON           = 0x8401,
+	UART_RX_OPC_CMD_POWER_DOWN          = 0x8402,
+	UART_RX_OPC_CMD_GET_POWER_STATE     = 0x8403,
+	UART_RX_OPC_CMD_UPDATE_WIFI_INFO    = 0x8404,
+	UART_RX_OPC_CMD_SET_GPS             = 0x8405,
+	UART_RX_OPC_CMD_SNAPSHOT            = 0x8406,
+	UART_RX_OPC_CMD_GET_FILE_NAME       = 0x8407,
+	UART_RX_OPC_CMD_GET_PICTURE_DATA    = 0x8408,
+	UART_RX_OPC_CMD_TRANS_PIC_STOP      = 0x8409,
+	UART_RX_OPC_CMD_RECORD_START        = 0x840A,
+	//UART_RX_OPC_CMD_RECORD_CONT         = 0x840B,
+	UART_RX_OPC_CMD_RECORD_SYNC_TS      = 0x840C,
+	UART_RX_OPC_CMD_RECORD_STOP         = 0x840D,
+	UART_RX_OPC_CMD_GET_FILE_CNT        = 0x840E,
+	UART_RX_OPC_CMD_DELETE_FILE         = 0x840F,
+	UART_RX_OPC_CMD_DELETE_ALL_FILES    = 0x8410,
+	UART_RX_OPC_CMD_GET_SD_INFO         = 0x8411,
+	UART_RX_OPC_CMD_SET_WIFI_MODE       = 0x8412,
+	UART_RX_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW     = 0x8413,
+	UART_RX_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW_ACK = 0x8414,
+	UART_RX_OPC_CMD_SET_WIFI_FW_ROLLBACK                = 0x8415,
+	UART_RX_OPC_CMD_SET_SYS_UPGRADE     = 0x8430,
+	UART_RX_OPC_MAX                     = 0x8430, // define the max value of opcode command
+} uart_rx_opc_e;
 
-#define UART_UART_CMD_COUNT (UART_OPC_CMD_MAX - UART_OPC_CMD_MIN + 1)
+#define UART_RX_OPC_COUNT (UART_RX_OPC_MAX - UART_RX_OPC_MIN + 1)
 
-#define IS_VALID_UART_CMD(value) \
-    ((value) == UART_OPC_CMD_ACK || \
-     (value) == UART_OPC_CMD_QUERY_INFO || \
-     (value) == UART_OPC_CMD_POWER_DOWN || \
-     (value) == UART_OPC_CMD_GET_POWER_STATE || \
-     (value) == UART_OPC_CMD_UPDATE_WIFI_INFO || \
-     (value) == UART_OPC_CMD_SET_GPS || \
-     (value) == UART_OPC_CMD_SNAPSHOT || \
-     (value) == UART_OPC_CMD_GET_FILE_NAME || \
-     (value) == UART_OPC_CMD_GET_PICTURE_DATA || \
-     (value) == UART_OPC_CMD_TRANS_PIC_STOP || \
-     (value) == UART_OPC_CMD_RECORD_START || \
-     (value) == UART_OPC_CMD_RECORD_SYNC_TS || \
-     (value) == UART_OPC_CMD_RECORD_STOP || \
-     (value) == UART_OPC_CMD_GET_FILE_CNT || \
-     (value) == UART_OPC_CMD_DELETE_FILE || \
-     (value) == UART_OPC_CMD_DELETE_ALL_FILES || \
-     (value) == UART_OPC_CMD_SET_WIFI_MODE || \
-     (value) == UART_OPC_CMD_GET_SD_INFO || \
-     (value) == UART_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW || \
-     (value) == UART_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW_ACK)
+#define IS_VALID_UART_RX_OPC(value) \
+    ((value) == UART_RX_OPC_ACK || \
+     (value) == UART_RX_OPC_RESP_START_BT_SOC_FW_UPGRADE || \
+     (value) == UART_RX_OPC_RESP_FINISH_BT_SOC_FW_UPGRADE || \
+     (value) == UART_RX_OPC_CMD_QUERY_INFO || \
+     (value) == UART_RX_OPC_CMD_POWER_DOWN || \
+     (value) == UART_RX_OPC_CMD_GET_POWER_STATE || \
+     (value) == UART_RX_OPC_CMD_UPDATE_WIFI_INFO || \
+     (value) == UART_RX_OPC_CMD_SET_GPS || \
+     (value) == UART_RX_OPC_CMD_SNAPSHOT || \
+     (value) == UART_RX_OPC_CMD_GET_FILE_NAME || \
+     (value) == UART_RX_OPC_CMD_GET_PICTURE_DATA || \
+     (value) == UART_RX_OPC_CMD_TRANS_PIC_STOP || \
+     (value) == UART_RX_OPC_CMD_RECORD_START || \
+     (value) == UART_RX_OPC_CMD_RECORD_SYNC_TS || \
+     (value) == UART_RX_OPC_CMD_RECORD_STOP || \
+     (value) == UART_RX_OPC_CMD_GET_FILE_CNT || \
+     (value) == UART_RX_OPC_CMD_DELETE_FILE || \
+     (value) == UART_RX_OPC_CMD_DELETE_ALL_FILES || \
+     (value) == UART_RX_OPC_CMD_SET_WIFI_MODE || \
+     (value) == UART_RX_OPC_CMD_GET_SD_INFO || \
+     (value) == UART_RX_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW || \
+     (value) == UART_RX_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW_ACK || \
+     (value) == UART_RX_OPC_CMD_SET_WIFI_FW_ROLLBACK || \
+     (value) == UART_RX_OPC_CMD_SET_SYS_UPGRADE)
 
-#define IS_NO_ACK_UART_CMD(value) \
-    ((value) == UART_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW_ACK)
+#define IS_NO_ACK_UART_RX_OPC(value) \
+    ((value) == UART_RX_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW_ACK)
 
 #if 0
-#define IS_CRITICAL_UART_CMD(value) \
-    ((value) == UART_OPC_CMD_POWER_DOWN || \
-     (value) == UART_OPC_CMD_GET_POWER_STATE || \
-     (value) == UART_OPC_CMD_TRANS_PIC_STOP || \
-     (value) == UART_OPC_CMD_RECORD_SYNC_TS || \
-     (value) == UART_OPC_CMD_RECORD_STOP)
+#define IS_CRITICAL_UART_RX_OPC(value) \
+    ((value) == UART_RX_OPC_CMD_POWER_DOWN || \
+     (value) == UART_RX_OPC_CMD_GET_POWER_STATE || \
+     (value) == UART_RX_OPC_CMD_TRANS_PIC_STOP || \
+     (value) == UART_RX_OPC_CMD_RECORD_SYNC_TS || \
+     (value) == UART_RX_OPC_CMD_RECORD_STOP)
 #else
-#define IS_CRITICAL_UART_CMD(value) \
-    ((value) == UART_OPC_CMD_QUERY_INFO || \
-     (value) == UART_OPC_CMD_POWER_DOWN || \
-     (value) == UART_OPC_CMD_GET_POWER_STATE || \
-     (value) == UART_OPC_CMD_TRANS_PIC_STOP || \
-     (value) == UART_OPC_CMD_RECORD_SYNC_TS || \
-     (value) == UART_OPC_CMD_RECORD_STOP)
+#define IS_CRITICAL_UART_RX_OPC(value) \
+    ((value) == UART_RX_OPC_CMD_QUERY_INFO || \
+     (value) == UART_RX_OPC_CMD_POWER_DOWN || \
+     (value) == UART_RX_OPC_CMD_GET_POWER_STATE || \
+     (value) == UART_RX_OPC_CMD_TRANS_PIC_STOP || \
+     (value) == UART_RX_OPC_CMD_RECORD_SYNC_TS || \
+     (value) == UART_RX_OPC_CMD_RECORD_STOP)
 #endif
 
 // Uart Opcode Response
 typedef enum {
-	UART_OPC_RESP_ACK               = 0x0000,
-	UART_OPC_RESP_MIN               = 0x8400, // define the min value of opcode response
-	UART_OPC_RESP_QUERY_INFO        = 0x8400,
-	UART_OPC_RESP_POWER_ON          = 0x8401,
-	//UART_OPC_RESP_POWER_DOWN        = 0x8402,
-	UART_OPC_RESP_GET_POWER_STATE   = 0x8403,
-	UART_OPC_RESP_UPDATE_WIFI_INFO  = 0x8404,
-	UART_OPC_RESP_SET_GPS           = 0x8405,
-	UART_OPC_RESP_SNAPSHOT          = 0x8406,
-	UART_OPC_RESP_GET_FILE_NAME     = 0x8407,
-	UART_OPC_RESP_GET_PICTURE_DATA  = 0x8408,
-	UART_OPC_RESP_TRANS_PIC_STOP    = 0x8409,
-	UART_OPC_RESP_RECORD_START      = 0x840A,
-	UART_OPC_RESP_RECORD_CONT       = 0x840B,
-	UART_OPC_RESP_RECORD_SYNC_TS    = 0x840C,
-	UART_OPC_RESP_RECORD_STOP       = 0x840D,
-	UART_OPC_RESP_GET_FILE_CNT      = 0x840E,
-	UART_OPC_RESP_DELETE_FILE       = 0x840F,
-	UART_OPC_RESP_DELETE_ALL_FILES  = 0x8410,
-	UART_OPC_RESP_GET_SD_INFO       = 0x8411,
-	UART_OPC_RESP_SET_WIFI_MODE     = 0x8412,
-	UART_OPC_RESP_GET_PICTURE_DATA_SLIDING_WINDOW   = 0x8413,
-	UART_OPC_RESP_MAX                               = 0x8413, // define the max value of opcode response
-} uart_resp_e;
+	UART_TX_OPC_ACK                     = 0x0000,
+	UART_TX_OPC_MIN                     = 0x0631, // define the min value of opcode response
+	UART_TX_OPC_CMD_START_BT_SOC_FW_UPGRADE     = 0x0631,
+	UART_TX_OPC_CMD_TRANSFER_UPGRADE_DATA       = 0x0632,
+	UART_TX_OPC_CMD_FINISH_BT_SOC_FW_UPGRADE    = 0x0633,
+	UART_TX_OPC_RESP_QUERY_INFO         = 0x8400,
+	UART_TX_OPC_RESP_POWER_ON           = 0x8401,
+	//UART_TX_OPC_RESP_POWER_DOWN           = 0x8402,
+	UART_TX_OPC_RESP_GET_POWER_STATE    = 0x8403,
+	UART_TX_OPC_RESP_UPDATE_WIFI_INFO   = 0x8404,
+	UART_TX_OPC_RESP_SET_GPS            = 0x8405,
+	UART_TX_OPC_RESP_SNAPSHOT           = 0x8406,
+	UART_TX_OPC_RESP_GET_FILE_NAME      = 0x8407,
+	UART_TX_OPC_RESP_GET_PICTURE_DATA   = 0x8408,
+	UART_TX_OPC_RESP_TRANS_PIC_STOP     = 0x8409,
+	UART_TX_OPC_RESP_RECORD_START       = 0x840A,
+	UART_TX_OPC_RESP_RECORD_CONT        = 0x840B,
+	UART_TX_OPC_RESP_RECORD_SYNC_TS     = 0x840C,
+	UART_TX_OPC_RESP_RECORD_STOP        = 0x840D,
+	UART_TX_OPC_RESP_GET_FILE_CNT       = 0x840E,
+	UART_TX_OPC_RESP_DELETE_FILE        = 0x840F,
+	UART_TX_OPC_RESP_DELETE_ALL_FILES   = 0x8410,
+	UART_TX_OPC_RESP_GET_SD_INFO        = 0x8411,
+	UART_TX_OPC_RESP_SET_WIFI_MODE      = 0x8412,
+	UART_TX_OPC_RESP_GET_PICTURE_DATA_SLIDING_WINDOW    = 0x8413,
+	UART_TX_OPC_RESP_SET_WIFI_FW_UPGRADE                = 0x8415,
+	UART_TX_OPC_RESP_REQUEST_SET_SYS_UPGRADE            = 0x8430,
+	UART_TX_OPC_MAX                     = 0x8430, // define the max value of opcode response
+} uart_tx_opc_e;
 
-#define UART_UART_RESP_COUNT (UART_OPC_RESP_MAX - UART_OPC_RESP_MIN + 1)
+#define UART_TX_OPC_COUNT (UART_TX_OPC_MAX - UART_TX_OPC_MIN + 1)
 
-#define IS_VALID_UART_RESP(value) \
-    ((value) == UART_OPC_RESP_ACK || \
-     (value) == UART_OPC_RESP_QUERY_INFO || \
-     (value) == UART_OPC_RESP_POWER_ON || \
-     (value) == UART_OPC_RESP_GET_POWER_STATE || \
-     (value) == UART_OPC_RESP_UPDATE_WIFI_INFO || \
-     (value) == UART_OPC_RESP_SET_GPS || \
-     (value) == UART_OPC_RESP_SNAPSHOT || \
-     (value) == UART_OPC_RESP_GET_FILE_NAME || \
-     (value) == UART_OPC_RESP_GET_PICTURE_DATA || \
-     (value) == UART_OPC_RESP_TRANS_PIC_STOP || \
-     (value) == UART_OPC_RESP_RECORD_START || \
-     (value) == UART_OPC_RESP_RECORD_CONT || \
-     (value) == UART_OPC_RESP_RECORD_SYNC_TS || \
-     (value) == UART_OPC_RESP_RECORD_STOP || \
-     (value) == UART_OPC_RESP_GET_FILE_CNT || \
-     (value) == UART_OPC_RESP_DELETE_FILE || \
-     (value) == UART_OPC_RESP_DELETE_ALL_FILES || \
-     (value) == UART_OPC_RESP_SET_WIFI_MODE || \
-     (value) == UART_OPC_RESP_GET_SD_INFO || \
-     (value) == UART_OPC_RESP_GET_PICTURE_DATA_SLIDING_WINDOW)
+#define IS_VALID_UART_TX_OPC(value) \
+    ((value) == UART_TX_OPC_ACK || \
+     (value) == UART_TX_OPC_CMD_START_BT_SOC_FW_UPGRADE || \
+     (value) == UART_TX_OPC_CMD_TRANSFER_UPGRADE_DATA || \
+     (value) == UART_TX_OPC_CMD_FINISH_BT_SOC_FW_UPGRADE || \
+     (value) == UART_TX_OPC_RESP_QUERY_INFO || \
+     (value) == UART_TX_OPC_RESP_POWER_ON || \
+     (value) == UART_TX_OPC_RESP_GET_POWER_STATE || \
+     (value) == UART_TX_OPC_RESP_UPDATE_WIFI_INFO || \
+     (value) == UART_TX_OPC_RESP_SET_GPS || \
+     (value) == UART_TX_OPC_RESP_SNAPSHOT || \
+     (value) == UART_TX_OPC_RESP_GET_FILE_NAME || \
+     (value) == UART_TX_OPC_RESP_GET_PICTURE_DATA || \
+     (value) == UART_TX_OPC_RESP_TRANS_PIC_STOP || \
+     (value) == UART_TX_OPC_RESP_RECORD_START || \
+     (value) == UART_TX_OPC_RESP_RECORD_CONT || \
+     (value) == UART_TX_OPC_RESP_RECORD_SYNC_TS || \
+     (value) == UART_TX_OPC_RESP_RECORD_STOP || \
+     (value) == UART_TX_OPC_RESP_GET_FILE_CNT || \
+     (value) == UART_TX_OPC_RESP_DELETE_FILE || \
+     (value) == UART_TX_OPC_RESP_DELETE_ALL_FILES || \
+     (value) == UART_TX_OPC_RESP_SET_WIFI_MODE || \
+     (value) == UART_TX_OPC_RESP_GET_SD_INFO || \
+     (value) == UART_TX_OPC_RESP_GET_PICTURE_DATA_SLIDING_WINDOW || \
+     (value) == UART_TX_OPC_RESP_SET_WIFI_FW_UPGRADE || \
+     (value) == UART_TX_OPC_RESP_REQUEST_SET_SYS_UPGRADE)
 
 // ai glass status with bt
 typedef enum {
@@ -174,6 +193,9 @@ typedef enum {
 	AI_GLASS_GATT           = 0x11,
 	AI_GLASS_GATT_ERR       = 0x12,
 	AI_GLASS_SD_FULL        = 0x20,
+	AI_GLASS_OTA_FILE_NOT_EXISTED   = 0x30,
+	AI_GLASS_OTA_PROCESS_FAILED     = 0x31,
+	AI_GALSS_OTA_BATTERY_LOW        = 0x32,
 } ai_glass_status_e;
 
 // Uart error code
@@ -230,18 +252,19 @@ typedef struct uart_params {
 	struct uart_params *next;
 } uart_params_t;
 
-typedef void (*Callback_t)(uartcmdpacket_t *param);
+typedef void (*callback_t)(uartcmdpacket_t *param);
+
 typedef struct {
 	uint16_t		opcode;
-	Callback_t		callback;
-} CallbackEntry_t;
+	callback_t		callback;
+} callback_entry_t;
 
 extern uint8_t uart_protocal_version;
 extern uint16_t uart_buff_size;
 extern uint16_t uart_pic_size;
 extern uint8_t uart_wifi_ic_type;
 
-int uart_service_rx_cmd_reg(uint16_t uart_information, Callback_t uart_cmd_fun);
+int uart_service_rx_cmd_reg(uint16_t uart_information, callback_t uart_cmd_fun);
 int uart_service_init(PinName tx, PinName rx, int baudrate);
 int uart_service_start(int send_power_start);
 int uart_send_packet(uint16_t resp_opcode, uart_params_t *params_head, bool ignore_ack, int timeout);

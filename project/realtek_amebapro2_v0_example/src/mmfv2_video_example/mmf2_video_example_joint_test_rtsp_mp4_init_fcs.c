@@ -111,7 +111,7 @@ static video_boot_stream_t video_boot_stream = {
 	.video_snapshot[STREAM_V1] = 0,
 	.video_drop_frame[STREAM_V1] = 0,
 	.video_params[STREAM_V1].fcs = 1,//Enable the fcs for channel 1
-	.bps_stbl_ctrl_params[STREAM_V1].sampling_time = sensor_params[USE_SENSOR].sensor_fps,
+	.bps_stbl_ctrl_params[STREAM_V1].sampling_time = 1000,
 	.bps_stbl_ctrl_params[STREAM_V1].maximun_bitrate = 2 * 1024 * 1024 * 1.2,
 	.bps_stbl_ctrl_params[STREAM_V1].minimum_bitrate = 2 * 1024 * 1024 * 0.8,
 	.bps_stbl_ctrl_params[STREAM_V1].target_bitrate = 2 * 1024 * 1024,
@@ -304,10 +304,10 @@ static mp4_params_t mp4_v1_params = {
 
 static bps_stbl_ctrl_param_t bps_stbl_ctrl_v1_params;
 static bps_stbl_ctrl_param_t bps_stbl_ctrl_v2_params;
-static uint32_t bps_stbl_ctrl_v1_fps_stage[3] = {0};
-static uint32_t bps_stbl_ctrl_v1_gop_stage[3] = {0};
-static uint32_t bps_stbl_ctrl_v2_fps_stage[3] = {0};
-static uint32_t bps_stbl_ctrl_v2_gop_stage[3] = {0};
+static uint32_t bps_stbl_ctrl_v1_fps_stage[BPS_STBL_CTRL_STG_CNT] = {0};
+static uint32_t bps_stbl_ctrl_v1_gop_stage[BPS_STBL_CTRL_STG_CNT] = {0};
+static uint32_t bps_stbl_ctrl_v2_fps_stage[BPS_STBL_CTRL_STG_CNT] = {0};
+static uint32_t bps_stbl_ctrl_v2_gop_stage[BPS_STBL_CTRL_STG_CNT] = {0};
 static uint8_t bps_stbl_ctrl_en[2] = {0, 0};
 
 #ifdef FCS_PARTITION
@@ -764,7 +764,7 @@ void mmf2_video_example_joint_test_rtsp_mp4_init_fcs(void)
 		}
 	}
 	if (isp_fcs_info->fcs_status == 1 && fcs_start_ch == 1) { //It need to change the order if the fcs channel is not zero
-		if (isp_fcs_info->bps_stbl_ctrl_params[STREAM_V2].sampling_time != 0) {
+		if (isp_fcs_info->bps_stbl_ctrl_params[STREAM_V2].target_bitrate != 0) {
 			bps_stbl_ctrl_en[STREAM_V2] = 1;
 			bps_stbl_ctrl_v2_params.sampling_time = isp_fcs_info->bps_stbl_ctrl_params[STREAM_V2].sampling_time;
 			bps_stbl_ctrl_v2_params.maximun_bitrate = isp_fcs_info->bps_stbl_ctrl_params[STREAM_V2].maximun_bitrate;
@@ -808,7 +808,7 @@ void mmf2_video_example_joint_test_rtsp_mp4_init_fcs(void)
 			goto mmf2_video_exmaple_joint_test_rtsp_mp4_fail;
 		}
 	} else {
-		if (isp_fcs_info->bps_stbl_ctrl_params[STREAM_V1].sampling_time != 0) {
+		if (isp_fcs_info->bps_stbl_ctrl_params[STREAM_V1].target_bitrate != 0) {
 			bps_stbl_ctrl_en[STREAM_V1] = 1;
 			bps_stbl_ctrl_v1_params.sampling_time = isp_fcs_info->bps_stbl_ctrl_params[STREAM_V1].sampling_time;
 			bps_stbl_ctrl_v1_params.maximun_bitrate = isp_fcs_info->bps_stbl_ctrl_params[STREAM_V1].maximun_bitrate;

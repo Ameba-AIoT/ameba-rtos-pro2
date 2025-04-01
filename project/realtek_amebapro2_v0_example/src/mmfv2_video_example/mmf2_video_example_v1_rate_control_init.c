@@ -67,13 +67,14 @@ static rtsp2_params_t rtsp2_v1_params = {
 
 #ifdef BPS_STABLE_CONTROL
 static bps_stbl_ctrl_param_t bps_stbl_ctrl_v1_params = {
-	.maximun_bitrate = V1_BPS * 1.2,
-	.minimum_bitrate = V1_BPS * 0.8,
-	.target_bitrate = V1_BPS
+	.maximun_bitrate = (uint32_t)(V1_BPS * 1.2),
+	.minimum_bitrate = (uint32_t)(V1_BPS * 0.8),
+	.target_bitrate = (uint32_t)(V1_BPS),
+	.sampling_time = 2000,
 };
 
-static uint32_t bps_stbl_ctrl_fps_stage[3] = {20, 16, 12};
-static uint32_t bps_stbl_ctrl_gop_stage[3] = {40, 32, 24}; //default set gop = fps * 2
+static uint32_t bps_stbl_ctrl_fps_stage[BPS_STBL_CTRL_STG_CNT] = {20, 16, 12};
+static uint32_t bps_stbl_ctrl_gop_stage[BPS_STBL_CTRL_STG_CNT] = {40, 32, 24}; //default set gop = fps * 2
 #else
 static struct user_bitrate_control {
 	uint32_t enable;
@@ -190,8 +191,6 @@ void mmf2_video_example_v1_rate_control_init(void)
 #ifdef BPS_STABLE_CONTROL
 	video_v1_params.fps = bps_stbl_ctrl_fps_stage[0];
 	video_v1_params.gop = bps_stbl_ctrl_gop_stage[0];
-	/*auto rate control setting*/
-	bps_stbl_ctrl_v1_params.sampling_time = video_v1_params.gop;
 #else
 	video_v1_params.fps = sensor_params[USE_SENSOR].sensor_fps;
 	video_v1_params.gop = sensor_params[USE_SENSOR].sensor_fps;

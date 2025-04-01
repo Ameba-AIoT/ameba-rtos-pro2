@@ -51,7 +51,7 @@ video_boot_stream_t video_boot_stream = {
 		.fcs = 1 //Enable the fcs for channel 0
 	},
 	.bps_stbl_ctrl_params[STREAM_V1] = {
-		.sampling_time = sensor_params[USE_SENSOR].sensor_fps,
+		.sampling_time = 2000,
 		.maximun_bitrate = 2 * 1024 * 1024 * 1.2,
 		.minimum_bitrate = 2 * 1024 * 1024 * 0.8,
 		.target_bitrate = 2 * 1024 * 1024
