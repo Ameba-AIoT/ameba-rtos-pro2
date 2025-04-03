@@ -205,3 +205,4 @@ Note: this baudrate will have strong influence to the process time but need to s
 - HTTPS_CA_CRT: the certificate authority for https connection
 - HTTP_PORT: the port when open http as server, default 8080
 - HTTPS_PORT: the port when open https as server, default 8080
+- HTTP_OTA_TEST: enable simple OTA flow for 8735

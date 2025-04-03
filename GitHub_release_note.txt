@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: ffdf093ecf58e55956886926c6a61f0265dc11a7
+* [amebapro2][wlan] opimize the wlan scenario of the ai glass
+
 SHA-1: dcc49762c18540465eea2071081082bfd4919e31
 * [amebapro2][sdk] update sc5356 iq for ai glass
 

@@ -89,7 +89,7 @@ static uint8_t wifi_pass_word[MAX_AP_PASSWORD_LEN] = {0};
 
 #if defined(HTTP_OTA_TEST) && HTTP_OTA_TEST
 #include <ota_8735b.h>
-#include "httpc.h"
+#include "httpc/httpc.h"
 #define OTA_STATE_IDLE                      0
 #define OTA_STATE_ERROR                     1
 #define OTA_STATE_RECV_START_SIGNAL         2
