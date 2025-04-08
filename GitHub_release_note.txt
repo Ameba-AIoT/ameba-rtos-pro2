@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 4de7607b5717bbb102ce5496ddab058bb1a3c274
+* [amebapro2][video] update sensor driver
+
 SHA-1: ffdf093ecf58e55956886926c6a61f0265dc11a7
 * [amebapro2][wlan] opimize the wlan scenario of the ai glass
 
