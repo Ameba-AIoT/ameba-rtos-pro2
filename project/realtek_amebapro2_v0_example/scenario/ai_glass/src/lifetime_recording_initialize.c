@@ -631,7 +631,7 @@ static int lr_mp4_error_cb(void *parm)
 	return 0;
 }
 
-void lifetime_recording_initialize(void)
+int lifetime_recording_initialize(void)
 {
 	AI_GLASS_INFO("================LifeTime Record start========================== = %lu\r\n", mm_read_mediatime_ms());
 	char *cur_time_str = (char *)media_filesystem_get_current_time_string();
@@ -808,12 +808,20 @@ void lifetime_recording_initialize(void)
 	if (ai_record_param) {
 		free(ai_record_param);
 	}
-	return;
+	return 0;
 lifetime_recording_initialize_fail:
 	if (ai_record_param) {
 		free(ai_record_param);
 	}
-	return;
+	lifetime_recording_deinitialize();
+	return -1;
+}
+
+void lifetime_recording_stop(void)
+{
+	if (lr_mp4_ctx != NULL) {
+		mm_module_ctrl(lr_mp4_ctx, CMD_MP4_STOP_IMMEDIATELY, 0);
+	}
 }
 
 void lifetime_recording_deinitialize(void)

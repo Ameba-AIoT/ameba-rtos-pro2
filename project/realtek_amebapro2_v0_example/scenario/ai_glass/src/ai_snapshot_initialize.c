@@ -161,6 +161,8 @@ int ai_snapshot_initialize(void)
 			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_SNAPSHOT_CB, (int)video_snapshot_cb);
 			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ai_snap_ctx->video_snapshot_params));
 			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&ai_snap_pre_init_param);
+			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, MM_CMD_SET_QUEUE_LEN, 2);//Default 30
+			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
 			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_APPLY, ai_snap_ctx->video_snapshot_params.stream_id);
 			video_ctrl(0, VIDEO_DEBUG, 0);
 		} else {
@@ -206,7 +208,7 @@ int ai_snapshot_deinitialize(void)
 		} else {
 			rtw_free_sema(&ai_snap_ctx->snapshot_sema);
 			rtw_mutex_free(&ai_snap_ctx->snapshot_mutex);
-			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_STREAM_STOP, ai_snap_ctx->video_snapshot_params.stream_id);
+			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_STREAM_STOP, 0);
 			mm_module_close(ai_snap_ctx->video_snapshot_ctx);
 			free(ai_snap_ctx);
 			ai_snap_ctx = NULL;

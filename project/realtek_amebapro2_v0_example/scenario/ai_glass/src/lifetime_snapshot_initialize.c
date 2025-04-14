@@ -18,11 +18,12 @@
 #include "ai_glass_dbg.h"
 
 // Definition of LIFE SNAPSHOT STATUS
-#define LIFESNAP_IDLE    0x00
-#define LIFESNAP_START   0x01
-#define LIFESNAP_TAKE    0x02
-#define LIFESNAP_DONE    0x03
-#define LIFESNAP_FAIL    0x04
+#define LIFESNAP_IDLE   0x00
+#define LIFESNAP_START  0x01
+#define LIFESNAP_TAKE   0x02
+#define LIFESNAP_GET    0x03
+#define LIFESNAP_DONE   0x04
+#define LIFESNAP_FAIL   0x05
 
 // Configure for lifetime snapshot
 #define JPG_WRITE_SIZE          4096
@@ -49,15 +50,16 @@ static mm_context_t *ls_filesaver_ctx   = NULL;
 //linker
 static mm_siso_t *ls_siso_snapshot_filesaver = NULL;
 
-static int is_file_saved = LIFESNAP_IDLE;
+static int lfsnap_status = LIFESNAP_IDLE;
 
 static void lifetime_snapshot_file_save(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
 	uint8_t *output_jpg_buf = NULL;
 	uint8_t *input_nv12_buf = NULL;
 	AI_GLASS_MSG("file_path:%s  data_addr:%ld  data_size:%ld \r\n", file_path, data_addr, data_size);
-	if (is_file_saved == LIFESNAP_TAKE) {
+	if (lfsnap_status == LIFESNAP_TAKE) {
 		int ret = 0;
+		lfsnap_status = LIFESNAP_GET;
 		AI_GLASS_MSG("get liftime snapshot frame time %lu\r\n", mm_read_mediatime_ms());
 		AI_GLASS_MSG("file_path:%s  data_addr:%ld  data_size:%ld \r\n", file_path, data_addr, data_size);
 
@@ -93,7 +95,7 @@ static void lifetime_snapshot_file_save(char *file_path, uint32_t data_addr, uin
 			AI_GLASS_MSG("get liftime snapshot frame encode done time %lu\r\n", mm_read_mediatime_ms());
 			//write jpg data
 			for (uint32_t i = 0; i < jpg_size; i += JPG_WRITE_SIZE) {
-				extdisk_fwrite(output_jpg_buf + i, 1, ((i + JPG_WRITE_SIZE) >= jpg_size) ? (jpg_size - i) : JPG_WRITE_SIZE, life_snapshot_file);
+				extdisk_fwrite((const void *)(output_jpg_buf + i), 1, ((i + JPG_WRITE_SIZE) >= jpg_size) ? (jpg_size - i) : JPG_WRITE_SIZE, life_snapshot_file);
 			}
 			extdisk_fclose(life_snapshot_file);
 		} else {
@@ -107,7 +109,7 @@ static void lifetime_snapshot_file_save(char *file_path, uint32_t data_addr, uin
 			}
 			//write jpg data
 			for (uint32_t i = 0; i < data_size; i += JPG_WRITE_SIZE) {
-				extdisk_fwrite(data_addr + i, 1, ((i + JPG_WRITE_SIZE) >= data_size) ? (data_size - i) : JPG_WRITE_SIZE, life_snapshot_file);
+				extdisk_fwrite((const void *)(data_addr + i), 1, ((i + JPG_WRITE_SIZE) >= data_size) ? (data_size - i) : JPG_WRITE_SIZE, life_snapshot_file);
 			}
 			extdisk_fclose(life_snapshot_file);
 		}
@@ -122,9 +124,9 @@ closebuff:
 			output_jpg_buf = NULL;
 		}
 		if (ret != 0) {
-			is_file_saved = LIFESNAP_FAIL;
+			lfsnap_status = LIFESNAP_FAIL;
 		} else {
-			is_file_saved = LIFESNAP_DONE;
+			lfsnap_status = LIFESNAP_DONE;
 		}
 		AI_GLASS_MSG("get liftime snapshot frame all done time %lu\r\n", mm_read_mediatime_ms());
 	}
@@ -134,7 +136,7 @@ int lifetime_snapshot_initialize(void)
 {
 	int ret = 0;
 
-	if (is_file_saved != LIFESNAP_IDLE) {
+	if (lfsnap_status != LIFESNAP_IDLE) {
 		ret = -2;
 		goto endoflifesnapshot;
 	}
@@ -216,7 +218,7 @@ int lifetime_snapshot_initialize(void)
 		goto endoflifesnapshot;
 	}
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, ls_video_params.params.stream_id);	// start channel 0
-	is_file_saved = LIFESNAP_START;
+	lfsnap_status = LIFESNAP_START;
 	return ret;
 endoflifesnapshot:
 	lifetime_snapshot_deinitialize();
@@ -226,19 +228,19 @@ endoflifesnapshot:
 // Todo: Use semapshore for the process
 int lifetime_snapshot_take(const char *file_name)
 {
-	if (is_file_saved == LIFESNAP_START) {
+	if (lfsnap_status == LIFESNAP_START) {
 		AI_GLASS_INFO("================life_snapshot_take==========================\r\n");
 		AI_GLASS_INFO("Sanpshot start\r\n");
 		snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s", file_name);
 		AI_GLASS_MSG("life_snapshot_take %s\r\n", snapshot_name);
 		mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_SAVE_FILE_PATH, (int)snapshot_name);
-		is_file_saved = LIFESNAP_TAKE;
+		lfsnap_status = LIFESNAP_TAKE;
 		if (ls_video_params.need_sw_encode) {
 			mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_YUV, 1); // one shot with NV12
 		} else {
 			mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SNAPSHOT, 1); // one shot with JPEG
 		}
-		while (is_file_saved == LIFESNAP_TAKE) {
+		while (lfsnap_status == LIFESNAP_TAKE) {
 			vTaskDelay(1);
 		}
 		AI_GLASS_INFO("Life snapshot done\r\n");
@@ -249,7 +251,7 @@ int lifetime_snapshot_take(const char *file_name)
 
 int lifetime_snapshot_deinitialize(void)
 {
-	if (is_file_saved != LIFESNAP_TAKE) {
+	if (lfsnap_status != LIFESNAP_TAKE && lfsnap_status != LIFESNAP_GET) {
 		//Pause Linker
 		if (ls_siso_snapshot_filesaver) {
 			siso_pause(ls_siso_snapshot_filesaver);
@@ -273,7 +275,8 @@ int lifetime_snapshot_deinitialize(void)
 		if (ls_filesaver_ctx) {
 			ls_filesaver_ctx = mm_module_close(ls_filesaver_ctx);
 		}
-		is_file_saved = LIFESNAP_IDLE;
+		lfsnap_status = LIFESNAP_IDLE;
+		return 0;
 	}
-	return 0;
+	return -1;
 }

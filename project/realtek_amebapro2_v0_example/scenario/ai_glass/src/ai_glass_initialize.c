@@ -28,7 +28,6 @@
 
 // Configure for ai glass
 #define ENABLE_TEST_CMD             1   // For the tester to test some hardware
-#define ENABLE_DISK_MASS_STORAGE    0   // For testing 8735 image and picture
 #define EXTDISK_PLATFORM            VFS_INF_EMMC //VFS_INF_SD
 #define UART_TX                     PA_2
 #define UART_RX                     PA_3
@@ -49,10 +48,8 @@ static uint8_t send_response_timer_setstop = 0;
 static TimerHandle_t send_response_timer = NULL;
 static SemaphoreHandle_t send_response_timermutex = NULL;
 static SemaphoreHandle_t video_proc_sema = NULL;
-#if defined(ENABLE_DISK_MASS_STORAGE) && ENABLE_DISK_MASS_STORAGE
 static struct msc_opts *disk_operation = NULL;
 static int usb_msc_initialed = 0;
-#endif
 
 static uint8_t temp_file_name[MAX_FILENAME_SIZE] = {0};
 static uint8_t temp_rfile_name[MAX_FILENAME_SIZE] = {0};
@@ -63,7 +60,6 @@ static void ai_glass_init_ram_disk(void);
 void ai_glass_log_init(void);
 
 // These functions are for testing ai glass with mass storage
-#if defined(ENABLE_DISK_MASS_STORAGE) && ENABLE_DISK_MASS_STORAGE
 #include "usb.h"
 #include "msc/inc/usbd_msc_config.h"
 #include "msc/inc/usbd_msc.h"
@@ -76,11 +72,9 @@ static int usb_msc_device_deinit(void)
 {
 	return 0;
 }
-#endif
 
 static void aiglass_mass_storage_init(void)
 {
-#if defined(ENABLE_DISK_MASS_STORAGE) && ENABLE_DISK_MASS_STORAGE
 	if (usb_msc_initialed == 0) {
 		ai_glass_init_external_disk();
 		int status = 0;
@@ -130,19 +124,16 @@ exit:
 			usb_msc_initialed = 1;
 		}
 	}
-#endif
 }
 
 static void aiglass_mass_storage_deinit(void)
 {
-#if defined(ENABLE_DISK_MASS_STORAGE) && ENABLE_DISK_MASS_STORAGE
 	if (usb_msc_initialed == 1) {
 		usbd_msc_deinit();
 		extern void _usb_deinit(void);
 		_usb_deinit();
 		usb_msc_initialed = 0;
 	}
-#endif
 }
 
 static void ai_glass_init_external_disk(void)
@@ -219,8 +210,10 @@ static void ai_glass_get_power_down(uartcmdpacket_t *param)
 	uint8_t result = AI_GLASS_CMD_COMPLETE;
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_POWER_DOWN\r\n");
 	// Wait until the video is down
-	if (xSemaphoreTake(video_proc_sema, portMAX_DELAY) != pdTRUE) {
+	if (xSemaphoreTake(video_proc_sema, 0) != pdTRUE) {
 		AI_GLASS_WARN("AI glass is snapshot or record, current snapshot busy fail\r\n");
+		result = AI_GLASS_BUSY;
+		uart_resp_get_power_down(param, result);
 		goto endofpowerdown;
 	}
 	int ret = 0;
@@ -407,13 +400,13 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 			AI_GLASS_MSG("snapshot send pkt time = %lu\r\n", mm_read_mediatime_ms());
 			uart_resp_snapshot(param, status);
 			if (ret == 0) {
+				AI_GLASS_MSG("wait for ai snapshot deinit\r\n");
 				while (ai_snapshot_deinitialize()) {
-					AI_GLASS_MSG("wait for ai snapshot deinit\r\n");
 					vTaskDelay(1);
 				}
+				AI_GLASS_MSG("wait for ai snapshot deinit done = %lu\r\n", mm_read_mediatime_ms());
 			}
 		} else if (mode == 0) {
-			aiglass_mass_storage_deinit();
 			ai_glass_init_external_disk();
 			AI_GLASS_MSG("Process LIFETIME SNAPSHOT\r\n");
 
@@ -430,10 +423,11 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 				} else {
 					status = AI_GLASS_PROC_FAIL;
 				}
+				AI_GLASS_MSG("wait for lifetime snapshot deinit\r\n");
 				while (lifetime_snapshot_deinitialize()) {
-					AI_GLASS_MSG("wait for ai snapshot deinit\r\n");
 					vTaskDelay(1);
 				}
+				AI_GLASS_MSG("lifetime snapshot deinit done = %lu\r\n", mm_read_mediatime_ms());
 			} else if (ret == -2) {
 				status = AI_GLASS_BUSY;
 			} else {
@@ -442,7 +436,6 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 			uart_resp_snapshot(param, status);
 			// Save filelist to EMMC
 			extdisk_save_file_cntlist();
-			aiglass_mass_storage_init();
 		} else {
 			AI_GLASS_WARN("Not implement yet\r\n");
 			status = AI_GLASS_PROC_FAIL;
@@ -450,7 +443,7 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 		}
 		xSemaphoreGive(video_proc_sema);
 	}
-	AI_GLASS_INFO("end of UART_RX_OPC_CMD_SNAPSHOT\r\n");
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_SNAPSHOT = %lu\r\n", mm_read_mediatime_ms());
 }
 
 static void ai_glass_get_file_name(uartcmdpacket_t *param)
@@ -529,7 +522,6 @@ static void mp4_send_response_callback(struct tmrTimerControl *parm)
 					record_resp_status = AI_GLASS_CMD_COMPLETE;
 				}
 				lifetime_recording_deinitialize();
-				aiglass_mass_storage_init();
 				send_response_timer_setstop = 1;
 				xSemaphoreGive(send_response_timermutex);
 				uart_resp_record_stop(record_resp_status);
@@ -566,26 +558,23 @@ static void ai_glass_record_start(uartcmdpacket_t *param)
 
 	//Initialize function has a timer that constantly reads the status of MP4.
 	if (xSemaphoreTake(video_proc_sema, 0) == pdTRUE) {
-		aiglass_mass_storage_deinit();
-		AI_GLASS_MSG("Record aiglass_mass_storage_deinit time = %lu\r\n", mm_read_mediatime_ms());
+		AI_GLASS_MSG("Record start = %lu\r\n", mm_read_mediatime_ms());
 		if (current_state == STATE_RECORDING || current_state == STATE_END_RECORDING) {
 			AI_GLASS_MSG("Recording has started, not starting another recording\r\n");
 			record_start_status = AI_GLASS_CMD_COMPLETE;
-			aiglass_mass_storage_init();
 			uart_resp_record_start(record_start_status);
 			xSemaphoreGive(video_proc_sema);
 		} else if (current_state == STATE_IDLE) {
-			lifetime_recording_initialize();
+			int ret = lifetime_recording_initialize();
 			// Save filelist to EMMC
-			extdisk_save_file_cntlist();
-			if (send_response_timer != NULL) {
+			if (send_response_timer != NULL && ret == 0) {
+				extdisk_save_file_cntlist();
 				if (xSemaphoreTake(send_response_timermutex, portMAX_DELAY) == pdTRUE) {
 					if (xTimerStart(send_response_timer, 0) != pdPASS) {
 						record_start_status = AI_GLASS_PROC_FAIL;
 						uart_resp_record_start(record_start_status);
 						AI_GLASS_ERR("Send UART_RX_OPC_CMD_RECORD_START timer failed\r\n");
 						lifetime_recording_deinitialize();
-						aiglass_mass_storage_init();
 						xSemaphoreGive(video_proc_sema);
 					} else {
 						record_start_status = AI_GLASS_CMD_COMPLETE;
@@ -598,21 +587,18 @@ static void ai_glass_record_start(uartcmdpacket_t *param)
 					uart_resp_record_start(record_start_status);
 					AI_GLASS_ERR("Send UART_RX_OPC_CMD_RECORD_START timer mutex failed\r\n");
 					lifetime_recording_deinitialize();
-					aiglass_mass_storage_init();
 					xSemaphoreGive(video_proc_sema);
 				}
 			} else {
 				record_start_status = AI_GLASS_PROC_FAIL;
 				uart_resp_record_start(record_start_status);
 				AI_GLASS_ERR("Failed to create send_response_timer\r\n");
-				aiglass_mass_storage_init();
 				xSemaphoreGive(video_proc_sema);
 			}
 		} else {
 			record_start_status = AI_GLASS_PROC_FAIL;
 			uart_resp_record_start(record_start_status);
 			AI_GLASS_ERR("Failed because of the known record status\r\n");
-			aiglass_mass_storage_init();
 			xSemaphoreGive(video_proc_sema);
 		}
 	} else {
@@ -644,7 +630,6 @@ static void ai_glass_record_stop(uartcmdpacket_t *param)
 					}
 				}
 				lifetime_recording_deinitialize();
-				aiglass_mass_storage_init();
 				xSemaphoreGive(video_proc_sema);
 				send_response_timer_setstop = 1;
 				xSemaphoreGive(send_response_timermutex);
@@ -887,19 +872,46 @@ void fDISKFORMAT(void *arg)
 
 void fENABLEMSC(void *arg)
 {
-	AI_GLASS_MSG("Enable mass storage device\r\n");
-#if defined(ENABLE_DISK_MASS_STORAGE) && ENABLE_DISK_MASS_STORAGE
-	aiglass_mass_storage_init();
-#else
-	AI_GLASS_ERR("Please Open flag ENABLE_DISK_MASS_STORAGE to use this command\r\n");
-#endif
+	int argc = 0;
+	char *argv[MAX_ARGC] = {0};
+
+	argc = parse_param(arg, argv);
+	if (argc) {
+		int msc_enable = atoi(argv[1]);
+		if (msc_enable) {
+			AI_GLASS_MSG("Enable mass storage device\r\n");
+			aiglass_mass_storage_init();
+		} else {
+			AI_GLASS_MSG("Disable mass storage device\r\n");
+			aiglass_mass_storage_deinit();
+		}
+	}
 }
 
 void fENABLEAPMODE(void *arg)
 {
-	ai_glass_init_external_disk();
-	if (wifi_enable_ap_mode(AI_GLASS_AP_SSID, AI_GLASS_AP_PASSWORD, AI_GLASS_AP_CHANNEL, 20) == WLAN_SET_OK) {
-		deinitial_media(); // For saving power
+	int argc = 0;
+	char *argv[MAX_ARGC] = {0};
+
+	argc = parse_param(arg, argv);
+	if (argc) {
+		int apmode_enable = atoi(argv[1]);
+		if (apmode_enable) {
+			AI_GLASS_MSG("Command enable AP mode start = %lu\r\n", mm_read_mediatime_ms());
+			if (wifi_enable_ap_mode(AI_GLASS_AP_SSID, AI_GLASS_AP_PASSWORD, AI_GLASS_AP_CHANNEL, 20) == WLAN_SET_OK) {
+				deinitial_media(); // For saving power
+				AI_GLASS_MSG("Command enable AP mode OK = %lu\r\n", mm_read_mediatime_ms());
+			} else {
+				AI_GLASS_MSG("Command enable AP mode failed = %lu\r\n", mm_read_mediatime_ms());
+			}
+		} else {
+			AI_GLASS_MSG("Command disable AP mode start = %lu\r\n", mm_read_mediatime_ms());
+			if (wifi_disable_ap_mode() == WLAN_SET_OK) {
+				AI_GLASS_MSG("Command disable AP mode OK = %lu\r\n", mm_read_mediatime_ms());
+			} else {
+				AI_GLASS_MSG("Command disable AP mode failed = %lu\r\n", mm_read_mediatime_ms());
+			}
+		}
 	}
 }
 
@@ -910,7 +922,6 @@ void fLFSNAPSHOT(void *arg)
 		goto endofsnapshot;
 	}
 	AI_GLASS_MSG("snapshot aiglass_mass_storage_deinit time = %lu\r\n", mm_read_mediatime_ms());
-	aiglass_mass_storage_deinit();
 	ai_glass_init_external_disk();
 	AI_GLASS_MSG("Process LIFETIME SNAPSHOT\r\n");
 
@@ -923,11 +934,11 @@ void fLFSNAPSHOT(void *arg)
 		snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s%s", (const char *)temp_buffer, ".jpg");
 		free(cur_time_str);
 		lifetime_snapshot_take((const char *)lifetime_snap_name);
-
+		AI_GLASS_MSG("wait for lifetime snapshot deinit\r\n");
 		while (lifetime_snapshot_deinitialize()) {
-			AI_GLASS_MSG("wait for ai snapshot deinit\r\n");
 			vTaskDelay(1);
 		}
+		AI_GLASS_MSG("lifetime snapshot deinit done\r\n");
 	} else if (ret == -2) {
 		AI_GLASS_WARN("AI glass is snapshot or record, current snapshot busy fail\r\n");
 	} else {
@@ -935,7 +946,6 @@ void fLFSNAPSHOT(void *arg)
 	}
 	// Save filelist to EMMC
 	extdisk_save_file_cntlist();
-	aiglass_mass_storage_init();
 	xSemaphoreGive(video_proc_sema);
 endofsnapshot:
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_SNAPSHOT = %lu\r\n", mm_read_mediatime_ms());
@@ -944,7 +954,7 @@ endofsnapshot:
 log_item_t at_ai_glass_items[ ] = {
 	{"AT+AIGLASSFORMAT",    fDISKFORMAT,    {NULL, NULL}},
 	{"AT+AIGLASSGSENSOR",   fTESTGSENSOR,   {NULL, NULL}},
-	{"AT+AIGLASSENABLEMSC", fENABLEMSC,     {NULL, NULL}},
+	{"AT+AIGLASSMSC",       fENABLEMSC,     {NULL, NULL}},
 	{"AT+AIGLASSSETAPMODE", fENABLEAPMODE,  {NULL, NULL}},
 	{"AT+AIGLASSLFSNAP",    fLFSNAPSHOT,    {NULL, NULL}},
 };

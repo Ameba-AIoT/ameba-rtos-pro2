@@ -160,7 +160,8 @@ int lifetime_snapshot_deinitialize(void);
 
 // life recording
 extern MP4State current_state;
-void lifetime_recording_initialize(void);
+int lifetime_recording_initialize(void);
+void lifetime_recording_stop(void);
 void lifetime_recording_deinitialize(void);
 int media_update_record_time(uint16_t record_length);
 
