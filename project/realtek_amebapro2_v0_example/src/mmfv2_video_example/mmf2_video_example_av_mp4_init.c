@@ -13,6 +13,7 @@
 #include "module_g711.h"
 #include "module_aac.h"
 #include "module_opusc.h"
+#include "mp4_muxer.h"
 #include "module_mp4.h"
 #include "mmf2_pro2_video_config.h"
 #include "video_example_media_framework.h"
@@ -40,6 +41,8 @@
 //#define G711_ULAW_MODE
 //#define G711_ALAW_MODE
 //#define OPUS_ENCODE_MODE
+
+#define ENABLE_SET_GPS 1 //1 to Enable, 0 to Disable the GPS callback setup
 
 static void atcmd_userctrl_init(void);
 static mm_context_t *video_v1_ctx			= NULL;
@@ -133,6 +136,88 @@ int mp4_end_cb(void *parm)
 	return 0;
 }
 
+#if ENABLE_SET_GPS
+#define MAX_UDTA_SIZE 64
+static int set_loci_box(unsigned char *udta_buf, pmp4_context mp4_ctx)
+{
+	//Set GPS's Latitude, Longitude and Altitude with an valid values.
+	float latitude = 1.329911; // -90° to 90°
+	float longitude = 103.747317; // -180° to 180°
+	float altitude = 00.0000; // in metre
+
+	// Convert latitude and longitude to Q16.16 fixed point format
+	uint32_t lat_fixed = (int32_t)(latitude * 65536);  // Convert latitude to Q16.16 format
+	uint32_t lon_fixed = (int32_t)(longitude * 65536); // Convert longitude to Q16.16 format
+
+	// Standard loci box size with metadata (latitude, longitude, altitude)
+	int lat_size = sizeof(lat_fixed);  // Size of latitude (4 bytes)
+	int lon_size = sizeof(lon_fixed);  // Size of longitude (4 bytes)
+	int alt_size = 4;  // Size of altitude (4 bytes)
+	int flag_size = 8; // Size of flags and reserved (8 bytes)
+	const char *earth = "earth";
+	size_t earth_size = strlen(earth) + 1; // +1 to include the null terminator
+
+	// Total size calculation for the loci box (35 bytes)
+	int loci_size = 8 + flag_size + lat_size + lon_size + alt_size + earth_size + 1;
+
+	// Create the box header: Box size (4 bytes)
+	udta_buf[0] = (loci_size >> 24) & 0xFF;
+	udta_buf[1] = (loci_size >> 16) & 0xFF;
+	udta_buf[2] = (loci_size >> 8) & 0xFF;
+	udta_buf[3] = loci_size & 0xFF;
+
+	// ("loci", 4 bytes) in Hex values
+	udta_buf[4] = 0x6C;  // 'l' = 6C
+	udta_buf[5] = 0x6F;  // 'o' = 6F
+	udta_buf[6] = 0x63;  // 'c' = 63
+	udta_buf[7] = 0x69;  // 'i' = 69
+
+	//Version and flags (8 bytes)
+	memset(udta_buf + 8, 0, flag_size);
+
+	// Use Save32BigEndian to copy latitude and longitude into buffer after the header
+	Save32BigEndian(lon_fixed, udta_buf + 8 + flag_size);  // Longitude
+	Save32BigEndian(lat_fixed, udta_buf + 8 + flag_size + lon_size);  // Latitude
+
+	// Set altitude to zero (4 bytes)
+	uint8_t zero_buffer[4] = {0, 0, 0, 0};  // Buffer of 4 bytes filled with zero
+	memcpy(udta_buf + 8 + flag_size + lat_size + lon_size, zero_buffer, alt_size);  // Altitude
+
+	// Reference system (e.g., "earth")
+	memcpy(udta_buf + 8 + flag_size + lat_size + lon_size + alt_size, earth, earth_size);
+
+	// Padding to ensure total size is correct
+	uint8_t padding_buffer[1] = {0};  // 1 bytes of padding
+	memcpy(udta_buf + 8 + flag_size + lat_size + lon_size + alt_size + earth_size, padding_buffer, 1);  // Padding
+
+	// If the total size is not a multiple of 4, pad the buffer
+	int padding_size = loci_size - (8 + flag_size + lat_size + lon_size + alt_size  + earth_size + 1);  // Remaining space after latitude, longitude, and altitude
+	if (padding_size > 0) {
+		memset(udta_buf + 8 + flag_size + lat_size + lon_size + alt_size + earth_size + 1, 0, padding_size);  // Pad with zeroes
+	}
+
+	return loci_size;
+}
+
+static int set_udta_box(unsigned char *udta_buf, pmp4_context mp4_ctx)
+{
+	int size = 0;
+	int udta_position = 0;
+	// Create udta box header (8 bytes)
+	size = create_box(udta_buf + udta_position, (char *)"udta", 8);
+	udta_position += size;
+
+	// Add loci box
+	size = set_loci_box(udta_buf + udta_position, mp4_ctx);
+	udta_position += size;
+
+	// Update udta box size after adding loci box
+	update_udtabox_size(mp4_ctx, udta_buf, udta_position);
+
+	return udta_position;
+}
+#endif
+
 void mmf2_video_example_av_mp4_init(void)
 {
 	atcmd_userctrl_init();
@@ -187,6 +272,19 @@ void mmf2_video_example_av_mp4_init(void)
 	mp4_v1_params.mp4_audio_format = AUDIO_OPUS;
 #endif
 	if (mp4_ctx) {
+#if ENABLE_SET_GPS
+		/*Udta parameter setting*/
+		udta_callback_t udta_params;
+		mp4_v1_params.udta_buf = (unsigned char *)malloc(MAX_UDTA_SIZE); //  Allocate memory and set to udta_buf
+		if (mp4_v1_params.udta_buf == NULL) {
+			printf("ERROR: Allocation memory of udta_buf failed\n");
+			printf("ERROR: Video init failed\n");
+			goto mmf2_video_exmaple_av_mp4_fail;
+		}
+		mp4_v1_params.udta_buf_size = MAX_UDTA_SIZE; //Set the udta_buf_size
+		udta_params.udta_box_cb = set_udta_box; // Set the callback function
+		mm_module_ctrl(mp4_ctx, CMD_MP4_SET_UDAT_CALLBACK, (int)&udta_params);
+#endif
 		mm_module_ctrl(mp4_ctx, CMD_MP4_SET_PARAMS, (int)&mp4_v1_params);
 		mm_module_ctrl(mp4_ctx, CMD_MP4_LOOP_MODE, 0);
 		mm_module_ctrl(mp4_ctx, CMD_MP4_START, mp4_v1_params.record_file_num);

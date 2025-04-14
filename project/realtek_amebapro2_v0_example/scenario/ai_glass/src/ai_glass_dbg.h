@@ -13,35 +13,9 @@
 #define LOG_LEVEL_MESSAGE       3
 #define LOG_LEVEL_INFO          2
 
-#define SLIDING_WIN_LOG_LEVEL   LOG_LEVEL_WARNING
 #define WLAN_SCEN_LOG_LEVEL     LOG_LEVEL_WARNING
-#define UART_SRV_LOG_LEVEL      LOG_LEVEL_WARNING
 #define FILE_SYS_LOG_LEVEL      LOG_LEVEL_WARNING
-#define AI_GLASS_LOG_LEVEL      LOG_LEVEL_WARNING
-
-#define SLIDING_WIN_ERR(format, ...) \
-    do { \
-        if (LOG_LEVEL_ERROR >= SLIDING_WIN_LOG_LEVEL) \
-            printf("[SLIDING WIN ERR] " format, ##__VA_ARGS__); \
-    } while(0)
-
-#define SLIDING_WIN_WARN(format, ...) \
-    do { \
-        if (LOG_LEVEL_WARNING >= SLIDING_WIN_LOG_LEVEL) \
-            printf("[SLIDING WIN WARN] " format, ##__VA_ARGS__); \
-    } while(0)
-
-#define SLIDING_WIN_MSG(format, ...) \
-    do { \
-        if (LOG_LEVEL_MESSAGE >= SLIDING_WIN_LOG_LEVEL) \
-            printf("[SLIDING WIN MSG] " format, ##__VA_ARGS__); \
-    } while(0)
-
-#define SLIDING_WIN_INFO(format, ...) \
-    do { \
-        if (LOG_LEVEL_INFO >= SLIDING_WIN_LOG_LEVEL) \
-            printf("[SLIDING WIN INFO] " format, ##__VA_ARGS__); \
-    } while(0)
+#define AI_GLASS_LOG_LEVEL      LOG_LEVEL_INFO
 
 #define WLAN_SCEN_ERR(format, ...) \
     do { \
@@ -65,30 +39,6 @@
     do { \
         if (LOG_LEVEL_INFO >= WLAN_SCEN_LOG_LEVEL) \
             printf("[WLAN SCEN INFO] " format, ##__VA_ARGS__); \
-    } while(0)
-
-#define UART_SRV_ERR(format, ...) \
-    do { \
-        if (LOG_LEVEL_ERROR >= UART_SRV_LOG_LEVEL) \
-            printf("[UART SRV ERR] " format, ##__VA_ARGS__); \
-    } while(0)
-
-#define UART_SRV_WARN(format, ...) \
-    do { \
-        if (LOG_LEVEL_WARNING >= UART_SRV_LOG_LEVEL) \
-            printf("[UART SRV WARN] " format, ##__VA_ARGS__); \
-    } while(0)
-
-#define UART_SRV_MSG(format, ...) \
-    do { \
-        if (LOG_LEVEL_MESSAGE >= UART_SRV_LOG_LEVEL) \
-            printf("[UART SRV MSG] " format, ##__VA_ARGS__); \
-    } while(0)
-
-#define UART_SRV_INFO(format, ...) \
-    do { \
-        if (LOG_LEVEL_INFO >= UART_SRV_LOG_LEVEL) \
-            printf("[UART SRV INFO] " format, ##__VA_ARGS__); \
     } while(0)
 
 #define FILE_SYS_ERR(format, ...) \

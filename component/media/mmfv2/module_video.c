@@ -43,7 +43,6 @@
 
 int framecnt = 0;
 int jpegcnt = 0;
-int enc_queue_cnt[5] = {0, 0, 0, 0, 0};
 int ch1framecnt = 0;
 int ch2framecnt = 0;
 int rgb_lock = 0;
@@ -78,7 +77,7 @@ void video_show_fps(int enable)
 int video_get_cb_fps(int chn)
 {
 	if (chn < 0 || chn > 4) {
-		printf("[%s] %d is invalid, chn range is 0~4", chn, __FUNCTION__);
+		printf("[%s] %d is invalid, chn range is 0~4\r\n", __FUNCTION__, chn);
 		chn = 0;
 	}
 	return ch_fps[chn];
@@ -240,7 +239,6 @@ void video_frame_complete_cb(void *param1, void  *param2, uint32_t arg)
 							  , ctx->params.out_rsvd_size >> 10);
 			video_encbuf_clean(enc2out->ch, CODEC_H264 | CODEC_HEVC);
 			video_ctrl(enc2out->ch, VIDEO_FORCE_IFRAME, 1);
-			//enc_queue_cnt[enc2out->ch] = 0;
 			break;
 		case VOE_JPG_BUF_OVERFLOW:
 		case VOE_JPG_QUEUE_OVERFLOW:
@@ -250,7 +248,6 @@ void video_frame_complete_cb(void *param1, void  *param2, uint32_t arg)
 							  , enc2out->jpg_time
 							  , enc2out->jpg_used >> 10);
 			//video_encbuf_clean(enc2out->ch, CODEC_JPEG);
-			//enc_queue_cnt[enc2out->ch] = 0;
 			break;
 		default:
 			VIDEO_DBG_ERROR("Error CH%d VOE cmd %x status %x\n", enc2out->ch, enc2out->cmd, enc2out->cmd_status);
@@ -303,8 +300,6 @@ void video_frame_complete_cb(void *param1, void  *param2, uint32_t arg)
 
 				if (xQueueSend(mctx->output_ready, (void *)&output_item, 0) != pdTRUE) {
 					video_encbuf_release(enc2out->ch, CODEC_JPEG, enc2out->jpg_len);
-				} else {
-					enc_queue_cnt[enc2out->ch]++;
 				}
 
 			} else {
@@ -458,21 +453,10 @@ void video_frame_complete_cb(void *param1, void  *param2, uint32_t arg)
 				} else {
 					video_ispbuf_release(enc2out->ch, (int)enc2out->isp_addr);
 				}
-			} else {
-				enc_queue_cnt[enc2out->ch]++;
-				//printf("CH %d MMF enc_queue_cnt = %d\r\n",enc2out->ch, enc_queue_cnt[enc2out->ch]);
-				// if (enc_queue_cnt[enc2out->ch] >= 90) {
-				// printf("CH %d VOE queue full: MMF clean queue!!\r\n");
-				// video_encbuf_clean(enc2out->ch, CODEC_H264 | CODEC_HEVC);
-				// enc_queue_cnt[enc2out->ch] = 0;
-				// return;
-				// }
 			}
 
 		} else {
 			VIDEO_DBG_WARNING("\r\n CH %d MMF ENC Queue full \r\n", enc2out->ch);
-			//video_encbuf_clean(enc2out->ch, CODEC_H264 | CODEC_HEVC);
-			//enc_queue_cnt[enc2out->ch] = 0;
 
 			if (enc2out->codec <= CODEC_JPEG) {
 				video_encbuf_release(enc2out->ch, enc2out->codec, enc2out->enc_len);
@@ -541,15 +525,19 @@ int video_control(void *p, int cmd, int arg)
 			VIDEO_DBG_WARNING("CH %d already close\r\n", ch);
 			return OK;
 		}
-
-		if (enc_queue_cnt[ch] > 0) {
-			VIDEO_DBG_INFO("CH %d MMF enc_queue_cnt = %d\r\n", ch, enc_queue_cnt[ch]);
-			video_encbuf_clean(ch, CODEC_H264 | CODEC_HEVC | CODEC_JPEG);
-		}
-		enc_queue_cnt[ch] = 0;
-		vTaskDelay(10);
 		memset(&(ctx->meta_data), 0, sizeof(video_meta_t));
+		//video_close will release all voe buffer
 		ret = video_close(ch);
+		mm_queue_item_t *queue_item;
+		while(uxQueueMessagesWaiting(mctx->output_ready)) {
+			if(xQueueReceive(mctx->output_ready, (void *)&queue_item, 0) == pdTRUE) {
+				if (ctx->params.use_static_addr == 0) {
+					free((void*)queue_item->data_addr);
+				}
+				queue_item->data_addr = 0;
+				xQueueSend(mctx->output_recycle, (void *)&queue_item, 0);
+			}
+		}
 
 		//video deinit after all video close, takes 50ms
 		if (video_open_status() == 0) {
@@ -712,6 +700,9 @@ int video_control(void *p, int cmd, int arg)
 					video_reset_fw(ch, sensor_id_value);
 					ret = video_open(&ctx->params, video_frame_complete_cb, ctx);
 				} */
+		if (ret < 0 && video_open_status() == 0) { //if video open fail deinit video
+			video_deinit();
+		}
 		if (ret < 0 && video_get_video_sensor_status() == 0) { //Change the sensor procedure
 			VIDEO_DBG_ERROR("Please check sensor id first,the id is %d\r\n", sensor_id_value);
 			return -1;
@@ -721,6 +712,22 @@ int video_control(void *p, int cmd, int arg)
 			}
 		}
 #endif
+	}
+	break;
+	case CMD_VIDEO_SET_SENSOR_ID: 
+	{
+		int sensor_id = arg;
+		if(sensor_id == 0 || sensor_id >= SENSOR_MAX) {
+			VIDEO_DBG_ERROR("invalid sensor id %d\r\n", sensor_id);
+			return NOK;
+		}
+		if (video_open_status() == 0) {
+			voe_get_sensor_info(sensor_id, &ctx->iq_addr, &ctx->sensor_addr);
+			sensor_id_value = sensor_id;
+		} else {
+			VIDEO_DBG_ERROR("Close streams before switch sensors.\r\n");
+			return NOK;
+		}
 	}
 	break;
 	case CMD_VIDEO_SET_TIMESTAMP_OFFSET: {
@@ -971,7 +978,6 @@ void *video_voe_release_item(void *p, void *d, int length)
 	}
 
 	if (ctx->params.use_static_addr == 1) {
-		enc_queue_cnt[ch]--;
 		if (video_get_stream_info(ch) != 0) {
 			if (free_item->type == AV_CODEC_ID_H264 || free_item->type == AV_CODEC_ID_H265 || free_item->type == AV_CODEC_ID_MJPEG) {
 				video_encbuf_release(ch, codec, length);
@@ -984,9 +990,6 @@ void *video_voe_release_item(void *p, void *d, int length)
 			} else {
 				video_ispbuf_release(ch, free_item->data_addr);
 			}
-		}
-		if (enc_queue_cnt[ch] > 0) {
-			enc_queue_cnt[ch]--;
 		}
 	}
 

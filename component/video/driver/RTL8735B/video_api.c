@@ -1945,6 +1945,9 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 			video_dprintf(VIDEO_LOG_MSG, "The fcs setup is finished\r\n");
 		}
 
+		if (voe_info_init == 0) {
+			voe_info_init = 1;
+		}
 		voe_info.ch_info[ch].stream_is_open = 1;
 		if (isp_boot->fcs_start_time) { //If it enable the fcs mode that it will show the fcs info.
 			hal_video_print(APP_VOE_FCS_INFO_EN);

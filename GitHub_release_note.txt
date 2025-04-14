@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 1b8a2cc77187387cd59dd21c278c758de77185cd
+* [amebapro2][sdk] update the ai glass command structure
+
 SHA-1: 4de7607b5717bbb102ce5496ddab058bb1a3c274
 * [amebapro2][video] update sensor driver
 

@@ -61,6 +61,7 @@ enum param_change_option {
 	FORCEI_TEST,
 	SCALE_UP_TEST,
 	ISP_INIT_TEST,
+	SENSOR_DRIVER_CHANGE_TEST,
 	TEST_NUM
 };
 
@@ -70,7 +71,8 @@ static const char* param_change_test_item[] = {
 	"QP_CHANGE_TEST",
 	"FORCEI_TEST",
 	"SCALE_UP_TEST",
-	"ISP_INIT_TEST"
+	"ISP_INIT_TEST",
+	"SENSOR_DRIVER_CHANGE_TEST"
 };
 
 static void change_resolution_parameter(int parm_index)
@@ -220,7 +222,7 @@ mmf2_video_exmaple_v1_param_change_fail:
 	return;
 }
 
-static void param_change_test(int idx)
+static void param_change_test(int idx, char *argv[MAX_ARGC])
 {
 	int i;
 	switch (idx)
@@ -308,10 +310,66 @@ static void param_change_test(int idx)
 		init_params.init_isp_items.init_wdr_level = 0x50;
 		init_params.init_isp_items.init_wdr_mode = 0x02;
 		init_params.init_isp_items.init_mipi_mode = 0x0;
+
+		//isp init ae, awb settings
+		init_params.isp_ae_enable = 1;
+		init_params.isp_ae_init_exposure = 10000;
+		init_params.isp_ae_init_gain = 256;
+		init_params.isp_awb_enable = 1;
+		init_params.isp_awb_init_rgain = 256;
+		init_params.isp_awb_init_bgain = 867;
+
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, V1_CHANNEL);	// start channel 0
 		siso_resume(siso_video_rtsp_v1);
 		break;
+	case SENSOR_DRIVER_CHANGE_TEST:
+	{
+		printf("sensor driver change test\n\r");
+		int sensor_id = 0;
+		if(argv == NULL) {
+			printf("need to input sensor driver id!\r\n");
+			break;
+		} else {
+			if(argv[2] == NULL) {
+				printf("please enter sensor id with 'PCT=%d,[sensor_id]'\r\n", SENSOR_DRIVER_CHANGE_TEST);
+				break;
+			}
+			sensor_id = strtol(argv[2], NULL, 10);
+			if(sensor_id == 0 || sensor_id >= SENSOR_MAX) {
+				printf("invalid sensor id %d\r\n", sensor_id);
+				break;
+			}
+		}
+		
+		//close all video stream
+		siso_pause(siso_video_rtsp_v1);
+		mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_STREAMMING, OFF);
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, V1_CHANNEL);
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_SENSOR_ID, sensor_id);
+
+		//update video and rtsp parameters
+		video_v1_params.width = sensor_params[sen_id[sensor_id]].sensor_width;
+		video_v1_params.height = sensor_params[sen_id[sensor_id]].sensor_height;
+		video_v1_params.fps = sensor_params[sen_id[sensor_id]].sensor_fps;
+		video_v1_params.gop = sensor_params[sen_id[sensor_id]].sensor_fps;
+		rtsp2_v1_params.u.v.fps = video_v1_params.fps;
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_PARAMS, (int)&video_v1_params);
+		mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_PARAMS, (int)&rtsp2_v1_params);
+		mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SELECT_STREAM, 0);
+		mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_APPLY, 0);
+
+		//if change sensor reslution, update voe heap size
+		video_voe_release();
+		int voe_heap_size = video_voe_presetting_by_params(&video_v1_params, 1, NULL, 0, NULL, 0, NULL);
+		printf("\r\n voe heap size = %d\r\n", voe_heap_size);
+
+		//restart video
+		mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_STREAMMING, ON);
+		siso_resume(siso_video_rtsp_v1);
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, V1_CHANNEL);
+		break;
+	}
 	default:
 		break;
 	}
@@ -326,9 +384,6 @@ static void fPCT(void *arg) //param change test
 		return;
 	}
 	argc = parse_param(arg, argv);
-	if (argc > 2) {
-		return;
-	}
 	if (argc == 1) {
 		// get array size
 		//
@@ -336,7 +391,7 @@ static void fPCT(void *arg) //param change test
 	} else {
 		if (strcmp("all", argv[1]) == 0) {
 			for (int i = 0; i < TEST_NUM; i++) {
-				param_change_test(i);
+				param_change_test(i, NULL);
 			}
 			return;
 		} else if (strcmp("list", argv[1]) == 0) {
@@ -347,7 +402,7 @@ static void fPCT(void *arg) //param change test
 		}
 
 		int idx = strtol(argv[1], NULL, 10);
-		param_change_test(idx);
+		param_change_test(idx, argv);
 	}
 	return;
 }

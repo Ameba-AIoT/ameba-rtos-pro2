@@ -53,7 +53,6 @@ int mp4_control(void *p, int cmd, int arg)
 {
 	mp4_ctx_t *ctx = (mp4_ctx_t *)p;
 	struct _mp4_context *mp4_muxer = (struct _mp4_context *)ctx->mp4_muxer;
-
 	switch (cmd) {
 	case CMD_MP4_SET_PARAMS:
 		memcpy(&ctx->params, ((mp4_params_t *)arg), sizeof(mp4_params_t));
@@ -61,6 +60,25 @@ int mp4_control(void *p, int cmd, int arg)
 		mp4_muxer->height = ctx->params.height;
 		mp4_muxer->frame_rate = ctx->params.fps;
 		mp4_muxer->gop = ctx->params.gop;
+
+		//Set the udta_size
+		if (ctx->params.udta_buf_size != 0) {
+			mp4_muxer->udta_size = ctx->params.udta_buf_size;
+			if (mp4_muxer->udta_size == 0) {
+				printf("ERROR: Allocation of udta_buf_size failed\n");
+				return -1; // Exit with error if allocation fails.
+			}
+		}
+
+		// Set the udta_box
+		if (ctx->params.udta_buf != NULL) {
+			mp4_muxer->udta_box = ctx->params.udta_buf;
+			if (mp4_muxer->udta_box == NULL) {
+				printf("ERROR: Allocation of udta_box failed\n");
+				return -1; // Exit with error if allocation fails.
+			}
+			memset(mp4_muxer->udta_box, 0, mp4_muxer->udta_size);
+		}
 
 		mp4_muxer->sample_rate = ctx->params.sample_rate;
 		mp4_muxer->channel_count = ctx->params.channel;
@@ -172,6 +190,14 @@ int mp4_control(void *p, int cmd, int arg)
 	case CMD_MP4_SET_CLOSE_CB:
 		mp4_muxer->cb_fclose = (int (*)(void *))arg; //F_CLOSE
 		break;
+	case CMD_MP4_SET_UDAT_CALLBACK: {
+		udta_callback_t *params = (udta_callback_t *)arg;
+		// Assign the udta_box callback
+		if (params->udta_box_cb != NULL) {
+			mp4_muxer->callback.udta_box_cb = params->udta_box_cb;
+		}
+	}
+	break;
 	default:
 		break;
 	}
