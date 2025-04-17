@@ -492,10 +492,10 @@ void fATII(void *arg)
 				printf("get info fail hal_video_get_AWB_statis.\r\n");
 			}
 		} else if (strcmp(argv[2], "ae_stable") == 0) {
-			char ifAEStable = ALS_AE_UNSTABLE;
+			char if_ae_stable = AE_UNSTABLE;
 			int cur_etgain = pre_etgain;
-			ifAEStable = isp_get_ifAEstable(&cur_etgain, 500);
-			printf("ifAEStable=%d, pre_etgain=%d, cur_etgain=%d\r\n", ifAEStable, cur_etgain, pre_etgain);
+			if_ae_stable = isp_get_ae_if_stable(&cur_etgain, 500);
+			printf("ifAEStable=%d, pre_etgain=%d, cur_etgain=%d\r\n", if_ae_stable, cur_etgain, pre_etgain);
 			pre_etgain = cur_etgain;
 		} else if (strcmp(argv[2], "mipi") == 0) {
 			int value;
@@ -576,23 +576,27 @@ void fATIR(void *arg)
 
 	if (strcmp(argv[1], "help") == 0) {
 		printf("Usage: ATIR=FUNCTION,VALUE\r\n");
-		printf("[Fun List] init,enable,getlight,setlight,service,als_ver,dbg_als,dbg_ss,auto_ir\r\n");
-		printf("[init    ] init RTK-EVB HW-ALS/IR-CUT/IR-LED related GPIO\r\n");
-		printf("[enable  ] Switch IR-CUT on RTK-EVB, VALUE=0/1\r\n");
-		printf("[getlight] Get HW-ALS value on RTK-EVB\r\n");
-		printf("[setlight] Set IR-LED strength on RTK-EVB, VALUE=0-100\r\n");
-		printf("[service ] Enable sensor service (User can refer to sensor_service.c)\r\n");
-		printf("[als_ver ] Get sw-als version\r\n");
-		printf("[dbg_als ] Set debug level for SW-ALS (User can refer to als_dbg_level)\r\n");
-		printf("[dbg_ss  ] Set debug level for SW-ALS (User can refer to ss_dbg_level)\r\n");
-		printf("[auto_ir ] Auto-IR swich, VALUE=0/1\r\n");
-	} else if (strcmp(argv[1], "init") == 0) { 	// Init LED control pin
+		printf("[Fun List    ] init_ir,init_als,get_hw_lux,get_sw_lux,enable,set_light,service,als_ver,dbg_als,dbg_ss,auto_pwm\r\n");
+		printf("[init_ir     ] init RTK-EVB IR-CUT (on sensor board)\r\n");
+		printf("[init_led    ] init RTK-EVB IR-LED & HW-ALS (on LED board)\r\n");
+		printf("[init_service] init sensor service (User can refer to sensor_service.c)\r\n");
+		printf("[get_hw_lux  ] get hw-als value on RTK-EVB\r\n");
+		printf("[get_sw_lux  ] get sw-als value on RTK-EVB\r\n");
+		printf("[set_ir_cut  ] set IR-CUT on RTK-EVB, VALUE=0/1\r\n");
+		printf("[set_ir_led  ] set IR-LED strength on RTK-EVB, VALUE=0-100\r\n");
+		printf("[get_version ] get sw-als version\r\n");
+		printf("[set_als_dbg ] set debug level for sw-als (User can refer to als_dbg_level)\r\n");
+		printf("[set_ss_dbg  ] set debug level for sensor service (User can refer to ss_dbg_level)\r\n");
+		printf("[set_apwm    ] auto-pwm swich, VALUE=0/1\r\n");
+	} else if (strcmp(argv[1], "init_ir") == 0) { 	// Init IR-Cut on sensor board
 		ir_cut_init(NULL);
+		printf("ir_cut_init.\r\n");
+	} else if (strcmp(argv[1], "init_led") == 0) { 	// Init IR-LED and HW-ALS on light board
 		ir_ctrl_init(NULL);
 		ambient_light_sensor_init(NULL);
 		ambient_light_sensor_power(1);
-		printf("ir_cut_init/ir_ctrl_init/ambient_light_sensor_init.\r\n");
-	} else if (strcmp(argv[1], "enable") == 0) {
+		printf("ir_ctrl_init/ambient_light_sensor_init.\r\n");
+	} else if (strcmp(argv[1], "set_ir_cut") == 0) {
 		mode = atoi(argv[2]);
 		if (mode == 1) {
 			ir_cut_enable(0);
@@ -605,39 +609,41 @@ void fATIR(void *arg)
 			ir_cut_enable(0);
 			printf("IR Cut Off\r\n");
 		}
-	} else if (strcmp(argv[1], "getlight") == 0) {
-		int lux = ambient_light_sensor_get_lux(0);
-		printf("light_sensor: %d \r\n", lux);
-	} else if (strcmp(argv[1], "setlight") == 0) {
+	} else if (strcmp(argv[1], "get_hw_lux") == 0) {
+		ss_cmd(SS_GET_CMD, SS_CMD_HW_LUX, &mode);
+		printf("[SENSOR_SERVICE] HW_LUX(%d) \r\n", mode);
+	} else if (strcmp(argv[1], "get_sw_lux") == 0) {
+		ss_cmd(SS_GET_CMD, SS_CMD_SW_LUX, &mode);
+		printf("[SENSOR_SERVICE] SW_LUX(%d) \r\n", mode);
+	} else if (strcmp(argv[1], "set_ir_led") == 0) {
 		int dValue1 = atoi(argv[2]);
-		float fBright = (float)dValue1 / 100.0f;
 		if (dValue1 > 100) {
 			dValue1 = 100;
 		}
 		if (dValue1 < 0) {
 			dValue1 = 0;
 		}
-
-		printf("led_brightness: %f \r\n", fBright);
-		ir_ctrl_set_brightness(fBright);
+		printf("led_brightness: %d (/100) \r\n", dValue1);
 		ir_ctrl_set_brightness_d(dValue1);
-	} else if (strcmp(argv[1], "service") == 0) {
+	} else if (strcmp(argv[1], "init_service") == 0) {
 		init_sensor_service();
-	} else if (strcmp(argv[1], "als_ver") == 0) {
+	} else if (strcmp(argv[1], "get_version") == 0) {
 		als_get_version();
-	} else if (strcmp(argv[1], "dbg_als") == 0) {
+		ss_cmd(SS_GET_CMD, SS_CMD_VERSION, &mode);
+	} else if (strcmp(argv[1], "set_als_dbg") == 0) {
 		mode = atoi(argv[2]);
-		als_set_dbglevel(mode);
-	} else if (strcmp(argv[1], "dbg_ss") == 0) {
+		als_set_dbg_level(mode);
+		printf("[SW_ALS] als_dbg_level(%d)\r\n", mode);
+	} else if (strcmp(argv[1], "set_ss_dbg") == 0) {
 		mode = atoi(argv[2]);
-		ss_cmd(SS_SET_CMD, SS_IDX_DBG_LEVEL, &mode);
-		ss_cmd(SS_GET_CMD, SS_IDX_DBG_LEVEL, &mode);
-		printf("[sensor_service] SS_IDX_DBG_LEVEL=%d\r\n", mode);
-	} else if (strcmp(argv[1], "auto_ir") == 0) {
+		ss_cmd(SS_SET_CMD, SS_CMD_DEBUG_LEVEL, &mode);
+		ss_cmd(SS_GET_CMD, SS_CMD_DEBUG_LEVEL, &mode);
+		printf("[SENSOR_SERVICE] ss_dbg_level(%d)\r\n", mode);
+	} else if (strcmp(argv[1], "set_apwm") == 0) {
 		mode = atoi(argv[2]);
-		ss_cmd(SS_SET_CMD, SS_IDX_EN_AUTO_IR, &mode);
-		ss_cmd(SS_GET_CMD, SS_IDX_EN_AUTO_IR, &mode);
-		printf("[sensor_service] SS_IDX_EN_AUTO_IR=%d\r\n", mode);
+		ss_cmd(SS_SET_CMD, SS_CMD_AUTO_PWM, &mode);
+		ss_cmd(SS_GET_CMD, SS_CMD_AUTO_PWM, &mode);
+		printf("[SENSOR_SERVICE] en_auto_pwm(%d)\r\n", mode);
 	}
 
 	return;

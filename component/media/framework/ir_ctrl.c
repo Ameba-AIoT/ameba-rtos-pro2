@@ -20,18 +20,10 @@ int ir_ctrl_init(void *param)
 	return 0;
 }
 
-int ir_ctrl_set_brightness(float brightness)
-{
-	printf("ir_ctrl_set_brightness: %f \r\n", brightness);
-	pwmout_write(&pwm_ir_ctrl, brightness);
-	return 0;
-}
-
-
 int ir_ctrl_set_brightness_d(int dbrightness)
 {
 	float fbrightness = (float)dbrightness / 100.0f;
-	printf("dbrightness: %f \r\n", fbrightness);
+	//printf("dbrightness: %f \r\n", fbrightness);
 	pwmout_write(&pwm_ir_ctrl, fbrightness);
 	return 0;
 }

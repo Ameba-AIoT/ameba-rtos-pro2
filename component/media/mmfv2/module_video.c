@@ -529,13 +529,15 @@ int video_control(void *p, int cmd, int arg)
 		//video_close will release all voe buffer
 		ret = video_close(ch);
 		mm_queue_item_t *queue_item;
-		while(uxQueueMessagesWaiting(mctx->output_ready)) {
-			if(xQueueReceive(mctx->output_ready, (void *)&queue_item, 0) == pdTRUE) {
-				if (ctx->params.use_static_addr == 0) {
-					free((void*)queue_item->data_addr);
+		if(mctx->output_ready) {
+			while(uxQueueMessagesWaiting(mctx->output_ready)) {
+				if(xQueueReceive(mctx->output_ready, (void *)&queue_item, 0) == pdTRUE) {
+					if (ctx->params.use_static_addr == 0) {
+						free((void*)queue_item->data_addr);
+					}
+					queue_item->data_addr = 0;
+					xQueueSend(mctx->output_recycle, (void *)&queue_item, 0);
 				}
-				queue_item->data_addr = 0;
-				xQueueSend(mctx->output_recycle, (void *)&queue_item, 0);
 			}
 		}
 

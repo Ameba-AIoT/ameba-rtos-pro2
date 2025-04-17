@@ -223,8 +223,8 @@ static void ai_glass_get_power_down(uartcmdpacket_t *param)
 	AI_GLASS_MSG("Save FILE Cnt List status: %d\r\n", ret);
 	// Todo: get power down command
 	uart_resp_get_power_down(param, result);
-endofpowerdown:
 	xSemaphoreGive(video_proc_sema);
+endofpowerdown:
 
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_POWER_DOWN\r\n");
 }

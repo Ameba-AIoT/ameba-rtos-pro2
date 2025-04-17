@@ -41,9 +41,17 @@ static void wifi_common_init(void)
 #include "sensor_service.h"
 static void sensor_board_init(void)
 {
+//init IR-Cut on RTK sensor board
+#if(CONFIG_RTK_EVB_IR_CTRL >= 1)
 	ir_cut_init(NULL);
-	ir_ctrl_init(NULL);
 	ir_cut_enable(1);
+#endif
+//init HW-Als & IR-LED on RTK light board
+#if(CONFIG_RTK_EVB_IR_CTRL == 2)
+	ir_ctrl_init(NULL);
+	ambient_light_sensor_init(NULL);
+	ambient_light_sensor_power(1);
+#endif
 }
 
 //------------------------------------------------------------------------------
@@ -218,9 +226,7 @@ void video_example_main(void *param)
 #endif
 	if (!voe_boot_fsc_status()) {
 		wifi_common_init();
-#if(CONFIG_RTK_EVB_IR_CTRL == 1)
 		sensor_board_init();
-#endif
 	}
 
 	example_mmf2_video_surport();
