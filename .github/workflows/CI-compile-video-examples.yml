@@ -1,0 +1,77 @@
+# This workflow is to build video/NN examples and upload the binary files as artifacts.
+# It is triggered on push or pull request events for specific paths related to video/NN examples.
+# It also allows manual triggering via workflow_dispatch.
+
+name: Build Video/NN Examples
+
+on:
+  push:
+    paths:
+      - '.github/workflows/CI-compile-video-examples.yml'
+      - '.github/scripts/python/compile-video-examples.py'
+      - 'project/realtek_amebapro2_v0_example/src/mmfv2_video_example/**'
+  pull_request:
+    paths:
+      - '.github/workflows/CI-compile-video-examples.yml'
+      - '.github/scripts/python/compile-video-examples.py'
+      - 'project/realtek_amebapro2_v0_example/src/mmfv2_video_example/**'
+  workflow_dispatch:
+    
+jobs:
+  build-all-examples:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        # os: [ubuntu-latest, windows-latest, macos-latest]
+
+        # Define examples in batches to run them in parallel
+        batch:
+          - id: batch1
+            examples: "mmf2_video_example_v1_init mmf2_video_example_v2_init mmf2_video_example_v3_init mmf2_video_example_v1_shapshot_init mmf2_video_example_simo_init mmf2_video_example_av_init mmf2_video_example_av2_init mmf2_video_example_av21_init mmf2_video_example_av_mp4_init"
+          - id: batch2
+            examples: "mmf2_video_example_av_rtsp_mp4_init mmf2_video_example_joint_test_init mmf2_video_example_joint_test_rtsp_mp4_init mmf2_video_example_2way_audio_pcmu_doorbell_init mmf2_video_example_2way_audio_pcmu_init mmf2_video_example_array_rtsp_init mmf2_video_example_v1_param_change_init mmf2_video_example_v1_day_night_change_init mmf2_video_example_v1_mask_init"
+          - id: batch3
+            examples: "mmf2_video_example_v1_rate_control_init mmf2_video_example_av_mp4_httpfs_init mmf2_video_example_vipnn_rtsp_init mmf2_video_example_face_rtsp_init mmf2_video_example_fd_lm_mfn_sim_rtsp_init mmf2_video_example_joint_test_all_nn_rtsp_init mmf2_video_example_demuxer_rtsp_init mmf2_video_example_h264_pcmu_array_mp4_init mmf2_video_example_audio_vipnn_init"
+          - id: batch4
+            examples: "mmf2_video_example_md_rtsp_init mmf2_video_example_md_mp4_init mmf2_video_example_bayercap_rtsp_init mmf2_video_example_md_nn_rtsp_init mmf2_video_example_joint_test_rtsp_mp4_init_fcs mmf2_video_example_vipnn_facedet_init mmf2_video_example_jpeg_external_init mmf2_video_example_vipnn_facedet_sync_init mmf2_video_example_vipnn_facedet_sync_snapshot_init"
+          - id: batch5
+            examples: "mmf2_video_example_vipnn_handgesture_init mmf2_video_example_joint_test_vipnn_rtsp_mp4_init mmf2_video_example_vipnn_classify_rtsp_init mmf2_video_example_timelapse_mp4_init"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download and extract toolchain
+        run: |
+          mkdir -p $HOME/toolchain
+          curl -L https://github.com/Ameba-AIoT/ameba-toolchain/releases/download/V10.3.0-amebe-rtos-pro2/asdk-10.3.0-linux-newlib-build-3638-x86_64.tar.bz2 \
+            -o $HOME/toolchain/toolchain.tar.bz2
+          tar -jxvf $HOME/toolchain/toolchain.tar.bz2 -C $HOME/toolchain
+          
+          # Add toolchain binaries to PATH for following steps
+          echo "$HOME/toolchain/asdk-10.3.0/linux/newlib/bin" >> $GITHUB_PATH
+
+      - name: Install build tools on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake git python3 gcc-arm-none-eabi
+        
+      - name: Run build script on Linux
+        if: runner.os != 'Windows'
+        run: |
+          examples=(${{ matrix.batch.examples }})
+          for example in "${examples[@]}"; do
+            echo "Launching build for $example"
+            python3 .github/scripts/python/compile-video-examples.py "$example" &
+          done
+          wait
+
+      - name: Build complete
+        run: echo "Build finished. All examples in the batch have been processed."
+
+      # Upload binaries to GitHub Artifacts
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-example-binaries-${{ matrix.batch.id }}
+          path: project/realtek_amebapro2_v0_example/bin_outputs/*.bin

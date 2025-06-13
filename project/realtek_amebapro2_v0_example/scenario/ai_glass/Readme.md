@@ -1,12 +1,12 @@
 
 # Realtek SDK Scenario #
 
-This scenario is intended for a templete for ai glass scenario
+This scenario serves as a template for AI glass scenario
 
 ## Scenario information ##
 
-- ai glass scenario templete
-- This templete shows samples for user to do uart communication, video snapshot, video recording, wifi and file management
+- AI glass scenario template
+- This template provides sample code for users to perform uart communication, video snapshot, video recording, wifi connectivity and file management
 
 ## Update in SDK ##
 
