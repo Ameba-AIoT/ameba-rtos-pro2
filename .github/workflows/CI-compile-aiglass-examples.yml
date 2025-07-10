@@ -5,16 +5,24 @@
 name: Build AI Glass Examples
 
 on:
-  push:
-    paths:
-      - '.github/workflows/CI-compile-aiglass-examples.yml'
-      - '.github/scripts/python/compile-aiglass-examples.py'
-      - 'project/realtek_amebapro2_v0_example/scenario/ai_glass/**'
-  pull_request:
-    paths:
-      - '.github/workflows/CI-compile-aiglass-examples.yml'
-      - '.github/scripts/python/compile-aiglass-examples.py'
-      - 'project/realtek_amebapro2_v0_example/scenario/ai_glass/**'
+  # push:
+  #   branches:
+  #     - 'main'
+  #   paths:
+  #     - '.github/workflows/CI-compile-aiglass-examples.yml'
+  #     - '.github/scripts/python/compile-aiglass-examples.py'
+  #     - '.github/scripts/python/bootstrap-linux-env.py'
+  #     - '.github/scripts/python/bootstrap-macos-env.py'
+  #     - '.github/scripts/python/bootstrap-windows-env.py'
+  #     - 'project/realtek_amebapro2_v0_example/scenario/ai_glass/**'
+  # pull_request:
+  #   paths:
+  #     - '.github/workflows/CI-compile-aiglass-examples.yml'
+  #     - '.github/scripts/python/compile-aiglass-examples.py'
+  #     - '.github/scripts/python/bootstrap-linux-env.py'
+  #     - '.github/scripts/python/bootstrap-macos-env.py'
+  #     - '.github/scripts/python/bootstrap-windows-env.py'
+  #     - 'project/realtek_amebapro2_v0_example/scenario/ai_glass/**'
 
   workflow_dispatch:
 
@@ -23,30 +31,82 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest]
-
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          path: rtos
 
-      - name: Download and extract toolchain
+      # Avoid Windows path length limit
+      - name: Move to short path
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          mkdir -p $HOME/toolchain
-          curl -L https://github.com/Ameba-AIoT/ameba-toolchain/releases/download/V10.3.0-amebe-rtos-pro2/asdk-10.3.0-linux-newlib-build-3638-x86_64.tar.bz2 \
-            -o $HOME/toolchain/toolchain.tar.bz2
-          tar -jxvf $HOME/toolchain/toolchain.tar.bz2 -C $HOME/toolchain
-          echo "$HOME/toolchain/asdk-10.3.0/linux/newlib/bin" >> $GITHUB_PATH
+          mkdir C:\r
+          Copy-Item -Path "$env:GITHUB_WORKSPACE\rtos\*" -Destination "C:\r" -Recurse -Force
+          echo "GITHUB_WORKSPACE=C:\r" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Install build tools on Linux
+      - name: Set source path
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            echo "SOURCE_ROOT=C:/r/" >> $GITHUB_ENV
+          else
+            echo "SOURCE_ROOT=rtos" >> $GITHUB_ENV
+          fi
+
+      - name: Bootstrap Linux Environment
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake git python3 gcc-arm-none-eabi
+        run: python3 ${{ env.SOURCE_ROOT }}/.github/scripts/python/bootstrap-linux-env.py
 
-      - name: Grant execute permission to all mp tools executable
-        run: chmod +x project/realtek_amebapro2_v0_example/GCC-RELEASE/mp/*.linux || true
-        
-      - name: Run build script on Linux
+      - name: Bootstrap MacOS Environment
+        if: runner.os == 'macOS'
+        run: python3 ${{ env.SOURCE_ROOT }}/.github/scripts/python/bootstrap-macos-env.py
+
+      - name: Bootstrap Windows Environment
+        if: runner.os == 'Windows'
+        run: python3 ${{ env.SOURCE_ROOT }}/.github/scripts/python/bootstrap-windows-env.py
+
+      - name: Grant execute permission to all mp tools executable (Linux)
+        if: runner.os == 'Linux'
+        run: chmod +x ${{ env.SOURCE_ROOT }}/project/realtek_amebapro2_v0_example/GCC-RELEASE/mp/*.linux || true
+      
+      - name: Grant execute permission to all mp tools executable (macOS)
+        if: runner.os == 'macOS'
+        run: chmod +x ${{ env.SOURCE_ROOT }}/project/realtek_amebapro2_v0_example/GCC-RELEASE/mp/*.darwin || true
+
+      - name: Grant execute permission to all mp tools executable (Windows)
+        if: runner.os == 'Windows'
         run: |
-          python3 .github/scripts/python/compile-aiglass-examples.py
+          Get-ChildItem -Path "${{ env.SOURCE_ROOT }}/project/realtek_amebapro2_v0_example/GCC-RELEASE/mp/*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
+            icacls $_.FullName /grant Everyone:F
+          }
+
+      - name: Build all examples on ${{ runner.os }}
+        if: runner.os != 'Windows'
+        run: python3 ${{ env.SOURCE_ROOT }}/.github/scripts/python/compile-aiglass-examples.py
+
+      - name: Build all examples on Windows
+        if: runner.os == 'Windows'
+        shell: C:\Users\runneradmin\msys64_v10_3\msys64\usr\bin\bash.exe -l {0}
+        run: |
+          export MSYSTEM=MINGW64
+          export TOOLCHAIN_PATH="/c/Users/runneradmin/toolchain/asdk-10.3.0/mingw32/newlib/bin"
+          export CMAKE_PATH="/c/Program Files/CMake/bin"
+          export PATH="$TOOLCHAIN_PATH:$CMAKE_PATH:/c/Users/runneradmin/msys64_v10_3/msys64/mingw64/bin:/c/Users/runneradmin/msys64_v10_3/msys64/usr/bin:$PATH"
+
+          echo "Running in MSYS2"
+          echo "PATH=$PATH"
+          which cmake || echo "cmake not found"
+          cmake --version || echo "cmake version failed"
+
+          cd /c/r
+
+          rm -rf build
+          mkdir build
+
+          python3 -u ${{ env.SOURCE_ROOT }}/.github/scripts/python/compile-aiglass-examples.py
 
       - name: Build complete
         run: echo "Build finished."
@@ -61,10 +121,19 @@ jobs:
       #       component/soc/8735b/misc/platform/user_boot.c
       #       component/video/driver/RTL8735B/video_user_boot.c
       #       project/realtek_amebapro2_v0_example/inc/sensor.h
+      
+      # To access output binary outside msys shell
+      - name: Copy output binary to workspace
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/rtos/project/realtek_amebapro2_v0_example/GCC-RELEASE/build/"
+          cp -v /c/r/rtos/project/realtek_amebapro2_v0_example/GCC-RELEASE/build/*.bin \
+          "${GITHUB_WORKSPACE}/rtos/project/realtek_amebapro2_v0_example/GCC-RELEASE/build/" || true
 
       # Upload binary file to GitHub Artifacts
-      - name: Upload binary file
+      - name: Upload binary file (${{ matrix.os }})
         uses: actions/upload-artifact@v4
         with:
-          name: aiglass-example-binary
-          path: project/realtek_amebapro2_v0_example/GCC-RELEASE/build/flash_ntz.bin
+          name: aiglass-example-${{ matrix.os }}
+          path: ${{ env.SOURCE_ROOT }}/project/realtek_amebapro2_v0_example/GCC-RELEASE/build/flash_ntz.bin

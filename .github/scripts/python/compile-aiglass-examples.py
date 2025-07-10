@@ -3,14 +3,15 @@ import re
 import sys
 import subprocess
 
-PROJECT_DIR = "project/realtek_amebapro2_v0_example"
-BUILD_DIR = os.path.join(PROJECT_DIR, "GCC-RELEASE", "build")
-FATFS_SDCARD_API = "component/file_system/fatfs/fatfs_sdcard_api.c"
-MODULE_MP4 = "component/media/mmfv2/module_mp4.c"
-SENSOR_H = "project/realtek_amebapro2_v0_example/inc/sensor.h"
-TOOLCHAIN_FILE = "../toolchain.cmake"
-USER_BOOT = "component/soc/8735b/misc/platform/user_boot.c"
-VIDEO_BOOT = "component/video/driver/RTL8735B/video_user_boot.c"
+SOURCE_ROOT = os.environ.get("SOURCE_ROOT", ".")
+
+FATFS_SDCARD_API = os.path.join(SOURCE_ROOT, "component/file_system/fatfs/fatfs_sdcard_api.c")
+MODULE_MP4       = os.path.join(SOURCE_ROOT, "component/media/mmfv2/module_mp4.c")
+SENSOR_H         = os.path.join(SOURCE_ROOT, "project/realtek_amebapro2_v0_example/inc/sensor.h")
+USER_BOOT        = os.path.join(SOURCE_ROOT, "component/soc/8735b/misc/platform/user_boot.c")
+VIDEO_BOOT       = os.path.join(SOURCE_ROOT, "component/video/driver/RTL8735B/video_user_boot.c")
+PROJECT_DIR      = os.path.join(SOURCE_ROOT, "project/realtek_amebapro2_v0_example")
+BUILD_DIR        = os.path.join(PROJECT_DIR, "GCC-RELEASE", "build")
 
 # Utility functions for file operations
 def read_file(path):
@@ -257,7 +258,7 @@ def build():
     os.chdir(BUILD_DIR)
 
     # Run cmake config with ai_glass scenario
-    run(f'cmake .. -G"Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE={TOOLCHAIN_FILE} -DSCENARIO=ai_glass')
+    run(f'cmake .. -G"Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE="../toolchain.cmake" -DSCENARIO=ai_glass')
 
     # Build target flash
     run('cmake --build . --target flash -j4')

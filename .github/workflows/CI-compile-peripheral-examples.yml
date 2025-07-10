@@ -1,0 +1,120 @@
+# This workflow is to build peripheral examples and upload the binary files as artifacts.
+# It is triggered on push or pull request events for specific paths related to peripheral examples.
+# It also allows manual triggering via workflow_dispatch.
+
+name: Build Peripheral Examples
+
+on:
+  # push:
+  #   branches:
+  #     - 'main'
+  #   paths:
+  #   - '.github/workflows/CI-compile-peripheral-examples.yml'
+  #   - '.github/scripts/python/compile-peripheral-examples.py'
+  #   - '.github/scripts/python/bootstrap-linux-env.py'
+  #   - '.github/scripts/python/bootstrap-macos-env.py'
+  #   - '.github/scripts/python/bootstrap-windows-env.py'
+  #   - 'project/realtek_amebapro2_v0_example/example_sources/**'
+  # pull_request:
+  #   paths:
+  #     - '.github/workflows/CI-compile-peripheral-examples.yml'
+  #     - '.github/scripts/python/compile-peripheral-examples.py'
+  #     - '.github/scripts/python/bootstrap-linux-env.py'
+  #     - '.github/scripts/python/bootstrap-macos-env.py'
+  #     - '.github/scripts/python/bootstrap-windows-env.py'
+  #     - 'project/realtek_amebapro2_v0_example/example_sources/**'
+
+  workflow_dispatch:
+
+jobs:
+  build-peripheral-examples:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+        # Define examples in batches to run them in parallel
+        batch:
+          - id: batch1
+            examples: "analogin flash flash_setstatus gdma gpio "
+          - id: batch2
+            examples: "gpio_irq gpio_level_irq gpio_light_weight gpio_pulse_measure gtimer"
+          - id: batch3
+            examples: "gtimer_rtc i2c i2s pm_deepsleep pm_retention"
+          - id: batch4
+            examples: "pwm rtc sgpio_capture_rxdata sgpio_multc_counter_mode sgpio_sampling_rxdata"
+          - id: batch5
+            examples: "sgpio_capture_spi spi_master_write_read_one_byte spi_stream_dma_twoboard spi_stream_twoboard_concurrent spi_twoboard"
+          - id: batch6
+            examples: "timer_systick trng uart uart_auto_flow_ctrl uart_irq"
+          - id: batch7
+            examples: "uart_stream_2_threads uart_stream_4_threads uart_stream_dma uart_stream_dma_rx_timeout uart_stream_irq uart_stream_rx_timeout watchdog"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Bootstrap Linux Environment
+        if: runner.os == 'Linux'
+        run: python3 .github/scripts/python/bootstrap-linux-env.py
+
+      - name: Bootstrap MacOS Environment
+        if: runner.os == 'macOS'
+        run: python3 .github/scripts/python/bootstrap-macos-env.py
+
+      - name: Bootstrap Windows Environment
+        if: runner.os == 'Windows'
+        run: python3 .github/scripts/python/bootstrap-windows-env.py
+        
+      - name: Grant execute permission to all mp tools executable (Linux)
+        if: runner.os == 'Linux'
+        run: chmod +x project/realtek_amebapro2_v0_example/GCC-RELEASE/mp/*.linux || true
+      
+      - name: Grant execute permission to all mp tools executable (macOS)
+        if: runner.os == 'macOS'
+        run: chmod +x project/realtek_amebapro2_v0_example/GCC-RELEASE/mp/*.darwin || true
+      
+      - name: Grant execute permission to all mp tools executable (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Get-ChildItem -Path "project/realtek_amebapro2_v0_example/GCC-RELEASE/mp/*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
+            icacls $_.FullName /grant Everyone:F
+          }
+
+      - name: Run build script on ${{ runner.os }}
+        if: runner.os != 'Windows'
+        run: |
+            examples=(${{ matrix.batch.examples }})
+            for example in "${examples[@]}"; do
+            echo "Launching build for $example"
+            python3 .github/scripts/python/compile-peripheral-examples.py "$example" &
+            done
+            wait
+
+      - name: Build all examples in batch (Windows)
+        if: runner.os == 'Windows'
+        shell: C:\Users\runneradmin\msys64_v10_3\msys64\usr\bin\bash.exe -l {0}
+        run: |
+          export MSYSTEM=MINGW64
+          export TOOLCHAIN_PATH="/c/Users/runneradmin/toolchain/asdk-10.3.0/mingw32/newlib/bin"
+          export CMAKE_PATH="/c/Program Files/CMake/bin"
+          export PATH="$TOOLCHAIN_PATH:$CMAKE_PATH:/c/Users/runneradmin/msys64_v10_3/msys64/mingw64/bin:/c/Users/runneradmin/msys64_v10_3/msys64/usr/bin:$PATH"
+
+          echo "Running in MSYS2"
+          echo "PATH=$PATH"
+          which cmake || echo "cmake not found"
+          cmake --version || echo "cmake version failed"
+
+          for example in ${{ matrix.batch.examples }}; do
+            echo "Building: $example"
+            python3 -u $GITHUB_WORKSPACE/.github/scripts/python/compile-peripheral-examples.py $example
+          done
+
+      - name: Build complete
+        run: echo "Build finished."
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+            name: peripheral-examples-${{ matrix.os }}-${{ matrix.batch.id }}
+            path: project/realtek_amebapro2_v0_example/bin_outputs/*.bin
+          

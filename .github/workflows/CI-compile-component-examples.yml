@@ -1,0 +1,119 @@
+# This workflow is to build component examples and upload the binary files as artifacts.
+# It is triggered on push or pull request events for specific paths related to component examples.
+# It also allows manual triggering via workflow_dispatch.
+
+name: Build Component Examples
+
+on:
+  # push:
+  #   branches:
+  #     - 'main'
+  #   paths:
+  #     - '.github/workflows/CI-compile-component-examples.yml'
+  #     - '.github/scripts/python/compile-component-examples.py'
+  #     - '.github/scripts/python/bootstrap-linux-env.py'
+  #     - '.github/scripts/python/bootstrap-macos-env.py'
+  #     - 'component/example/**'
+  # pull_request:
+  #   paths:
+  #     - '.github/workflows/CI-compile-component-examples.yml'
+  #     - '.github/scripts/python/compile-component-examples.py'
+  #     - '.github/scripts/python/bootstrap-linux-env.py'
+  #     - '.github/scripts/python/bootstrap-macos-env.py'
+  #     - 'component/example/**'
+
+  workflow_dispatch:
+
+jobs:
+  build-component-examples:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        batch:
+          - id: batch1
+            examples: "coap eap ext_storage_update_ota fatfs http_client"
+          - id: batch2
+            examples: "http_download httpc httpd mcast media_fmp4 media_framework"
+          - id: batch3
+            examples: "media_mp4_demuxer media_uvcd media_video_to_storage mqtt nn_file_tester"
+          - id: batch4
+            examples: "nonblock_connect ota_http qr_code_scanner sd_hotplug sntp_showtime"
+          - id: batch5
+            examples: "socket_select socket_tcp_trx sqlite ssl_client ssl_download"
+          - id: batch6
+            examples: "ssl_server std_file usb_cdc usb_cdc_snapshot usb_dfu_ota"
+          - id: batch7
+            examples: "usb_example usb_mass_storage wifi_roaming_client_plus wifi_roaming_plus"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4  
+        with:
+          submodules: recursive
+          token: ${{ secrets.SUBMODULE_PAT }}
+
+      - name: Bootstrap Linux Environment
+        if: runner.os == 'Linux'
+        run: python3 .github/scripts/python/bootstrap-linux-env.py
+    
+      - name: Bootstrap MacOS Environment
+        if: runner.os == 'macOS'
+        run: python3 .github/scripts/python/bootstrap-macos-env.py
+      
+      - name: Bootstrap Windows Environment
+        if: runner.os == 'Windows'
+        run: python3 .github/scripts/python/bootstrap-windows-env.py
+
+      - name: Grant execute permission to all mp tools executable (Linux)
+        if: runner.os == 'Linux'
+        run: chmod +x project/realtek_amebapro2_v0_example/GCC-RELEASE/mp/*.linux || true
+      
+      - name: Grant execute permission to all mp tools executable (macOS)
+        if: runner.os == 'macOS'
+        run: chmod +x project/realtek_amebapro2_v0_example/GCC-RELEASE/mp/*.darwin || true
+
+      - name: Grant execute permission to all mp tools executable (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Get-ChildItem -Path "project/realtek_amebapro2_v0_example/GCC-RELEASE/mp/*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
+            icacls $_.FullName /grant Everyone:F
+          }
+
+      - name: Run build script on ${{ runner.os }}
+        if: runner.os != 'Windows'
+        run: |
+            examples=(${{ matrix.batch.examples }})
+            for example in "${examples[@]}"; do
+            echo "Launching build for $example"
+            python3 .github/scripts/python/compile-component-examples.py "$example" &
+            done
+            wait
+
+      - name: Build all examples in batch (Windows)
+        if: runner.os == 'Windows'
+        shell: C:\Users\runneradmin\msys64_v10_3\msys64\usr\bin\bash.exe -l {0}
+        run: |
+          export MSYSTEM=MINGW64
+          export TOOLCHAIN_PATH="/c/Users/runneradmin/toolchain/asdk-10.3.0/mingw32/newlib/bin"
+          export CMAKE_PATH="/c/Program Files/CMake/bin"
+          export PATH="$TOOLCHAIN_PATH:$CMAKE_PATH:/c/Users/runneradmin/msys64_v10_3/msys64/mingw64/bin:/c/Users/runneradmin/msys64_v10_3/msys64/usr/bin:$PATH"
+
+          echo "Running in MSYS2"
+          echo "PATH=$PATH"
+          which cmake || echo "cmake not found"
+          cmake --version || echo "cmake version failed"
+
+          for example in ${{ matrix.batch.examples }}; do
+            echo "Building: $example"
+            python3 -u $GITHUB_WORKSPACE/.github/scripts/python/compile-component-examples.py $example
+          done
+
+      - name: Build complete
+        run: echo "Build finished."
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: component-example-${{ matrix.os }}-${{ matrix.batch.id }}
+          path: project/realtek_amebapro2_v0_example/bin_outputs/*.bin

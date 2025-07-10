@@ -47,17 +47,19 @@ EXAMPLES = [
     "mmf2_video_example_timelapse_mp4_init"
 ]
 
+print(os.path.abspath(__file__))
+
 PROJECT_DIR = os.path.abspath(os.path.join(os.path.abspath(__file__), "..", "..", "..", "..", "project", "realtek_amebapro2_v0_example"))
 SRC_DIR = os.path.join(PROJECT_DIR, "src", "mmfv2_video_example")
 GCC_RELEASE_DIR = os.path.join(PROJECT_DIR, "GCC-RELEASE")
 BUILD_DIR = os.path.join(GCC_RELEASE_DIR, "build")
 BIN_OUTPUT_DIR = os.path.join(PROJECT_DIR, "bin_outputs")
-TOOLCHAIN_FILE = os.path.join(GCC_RELEASE_DIR, "toolchain.cmake")
 SRC_FILE = os.path.join(SRC_DIR, "video_example_media_framework.c")
 
-def run(cmd):
+def run(cmd, cwd=None):
     print(f"Running: {cmd}")
-    result = subprocess.run(cmd, shell=True, text=True, capture_output=True, check=True)
+    result = subprocess.run(cmd, shell=True, text=True, capture_output=True, check=True, cwd=cwd)
+
     print(result.stdout)
     if result.stderr:
         print(result.stderr, file=sys.stderr)
@@ -90,20 +92,13 @@ def build_example(example):
 
     build_dir = os.path.join(GCC_RELEASE_DIR, f"build_{example}")
     os.makedirs(build_dir, exist_ok=True)
-    os.chdir(build_dir)
 
     # Run cmake config
-    run(f'cmake .. -G"Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE={TOOLCHAIN_FILE} -DVIDEO_EXAMPLE=on')
-
-    # Fix permissions for all .linux files
-    mp_dir = os.path.join(GCC_RELEASE_DIR, "mp")
-    run(f'find {mp_dir} -name "*.linux" -exec chmod +x {{}} \\;')
+    run(f'cmake .. -G"Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE=../toolchain.cmake -DVIDEO_EXAMPLE=on', cwd=build_dir)
 
     # Build target
-    if "nn" in example.lower():
-        run('cmake --build . --target flash_nn -j4')
-    else:
-        run('cmake --build . --target flash -j4')
+    target = "flash_nn" if "nn" in example.lower() else "flash"
+    run(f'cmake --build . --target {target} -j4', cwd=build_dir)
     
     # Copy built binary file to output directory
     built_bin_name = "flash_ntz.nn.bin" if "nn" in example.lower() else "flash_ntz.bin"
@@ -111,15 +106,17 @@ def build_example(example):
     output_bin_path = os.path.join(BIN_OUTPUT_DIR, f"{example}.bin")
     os.makedirs(BIN_OUTPUT_DIR, exist_ok=True)
     shutil.copyfile(built_bin_path, output_bin_path)
+    print(f"Saving built binary to: {output_bin_path}")
     
     # Clean for next build
-    run('make clean')
-    os.chdir("..")
+    run('make clean', cwd=build_dir)
 
 def main():
     try:
         # Get the list of examples passed
         examples_to_build = sys.argv[1:]
+        print(f"Received args: {sys.argv[1:]}")
+
         if not examples_to_build:
             examples_to_build = EXAMPLES
 

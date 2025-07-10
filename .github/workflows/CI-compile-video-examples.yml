@@ -5,30 +5,37 @@
 name: Build Video/NN Examples
 
 on:
-  push:
-    paths:
-      - '.github/workflows/CI-compile-video-examples.yml'
-      - '.github/scripts/python/compile-video-examples.py'
-      - 'project/realtek_amebapro2_v0_example/src/mmfv2_video_example/**'
-  pull_request:
-    paths:
-      - '.github/workflows/CI-compile-video-examples.yml'
-      - '.github/scripts/python/compile-video-examples.py'
-      - 'project/realtek_amebapro2_v0_example/src/mmfv2_video_example/**'
+  # push:
+  #   branches:
+  #     - 'main'
+  #   paths:
+  #   - '.github/workflows/CI-compile-video-examples.yml'
+  #   - '.github/scripts/python/compile-video-examples.py'
+  #   - '.github/scripts/python/bootstrap-linux-env.py'
+  #   - '.github/scripts/python/bootstrap-macos-env.py'
+  #   - '.github/scripts/python/bootstrap-windows-env.py'
+  #   - 'project/realtek_amebapro2_v0_example/src/mmfv2_video_example/**'
+  # pull_request:
+  #   paths:
+  #     - '.github/workflows/CI-compile-video-examples.yml'
+  #     - '.github/scripts/python/compile-video-examples.py'
+  #     - '.github/scripts/python/bootstrap-linux-env.py'
+  #     - '.github/scripts/python/bootstrap-macos-env.py'
+  #     - '.github/scripts/python/bootstrap-windows-env.py'
+  #     - 'project/realtek_amebapro2_v0_example/src/mmfv2_video_example/**'
+
   workflow_dispatch:
-    
+
 jobs:
   build-all-examples:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest]
-        # os: [ubuntu-latest, windows-latest, macos-latest]
-
-        # Define examples in batches to run them in parallel
+        os: [ubuntu-latest, macos-latest, windows-latest]
         batch:
           - id: batch1
-            examples: "mmf2_video_example_v1_init mmf2_video_example_v2_init mmf2_video_example_v3_init mmf2_video_example_v1_shapshot_init mmf2_video_example_simo_init mmf2_video_example_av_init mmf2_video_example_av2_init mmf2_video_example_av21_init mmf2_video_example_av_mp4_init"
+            examples: "mmf2_video_example_v1_init mmf2_video_example_v2_init mmf2_video_example_v3_init"
+
           - id: batch2
             examples: "mmf2_video_example_av_rtsp_mp4_init mmf2_video_example_joint_test_init mmf2_video_example_joint_test_rtsp_mp4_init mmf2_video_example_2way_audio_pcmu_doorbell_init mmf2_video_example_2way_audio_pcmu_init mmf2_video_example_array_rtsp_init mmf2_video_example_v1_param_change_init mmf2_video_example_v1_day_night_change_init mmf2_video_example_v1_mask_init"
           - id: batch3
@@ -39,39 +46,107 @@ jobs:
             examples: "mmf2_video_example_vipnn_handgesture_init mmf2_video_example_joint_test_vipnn_rtsp_mp4_init mmf2_video_example_vipnn_classify_rtsp_init mmf2_video_example_timelapse_mp4_init"
 
     steps:
+      # Checkout the repository into a shorter subdirectory to control 
+      # the folder depth and help avoid Windows path length issues
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Download and extract toolchain
-        run: |
-          mkdir -p $HOME/toolchain
-          curl -L https://github.com/Ameba-AIoT/ameba-toolchain/releases/download/V10.3.0-amebe-rtos-pro2/asdk-10.3.0-linux-newlib-build-3638-x86_64.tar.bz2 \
-            -o $HOME/toolchain/toolchain.tar.bz2
-          tar -jxvf $HOME/toolchain/toolchain.tar.bz2 -C $HOME/toolchain
+        with:
+          path: rtos
           
-          # Add toolchain binaries to PATH for following steps
-          echo "$HOME/toolchain/asdk-10.3.0/linux/newlib/bin" >> $GITHUB_PATH
+      # Avoid Windows path length limit
+      - name: Move to short path
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          mkdir C:\r
+          Copy-Item -Path "$env:GITHUB_WORKSPACE\rtos\*" -Destination "C:\r" -Recurse -Force
+          echo "GITHUB_WORKSPACE=C:\r" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Install build tools on Linux
+      - name: Set source path
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            echo "SOURCE_ROOT=C:/r" >> $GITHUB_ENV
+          else
+            echo "SOURCE_ROOT=rtos" >> $GITHUB_ENV
+          fi
+
+      - name: Bootstrap Linux Environment
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake git python3 gcc-arm-none-eabi
-        
-      - name: Run build script on Linux
+        run: python3 ${{ env.SOURCE_ROOT }}/.github/scripts/python/bootstrap-linux-env.py
+
+      - name: Bootstrap MacOS Environment
+        if: runner.os == 'macOS'
+        run: python3 ${{ env.SOURCE_ROOT }}/.github/scripts/python/bootstrap-macos-env.py
+
+      - name: Bootstrap Windows Environment
+        if: runner.os == 'Windows'
+        run: python3 ${{ env.SOURCE_ROOT }}/.github/scripts/python/bootstrap-windows-env.py
+
+      - name: Grant execute permission (Linux)
+        if: runner.os == 'Linux'
+        run: chmod +x ${{ env.SOURCE_ROOT }}/project/realtek_amebapro2_v0_example/GCC-RELEASE/mp/*.linux || true
+
+      - name: Grant execute permission (macOS)
+        if: runner.os == 'macOS'
+        run: chmod +x ${{ env.SOURCE_ROOT }}/project/realtek_amebapro2_v0_example/GCC-RELEASE/mp/*.darwin || true
+
+      - name: Grant execute permission (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Get-ChildItem -Path "${{ env.SOURCE_ROOT }}/project/realtek_amebapro2_v0_example/GCC-RELEASE/mp/*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
+            icacls $_.FullName /grant Everyone:F
+          }
+
+      - name: Build all examples in batch (${{ runner.os }})
         if: runner.os != 'Windows'
         run: |
-          examples=(${{ matrix.batch.examples }})
-          for example in "${examples[@]}"; do
-            echo "Launching build for $example"
-            python3 .github/scripts/python/compile-video-examples.py "$example" &
+            examples=(${{ matrix.batch.examples }})
+            for example in "${examples[@]}"; do
+            echo "Building: $example"
+            python3 ${{ env.SOURCE_ROOT }}/.github/scripts/python/compile-video-examples.py "$example" &
+            done
+            wait
+
+      - name: Build all examples in batch (Windows)
+        if: runner.os == 'Windows'
+        shell: C:\Users\runneradmin\msys64_v10_3\msys64\usr\bin\bash.exe -l {0}
+        run: |
+          export MSYSTEM=MINGW64
+          export TOOLCHAIN_PATH="/c/Users/runneradmin/toolchain/asdk-10.3.0/mingw32/newlib/bin"
+          export CMAKE_PATH="/c/Program Files/CMake/bin"
+          export PATH="$TOOLCHAIN_PATH:$CMAKE_PATH:/c/Users/runneradmin/msys64_v10_3/msys64/mingw64/bin:/c/Users/runneradmin/msys64_v10_3/msys64/usr/bin:$PATH"
+
+          echo "Running in MSYS2"
+          echo "PATH=$PATH"
+          which cmake || echo "cmake not found"
+          cmake --version || echo "cmake version failed"
+
+          cd /c/r
+
+          rm -rf build
+          mkdir build
+
+          for example in ${{ matrix.batch.examples }}; do
+            echo "Building: $example"
+            python3 -u ${{ env.SOURCE_ROOT }}/.github/scripts/python/compile-video-examples.py $example
           done
-          wait
 
       - name: Build complete
         run: echo "Build finished. All examples in the batch have been processed."
 
+      # To access output binaries outside msys shell
+      - name: Copy output binaries to workspace
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/rtos/project/realtek_amebapro2_v0_example/bin_outputs"
+          cp -v /c/r/rtos/project/realtek_amebapro2_v0_example/bin_outputs/*.bin \
+          "${GITHUB_WORKSPACE}/rtos/project/realtek_amebapro2_v0_example/bin_outputs/" || true
+
       # Upload binaries to GitHub Artifacts
-      - name: Upload binaries
+      - name: Upload binaries (${{ matrix.os }})
         uses: actions/upload-artifact@v4
         with:
-          name: video-example-binaries-${{ matrix.batch.id }}
-          path: project/realtek_amebapro2_v0_example/bin_outputs/*.bin
+          name: video-example-${{ matrix.os }}-${{ matrix.batch.id }}
+          path: ${{ env.SOURCE_ROOT }}/project/realtek_amebapro2_v0_example/bin_outputs/*.bin
