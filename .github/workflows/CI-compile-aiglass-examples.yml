@@ -23,7 +23,7 @@ on:
   #     - '.github/scripts/python/bootstrap-macos-env.py'
   #     - '.github/scripts/python/bootstrap-windows-env.py'
   #     - 'project/realtek_amebapro2_v0_example/scenario/ai_glass/**'
-  
+
   workflow_dispatch:
 
 jobs:

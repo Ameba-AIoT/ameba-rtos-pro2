@@ -48,6 +48,7 @@ EXAMPLES = [
 ]
 
 print(os.path.abspath(__file__))
+
 PROJECT_DIR = os.path.abspath(os.path.join(os.path.abspath(__file__), "..", "..", "..", "..", "project", "realtek_amebapro2_v0_example"))
 SRC_DIR = os.path.join(PROJECT_DIR, "src", "mmfv2_video_example")
 GCC_RELEASE_DIR = os.path.join(PROJECT_DIR, "GCC-RELEASE")
@@ -58,6 +59,7 @@ SRC_FILE = os.path.join(SRC_DIR, "video_example_media_framework.c")
 def run(cmd, cwd=None):
     print(f"Running: {cmd}")
     result = subprocess.run(cmd, shell=True, text=True, capture_output=True, check=True, cwd=cwd)
+
     print(result.stdout)
     if result.stderr:
         print(result.stderr, file=sys.stderr)
