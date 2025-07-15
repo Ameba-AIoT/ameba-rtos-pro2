@@ -306,7 +306,7 @@ void fATBC(void *arg)
 		goto exit;
 	}
 
-	if (argc != 3) {
+	if (argc != 3 && argc != 4) {
 		AT_PRINTK("[AT_PRINTK] ERROR: input parameter error!\n\r");
 		goto exit;
 	}
@@ -634,6 +634,85 @@ exit:
 	AT_PRINTK("[ATBg] Set BLE PHY(2M): ATBg=conn_id,phy");
 	AT_PRINTK("[ATBg] Set BLE PHY(2M): ATBg=0,1");
 }
+
+void fATBz(void *arg)
+{
+	int argc = 0;
+	char *argv[MAX_ARGC] = {0};
+
+	memset(bt_at_cmd_buf, 0, 256);
+
+	if (arg) {
+		strncpy(bt_at_cmd_buf, arg, sizeof(bt_at_cmd_buf));
+		argc = parse_param(bt_at_cmd_buf, argv);
+	} else {
+		goto exit;
+	}
+
+	if ((argc != 5) && (argc != 8) && (argc != 14)) {
+		AT_PRINTK("[AT_PRINTK] ERROR: input parameter error!\n\r");
+		goto exit;
+	}
+
+	if (!bt_command_type(BT_ATCMD_EXT_CONNECT)) {
+		AT_PRINTK("[AT_PRINTK] ERROR: command type error!\n\r");
+		goto exit;
+	}
+
+	bt_at_cmd_send_msg(BT_ATCMD_EXT_CONNECT, bt_at_cmd_buf);
+	return;
+
+exit:
+	AT_PRINTK("[ATBz] Ext conn relative");
+	AT_PRINTK("[ATBz] [start ext connect]:ATBz=econn,peer_addr_type,peer_addr,init_phys,own_addr_type,filter_policy,scan_timeout,    \
+			  scan_interval,scan_window,conn_interval_min,conn_interval_max,conn_latency,supv_timeout");
+	AT_PRINTK("[ATBz] [start ext connect]:ATBz=econn,peer_addr_type,peer_addr,init_phys,own_addr_type,filter_policy,scan_timeout");
+	AT_PRINTK("[ATBz] [start ext connect]:ATBz=econn,peer_addr_type,peer_addr,init_phys");
+	AT_PRINTK("[ATBz] eg:ATBz=econn,0x0,00e04c8003aa,0x5,0x0,0x0,0x3e8,0x40,0x20,0x10,0x20,0x0,0x200");
+	AT_PRINTK("[ATBz] eg:ATBz=econn,0x0,00e04c8003aa,0x5,0x0,0x0,0x3e8");
+	AT_PRINTK("[ATBz] eg:ATBz=econn,0x0,00e04c8003aa,0x5");
+}
+
+void fATBs(void *arg)
+{
+	int argc = 0;
+	char *argv[MAX_ARGC] = {0};
+
+	memset(bt_at_cmd_buf, 0, 256);
+
+	if (arg) {
+		strncpy(bt_at_cmd_buf, arg, sizeof(bt_at_cmd_buf));
+		argc = parse_param(bt_at_cmd_buf, argv);
+	} else {
+		goto exit;
+	}
+
+	if ((argc < 2) || (argc > 14)) {
+		AT_PRINTK("[AT_PRINTK] ERROR: input parameter error!\n\r");
+		goto exit;
+	}
+
+	if (!bt_command_type(BT_COMMAND_OP_EXT_SCAN)) {
+		AT_PRINTK("[AT_PRINTK] ERROR: command type error!\n\r");
+		goto exit;
+	}
+
+	bt_at_cmd_send_msg(BT_ATCMD_OP_EXT_SCAN, bt_at_cmd_buf);
+	return;
+
+exit:
+	AT_PRINTK("[ATBs] Ext scan relative");
+	AT_PRINTK("[ATBs] [set ext scan_param]:ATBs=escan_param,own_addr_type,filter_policy,duplicate_opt,duration,period,scan_phys,scan_type0,interval0,window0,scan_type1,interval1,window1");
+	AT_PRINTK("[ATBs] [set ext scan_param]:ATBs=escan_param,own_addr_type,filter_policy,duplicate_opt,phy,duration,period");
+	AT_PRINTK("[ATBs] [set ext scan_param]:ATBs=escan_param,own_addr_type,filter_policy,duplicate_opt,phy");
+	AT_PRINTK("[ATBs] [start ext scan]:    ATBs=start_escan");
+	AT_PRINTK("[ATBs] [stop ext scan]:     ATBs=stop_escan");
+	AT_PRINTK("[ATBs] eg:ATBs=escan_param,0x0,0x0,0x0,0x0,0x0,0x1");
+	AT_PRINTK("[ATBs] eg:ATBs=escan_param,0x0,0x0,0x0,0x0,0x0,0x1,0x1,0x96,0x4b");
+	AT_PRINTK("[ATBs] eg:ATBs=escan_param,0x0,0x0,0x1,0x0,0x0,0x5,0x0,0x88,0x70,0x1,0x70,0x60");
+	AT_PRINTK("[ATBs] eg:ATBs=start_escan");
+	AT_PRINTK("[ATBs] eg:ATBs=stop_escan");
+}
 #endif
 
 #if ((defined(CONFIG_BT_PERIPHERAL) && CONFIG_BT_PERIPHERAL) || \
@@ -831,7 +910,50 @@ void fATBP(void *arg)
 exit:
 	AT_PRINTK("[ATBP] Change to pair mode :ATBP=PAIR");
 }
+void fATBX(void *arg)
+{
+	int argc = 0;
+	char *argv[MAX_ARGC] = {0};
 
+	memset(bt_at_cmd_buf, 0, 256);
+
+	if (arg) {
+		strncpy(bt_at_cmd_buf, arg, sizeof(bt_at_cmd_buf));
+		argc = parse_param(bt_at_cmd_buf, argv);
+	} else {
+		goto exit;
+	}
+
+	if (argc < 2 || argc > 13) {
+		AT_PRINTK("[AT_PRINTK] ERROR: input parameter error!\n\r");
+		goto exit;
+	}
+
+	if (!bt_command_type(BT_COMMAND_OP_EXT_ADV)) {
+		AT_PRINTK("[AT_PRINTK] ERROR: command type error!\n\r");
+		goto exit;
+	}
+
+	bt_at_cmd_send_msg(BT_ATCMD_OP_EXT_ADV, bt_at_cmd_buf);
+	return;
+
+exit:
+	AT_PRINTK("[ATBX] create Ext adv_handle & Set extended adv param:ATBX=eadv_param,adv_sid,adv_prop,phy,filter_policy,tx_power,adv_int_min,adv_int_max,own_addr_type,own_addr,peer_addr_type,peer_addr");
+	AT_PRINTK("[ATBX] Start extended adv:ATBX=start_eadv,adv_handle");
+	AT_PRINTK("[ATBX] Stop extended adv:ATBX=stop_eadv,adv_handle");
+	AT_PRINTK("[ATBX] Delete one extended adv set:ATBX=remove_eadv,adv_handle");
+	AT_PRINTK("[ATBX] clear all extended adv set:ATBX=clear_eadv");
+	AT_PRINTK("[ATBX] set extended adv data:ATBX=eadv_data,adv_handle,len");
+	AT_PRINTK("[ATBX] set extended adv scan rsp data:ATBX=escanrsp_data,adv_handle,len");
+	AT_PRINTK("[ATBX] eg:ATBX=eadv_param,0x0,0x5,0x11,0x0,-5,0x160,0x160,0x1,223344556677,0x0,8951123628110");
+	AT_PRINTK("[ATBX] eg:ATBX=eadv_param,0x0,0x0,0x13,0x0,-5,0x160,0x160");
+	AT_PRINTK("[ATBX] eg:ATBX=start_eadv,0x0");
+	AT_PRINTK("[ATBX] eg:ATBX=stop_eadv,0x0");
+	AT_PRINTK("[ATBX] eg:ATBX=remove_eadv,0x0");
+	AT_PRINTK("[ATBX] eg:ATBX=clear_eadv");
+	AT_PRINTK("[ATBX] set extended adv data:ATBX=eadv_data,0x0,0x6");
+	AT_PRINTK("[ATBX] set extended adv scan rsp data:ATBX=escanrsp_data,0x0,0x6");
+}
 #endif
 
 #if ((defined(CONFIG_BT_CENTRAL) && CONFIG_BT_CENTRAL) || \
@@ -1975,6 +2097,8 @@ log_item_t at_bt_items[ ] = {
 	{"ATBn", fATBn, {NULL, NULL}}, // Modify whitelist
 	{"ATBa", fATBa, {NULL, NULL}}, // Modify scan interval/scan window
 	{"ATBg", fATBg, {NULL, NULL}}, // Set PHY 2M
+	{"ATBs", fATBs, {NULL, NULL}}, // Extended scan releated
+	{"ATBz", fATBz, {NULL, NULL}}, // Extended connect releated
 #endif
 #if ((defined(CONFIG_BT_PERIPHERAL) && CONFIG_BT_PERIPHERAL) || \
 	(defined(CONFIG_BT_MESH_PERIPHERAL) && CONFIG_BT_MESH_PERIPHERAL) || \
@@ -1986,6 +2110,7 @@ log_item_t at_bt_items[ ] = {
 	{"ATBA", fATBA, {NULL, NULL}}, // Modify adv interval
 	{"ATBe", fATBe, {NULL, NULL}}, // BLE send indiaction/notification
 	{"ATBP", fATBP, {NULL, NULL}}, // Change to pair mode in privacy
+	{"ATBX", fATBX, {NULL, NULL}}, // Extended adv releated
 #endif
 #if ((defined(CONFIG_BT_CENTRAL) && CONFIG_BT_CENTRAL) || \
 	(defined(CONFIG_BT_PERIPHERAL) && CONFIG_BT_PERIPHERAL) || \

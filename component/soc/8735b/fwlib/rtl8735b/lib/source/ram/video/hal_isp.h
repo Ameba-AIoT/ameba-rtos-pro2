@@ -190,7 +190,7 @@ typedef struct {
 
 	int *cali_iq_addr;		// Add for store input calibration iq data
 
-	int isp_tnr_en;
+	int isp_raw_mode_tnr_en;
 } __attribute__((aligned(32))) hal_isp_adapter_t;
 
 
@@ -468,8 +468,10 @@ u32 hal_isp_get_axi_buf_size(enum ISP_Buf_Cfg_Order sel);
 u32 hal_isp_get_axi_buf_addr(enum ISP_Buf_Cfg_Order sel);
 void hal_isp_set_verify_info(struct verify_ctrl_config v_cfg);
 int hal_isp_get_verify_info(struct verify_ctrl_config *v_cfg);
+int hal_isp_is_verify_path_on(void);
 void hal_isp_verify_path_config_buf(void);
 void hal_isp_verify_path_trigger(u32 delay_ms);
+int hal_isp_is_verify_path_last_trigger(void);
 int hal_isp_tuning_iq_nlsc(struct verify_ctrl_config v_cfg);
 void hal_isp_set_zoom_filter_coeff(u8* buff);
 

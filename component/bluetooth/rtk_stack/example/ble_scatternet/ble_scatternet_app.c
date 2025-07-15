@@ -33,7 +33,11 @@
 #include "gatt_builtin_services.h"
 #include "ble_central_at_cmd.h"
 #include "ble_peripheral_at_cmd.h"
-
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+#include <gap_ext_adv.h>
+#include <gap_ext_scan.h>
+#include <peripheral_app.h>
+#endif
 /** @defgroup  CENTRAL_CLIENT_APP Central Client Application
     * @brief This file handles BLE central client application routines.
     * @{
@@ -58,6 +62,9 @@ int ble_scatternet_central_app_max_links = 0;
 T_PRIVACY_STATE ble_scatternet_app_privacy_state = PRIVACY_STATE_INIT;
 T_PRIVACY_ADDR_RESOLUTION_STATE ble_scatternet_app_privacy_resolution_state = PRIVACY_ADDR_RESOLUTION_DISABLED;
 T_BLE_SCATTERNET_APP_WORK_MODE ble_scatternet_app_work_mode = BLE_SCATTERNET_APP_PAIRABLE_MODE;
+#endif
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+extern uint8_t random_update_flag;
 #endif
 /*============================================================================*
  *                              Functions
@@ -218,10 +225,18 @@ void ble_scatternet_app_handle_dev_state_evt(T_GAP_DEV_STATE new_state, uint16_t
 				   bt_addr[2],
 				   bt_addr[1],
 				   bt_addr[0]);
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+			ext_adv_start_t adv_start_param;
+			adv_start_param.adv_handle = 0;
+			adv_start_param.duration = 0;
+			adv_start_param.num_events = 0;
+			ble_peripheral_start_ext_adv(&adv_start_param);
+#else
 #if APP_PRIVACY_EN
 			ble_scatternet_app_adv_start();
 #else
 			le_adv_start();
+#endif
 #endif
 		}
 	}
@@ -287,10 +302,15 @@ void ble_scatternet_app_handle_conn_state_evt(uint8_t conn_id, T_GAP_CONN_STATE 
 ///judge the type of disconnect is central or peripheral,if peripheral,start ADV
 		if (ble_scatternet_app_link_table[conn_id].role == GAP_LINK_ROLE_SLAVE) {
 			printf("As peripheral, receive disconncect, start ADV\r\n");
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+			//uint8_t adv_handle = 0;
+			//le_ext_adv_enable(1, &adv_handle);
+#else
 #if APP_PRIVACY_EN
 			ble_scatternet_app_adv_start();
 #else
 			le_adv_start();
+#endif
 #endif
 		}
 
@@ -442,6 +462,77 @@ void ble_scatternet_app_handle_conn_param_update_evt(uint8_t conn_id, uint8_t st
 		break;
 	}
 }
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+extern ext_adv_info_t ext_adv_tbl[GAP_MAX_EXT_ADV_SETS];
+void ble_scatternet_app_handle_ext_adv_state_evt(uint8_t adv_handle, T_GAP_EXT_ADV_STATE new_state, uint16_t cause)
+{
+	uint8_t idx = 0;
+	T_GAP_EXT_ADV_STATE pre_state;
+
+	for (idx = 0; idx < GAP_MAX_EXT_ADV_SETS; idx++) {
+		if (ext_adv_tbl[idx].used &&
+			ext_adv_tbl[idx].adv_handle == adv_handle) {
+			pre_state = ext_adv_tbl[idx].ext_adv_state;
+			ext_adv_tbl[idx].ext_adv_state = new_state;
+			break;
+		}
+	}
+
+	if (idx == GAP_MAX_EXT_ADV_SETS) {
+		return;
+	}
+
+	APP_PRINT_INFO4("ble_scatternet_app_handle_ext_adv_state_evt: adv_handle 0x%x newState %d oldState %d cause 0x%x\r\n",
+					adv_handle, new_state, pre_state, cause);
+
+	if (EXT_ADV_STATE_IDLE == new_state) {
+		if (EXT_ADV_STATE_START == pre_state) {
+			printf("[ext_adv_state_evt]: Ext ADV[%d] started failed, cause: 0x%04x\r\n", adv_handle, cause);
+		} else {
+			if (cause == (HCI_ERR | HCI_ERR_OPERATION_CANCELLED_BY_HOST)) {
+				printf("[ext_adv_state_evt]:Ext ADV[%d] stop by Host\r\n", adv_handle);
+			} else if (cause == (HCI_ERR | HCI_ERR_DIRECTED_ADV_TIMEOUT) ||
+					   cause == (HCI_ERR | HCI_ERR_LIMIT_REACHED)) {
+				printf("[ext_adv_state_evt]:Ext ADV[%d] stop by duration\r\n", adv_handle);
+			} else if (cause == 0) {
+				printf("[ext_adv_state_evt]:Ext ADV[%d] stop by connection\r\n", adv_handle);
+			}
+		}
+
+	} else {
+		if (EXT_ADV_STATE_START == pre_state) {
+			printf("[ext_adv_state_evt]: Ext ADV[%d] start success\r\n", adv_handle);
+		} else if (EXT_ADV_STATE_STOP == pre_state) {
+			printf("[ext_adv_state_evt]: Ext ADV[%d] stopped failed, cause: 0x%04x\r\n", adv_handle, cause);
+		}
+	}
+}
+
+void ble_scatternet_app_handle_ext_scan_state_evt(uint8_t pre_state, uint8_t new_state, uint16_t cause)
+{
+	APP_PRINT_INFO3("ble_scatternet_app_handle_ext_scan_state_evt: oldState %d, newState %d, cause 0x%x",
+					pre_state, new_state, cause);
+	//printf("ble_scatternet_app_handle_ext_scan_state_evt: oldState %d, newState %d, cause 0x%x\r\n",
+					//pre_state, new_state, cause);
+	if (pre_state != new_state) {
+		if (GAP_SCAN_STATE_START == pre_state) {
+			if (GAP_SCAN_STATE_IDLE == new_state) {
+				printf("[ext_scan_state]Scan start fail\r\n");
+			} else if (GAP_SCAN_STATE_SCANNING == new_state) {
+				printf("[ext_scan_state]Scan start\r\n");
+			}
+		} else if (GAP_SCAN_STATE_STOP == pre_state) {
+			if (GAP_SCAN_STATE_IDLE == new_state) {
+				printf("[ext_scan_state]Scan stop\r\n");
+			} else if (GAP_SCAN_STATE_SCANNING == new_state) {
+				printf("[ext_scan_state]Scan stop fail\r\n");
+			}
+		} else if (GAP_SCAN_STATE_SCANNING == pre_state && GAP_SCAN_STATE_IDLE == new_state) {
+			printf("[ext_scan_state]Scan stop due to timeout\r\n");
+		}
+	}
+}
+#endif
 
 /**
  * @brief    All the BT GAP MSG are pre-handled in this function.
@@ -539,6 +630,14 @@ void ble_scatternet_app_handle_gap_msg(T_IO_MSG *p_gap_msg)
 		APP_PRINT_INFO1("GAP_MSG_LE_BOND_OOB_INPUT: conn_id %d", conn_id);
 		le_bond_set_param(GAP_PARAM_BOND_OOB_DATA, GAP_OOB_LEN, oob_data);
 		le_bond_oob_input_confirm(conn_id, GAP_CFM_CAUSE_ACCEPT);
+	}
+	break;
+#endif
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+	case GAP_MSG_LE_EXT_ADV_STATE_CHANGE: {
+		ble_scatternet_app_handle_ext_adv_state_evt(gap_msg.msg_data.gap_ext_adv_state_change.adv_handle,
+													(T_GAP_EXT_ADV_STATE)gap_msg.msg_data.gap_ext_adv_state_change.new_state,
+													gap_msg.msg_data.gap_ext_adv_state_change.cause);
 	}
 	break;
 #endif
@@ -718,6 +817,7 @@ void ble_scatternet_app_parse_scan_info(T_LE_SCAN_INFO *scan_info)
 T_APP_RESULT ble_scatternet_app_gap_callback(uint8_t cb_type, void *p_cb_data)
 {
 	T_APP_RESULT result = APP_RESULT_SUCCESS;
+	T_GAP_CAUSE cause = GAP_CAUSE_SUCCESS;
 	T_LE_CB_DATA *p_data = (T_LE_CB_DATA *)p_cb_data;
 	char adv_type[20];
 	char remote_addr_type[10];
@@ -805,6 +905,141 @@ T_APP_RESULT ble_scatternet_app_gap_callback(uint8_t cb_type, void *p_cb_data)
 			   p_data->p_le_modify_white_list_rsp->operation,
 			   p_data->p_le_modify_white_list_rsp->cause);
 		break;
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+	case GAP_MSG_LE_EXT_ADV_START_SETTING:
+		APP_PRINT_INFO3("GAP_MSG_LE_EXT_ADV_START_SETTING:cause 0x%x, flag 0x%x, adv_handle 0x%x",
+						p_data->p_le_ext_adv_start_setting_rsp->cause,
+						p_data->p_le_ext_adv_start_setting_rsp->flag,
+						p_data->p_le_ext_adv_start_setting_rsp->adv_handle);
+		if (GAP_SUCCESS != p_data->p_le_ext_adv_start_setting_rsp->cause) {
+			random_update_flag = 0;
+			printf("GAP_MSG_LE_EXT_ADV_START_SETTING:cause 0x%x, flag 0x%x, adv_handle 0x%x\r\n",
+					p_data->p_le_ext_adv_start_setting_rsp->cause,
+					p_data->p_le_ext_adv_start_setting_rsp->flag,
+					p_data->p_le_ext_adv_start_setting_rsp->adv_handle);
+		} else {
+			if (0 == random_update_flag) {
+				cause = le_ext_adv_enable(1, &p_data->p_le_ext_adv_start_setting_rsp->adv_handle);
+				if (cause) {
+					printf("le_ext_adv_enable cause = 0x%x \r\n", cause);
+				}
+			} else {
+				random_update_flag = 0;
+			}
+		}
+		break;
+	case GAP_MSG_LE_EXT_ADV_REMOVE_SET:
+		APP_PRINT_INFO2("GAP_MSG_LE_EXT_ADV_REMOVE_SET:cause 0x%x, adv_handle 0x%x",
+						p_data->p_le_ext_adv_remove_set_rsp->cause,
+						p_data->p_le_ext_adv_remove_set_rsp->adv_handle);
+
+		if (GAP_SUCCESS == p_data->p_le_ext_adv_remove_set_rsp->cause) {
+			for (uint8_t idx = 0; idx < GAP_MAX_EXT_ADV_SETS; idx++) {
+				if (ext_adv_tbl[idx].used &&  ext_adv_tbl[idx].adv_handle == p_data->p_le_ext_adv_remove_set_rsp->adv_handle) {
+					ext_adv_tbl[idx].used = false;
+					ext_adv_tbl[idx].adv_handle = GAP_INVALID_ADV_HANDLE;
+					ext_adv_tbl[idx].ext_adv_state = EXT_ADV_STATE_IDLE;
+				}
+			}
+		} else {
+			printf("GAP_MSG_LE_EXT_ADV_REMOVE_SET:cause 0x%x, adv_handle 0x%x\r\n",
+					p_data->p_le_ext_adv_remove_set_rsp->cause,
+				    p_data->p_le_ext_adv_remove_set_rsp->adv_handle);
+		}
+		break;
+	case GAP_MSG_LE_EXT_ADV_CLEAR_SET:
+		APP_PRINT_INFO1("GAP_MSG_LE_EXT_ADV_CLEAR_SET:cause 0x%x",
+						p_data->p_le_ext_adv_clear_set_rsp->cause);
+
+		if (GAP_SUCCESS == p_data->p_le_ext_adv_clear_set_rsp->cause) {
+			for (uint8_t idx = 0; idx < GAP_MAX_EXT_ADV_SETS; idx++) {
+				if (ext_adv_tbl[idx].used) {
+					ext_adv_tbl[idx].used = false;
+					ext_adv_tbl[idx].adv_handle = GAP_INVALID_ADV_HANDLE;
+					ext_adv_tbl[idx].ext_adv_state = EXT_ADV_STATE_IDLE;
+				}
+			}
+		} else {
+			printf("GAP_MSG_LE_EXT_ADV_CLEAR_SET:cause 0x%x\r\n",
+					p_data->p_le_ext_adv_clear_set_rsp->cause);
+		}
+		break;
+	case GAP_MSG_LE_EXT_ADV_ENABLE:
+		APP_PRINT_INFO1("GAP_MSG_LE_EXT_ADV_ENABLE:cause 0x%x",
+						p_data->le_cause.cause);
+		printf("GAP_MSG_LE_EXT_ADV_ENABLE:cause 0x%x\r\n",
+						p_data->le_cause.cause);
+		break;
+	case GAP_MSG_LE_EXT_ADV_DISABLE:
+		APP_PRINT_INFO1("GAP_MSG_LE_EXT_ADV_DISABLE:cause 0x%x",
+						p_data->le_cause.cause);
+		printf("GAP_MSG_LE_EXT_ADV_DISABLE:cause 0x%x\r\n",
+						p_data->le_cause.cause);
+		break;
+	case GAP_MSG_LE_EXT_ADV_STATE_CHANGE_INFO:
+		{
+			ble_scatternet_app_handle_ext_adv_state_evt(p_data->p_le_ext_adv_state_change_info->adv_handle,
+														(T_GAP_EXT_ADV_STATE)p_data->p_le_ext_adv_state_change_info->state,
+														p_data->p_le_ext_adv_state_change_info->cause);
+		}
+		break;
+	case GAP_MSG_LE_EXT_SCAN_STATE_CHANGE_INFO:
+        {
+			uint8_t pre_scan_state = ble_scatternet_gap_dev_state.gap_scan_state;
+			ble_scatternet_gap_dev_state.gap_scan_state = p_data->p_le_ext_scan_state_change_info->state;
+            ble_scatternet_app_handle_ext_scan_state_evt(pre_scan_state,
+														p_data->p_le_ext_scan_state_change_info->state,
+                                          				p_data->p_le_ext_scan_state_change_info->cause);
+        }
+        	break;
+	case GAP_MSG_LE_EXT_ADV_REPORT_INFO:
+		APP_PRINT_INFO6("GAP_MSG_LE_EXT_ADV_REPORT_INFO:connectable %d, scannable %d, direct %d, scan response %d, legacy %d, data status 0x%x",
+						p_data->p_le_ext_adv_report_info->event_type & GAP_EXT_ADV_REPORT_BIT_CONNECTABLE_ADV,
+						p_data->p_le_ext_adv_report_info->event_type & GAP_EXT_ADV_REPORT_BIT_SCANNABLE_ADV,
+						p_data->p_le_ext_adv_report_info->event_type & GAP_EXT_ADV_REPORT_BIT_DIRECTED_ADV,
+						p_data->p_le_ext_adv_report_info->event_type & GAP_EXT_ADV_REPORT_BIT_SCAN_RESPONSE,
+						p_data->p_le_ext_adv_report_info->event_type & GAP_EXT_ADV_REPORT_BIT_USE_LEGACY_ADV,
+						p_data->p_le_ext_adv_report_info->data_status);
+		APP_PRINT_INFO5("GAP_MSG_LE_EXT_ADV_REPORT_INFO:event_type 0x%x, bd_addr %s, addr_type %d, rssi %d, data_len %d",
+						p_data->p_le_ext_adv_report_info->event_type,
+						TRACE_BDADDR(p_data->p_le_ext_adv_report_info->bd_addr),
+						p_data->p_le_ext_adv_report_info->addr_type,
+						p_data->p_le_ext_adv_report_info->rssi,
+						p_data->p_le_ext_adv_report_info->data_len);
+		if ((p_data->p_le_ext_adv_report_info->event_type & GAP_EXT_ADV_REPORT_BIT_USE_LEGACY_ADV) == 0) {
+		APP_PRINT_INFO5("GAP_MSG_LE_EXT_ADV_REPORT_INFO:primary_phy %d, secondary_phy %d, adv_sid %d, tx_power %d, peri_adv_interval %d",
+						p_data->p_le_ext_adv_report_info->primary_phy,
+						p_data->p_le_ext_adv_report_info->secondary_phy,
+						p_data->p_le_ext_adv_report_info->adv_sid,
+						p_data->p_le_ext_adv_report_info->tx_power,
+						p_data->p_le_ext_adv_report_info->peri_adv_interval);
+		}
+		if (p_data->p_le_ext_adv_report_info->event_type & GAP_EXT_ADV_REPORT_BIT_DIRECTED_ADV) {
+		APP_PRINT_INFO2("GAP_MSG_LE_EXT_ADV_REPORT_INFO:direct_addr_type 0x%x, direct_addr %s",
+						p_data->p_le_ext_adv_report_info->direct_addr_type,
+						TRACE_BDADDR(p_data->p_le_ext_adv_report_info->direct_addr));
+		}
+
+		#if 0
+		/* If you want to parse the ext scan info, please reference function ble_central_app_parse_ext_scan_info. */
+		sprintf(ext_adv_type, "%s", (p_data->p_le_ext_adv_report_info->event_type == GAP_EXT_ADV_REPORT_BIT_CONNECTABLE_ADV) ? "CON_UNDIRECT" :
+				(p_data->p_le_ext_adv_report_info->event_type == GAP_EXT_ADV_REPORT_BIT_SCANNABLE_ADV) ? "SCANABLE_UNDIRECT" :
+				(p_data->p_le_ext_adv_report_info->event_type == GAP_EXT_ADV_REPORT_BIT_DIRECTED_ADV) ? "DIRECT" :
+				(p_data->p_le_ext_adv_report_info->event_type == GAP_EXT_ADV_REPORT_BIT_SCAN_RESPONSE) ? "SCAN_RSP" :
+				(p_data->p_le_ext_adv_report_info->event_type == GAP_EXT_ADV_REPORT_BIT_USE_LEGACY_ADV) ? "LEGACY_ADV" : "unknown");
+		sprintf(addr_type, "%s", (p_data->p_le_ext_adv_report_info->addr_type == GAP_REMOTE_ADDR_LE_PUBLIC) ? "public" :
+				(p_data->p_le_ext_adv_report_info->addr_type == GAP_REMOTE_ADDR_LE_RANDOM) ? "random" : "unknown");
+		printf("ADVType\t\t\t| AddrType\t|%s\t\t\t|rssi\r\n", "BT_Addr");
+		printf("%s\t\t%s\t"BD_ADDR_FMT"\t%d\r\n", ext_adv_type, addr_type, BD_ADDR_ARG(p_data->p_le_ext_adv_report_info->bd_addr),
+			   p_data->p_le_ext_adv_report_info->rssi);
+		ble_central_app_parse_ext_scan_info(p_data->p_le_ext_adv_report_info);
+		#endif
+		printf("Ext Scan info, [Device]:"BD_ADDR_FMT", AD evt type: 0x%x, RSSI: %d, PHY: 0x%x, TxPower: %d, Len: %d\r\n",
+			   BD_ADDR_ARG(p_data->p_le_ext_adv_report_info->bd_addr), p_data->p_le_ext_adv_report_info->event_type, p_data->p_le_ext_adv_report_info->rssi,
+			   (p_data->p_le_ext_adv_report_info->primary_phy << 4) | p_data->p_le_ext_adv_report_info->secondary_phy,
+			   p_data->p_le_ext_adv_report_info->tx_power, p_data->p_le_ext_adv_report_info->data_len);
+		break;
+#endif
 #if APP_PRIVACY_EN
 	case GAP_MSG_LE_BOND_MODIFY_INFO:
 		APP_PRINT_INFO1("GAP_MSG_LE_BOND_MODIFY_INFO: type 0x%x",

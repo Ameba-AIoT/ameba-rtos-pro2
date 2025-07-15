@@ -4,6 +4,7 @@
 #include "ftl_common_api.h"
 #include "video_boot.h"
 #include "ai_glass_dbg.h"
+#include "isp_ctrl_api.h"
 
 #define OPEN_CHANNEL        0
 #define OPEN_STREAM         STREAM_V1
@@ -736,11 +737,38 @@ int media_update_life_snapshot_params(const ai_glass_snapshot_param_t *params)
 	return MEDIA_FAIL;
 }
 
+void media_update_preinit_isp_data(video_pre_init_params_t *isp_data)
+{
+	memcpy(&ai_glass_pre_init_params, isp_data, sizeof(video_pre_init_params_t));
+}
+void media_get_preinit_isp_data(video_pre_init_params_t *isp_data)
+{
+	memcpy(isp_data, &ai_glass_pre_init_params, sizeof(video_pre_init_params_t));
+}
+void media_update_preinit_isp_ae(void)
+{
+	int ae_exposure_time = 0;
+	int ae_gain = 0;
+	isp_get_exposure_time(&ae_exposure_time);
+	isp_get_ae_gain(&ae_gain);
+	ai_glass_pre_init_params.isp_ae_init_exposure = ae_exposure_time;
+	ai_glass_pre_init_params.isp_ae_init_gain = ae_gain;
+}
+void media_update_preinit_isp_awb(void)
+{
+	int awb_rgain = 0;
+	int awb_bgain = 0;
+	isp_get_red_balance(&awb_rgain);
+	isp_get_blue_balance(&awb_bgain);
+	ai_glass_pre_init_params.isp_awb_init_rgain = awb_rgain;
+	ai_glass_pre_init_params.isp_awb_init_bgain = awb_bgain;
+}
 void initial_media_parameters(void)
 {
 	video_boot_stream_t *isp_fcs_info;
 	video_get_fcs_info(&isp_fcs_info);//Get the fcs info
 	int voe_heap_size = 0;
+	video_pre_init_params_t pre_init_params = {0};
 
 	if (isp_fcs_info->fcs_status) {
 		// the isp has been set up when fcs, please set up isp in the fcs status
@@ -756,6 +784,21 @@ void initial_media_parameters(void)
 		video_fake_params.gop = isp_fcs_info->video_params[OPEN_STREAM].gop;
 		video_fake_ctx = mm_module_open(&video_module);
 		if (video_fake_ctx) {
+			mm_module_ctrl(video_fake_ctx, CMD_VIDEO_GET_PRE_INIT_PARM, (int)&pre_init_params);
+			pre_init_params.isp_init_enable = 1;
+			pre_init_params.init_isp_items.init_brightness = 0;
+			pre_init_params.init_isp_items.init_contrast = 50;
+			pre_init_params.init_isp_items.init_flicker = 1;
+			pre_init_params.init_isp_items.init_hdr_mode = 0;
+			pre_init_params.init_isp_items.init_mirrorflip = 0xf0; // flip and mirror
+			pre_init_params.init_isp_items.init_saturation = 50;
+			pre_init_params.init_isp_items.init_wdr_level = 50;
+			pre_init_params.init_isp_items.init_wdr_mode = 2;
+			pre_init_params.init_isp_items.init_mipi_mode = 0;
+			pre_init_params.voe_dbg_disable = !APP_VOE_LOG_EN;
+			// Since the fcs has open the channl, we do not need to apply the preinit setting again
+			media_update_preinit_isp_data(&pre_init_params);
+
 			mm_module_ctrl(video_fake_ctx, CMD_VIDEO_SET_PARAMS, (int)&video_fake_params);
 			mm_module_ctrl(video_fake_ctx, MM_CMD_SET_QUEUE_LEN, 60);
 			mm_module_ctrl(video_fake_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
@@ -775,20 +818,22 @@ void initial_media_parameters(void)
 		video_fake_params.gop = isp_fcs_info->video_params[OPEN_STREAM].gop;
 		video_fake_ctx = mm_module_open(&video_module);
 		if (video_fake_ctx) {
-			mm_module_ctrl(video_fake_ctx, CMD_VIDEO_GET_PRE_INIT_PARM, (int)&ai_glass_pre_init_params);
+			mm_module_ctrl(video_fake_ctx, CMD_VIDEO_GET_PRE_INIT_PARM, (int)&pre_init_params);
+			pre_init_params.isp_init_enable = 1;
+			pre_init_params.init_isp_items.init_brightness = 0;
+			pre_init_params.init_isp_items.init_contrast = 50;
+			pre_init_params.init_isp_items.init_flicker = 1;
+			pre_init_params.init_isp_items.init_hdr_mode = 0;
+			pre_init_params.init_isp_items.init_mirrorflip = 0xf0; // no flip and no mirror
+			pre_init_params.init_isp_items.init_saturation = 50;
+			pre_init_params.init_isp_items.init_wdr_level = 50;
+			pre_init_params.init_isp_items.init_wdr_mode = 2;
+			pre_init_params.init_isp_items.init_mipi_mode = 0;
+			pre_init_params.voe_dbg_disable = !APP_VOE_LOG_EN;
 			// Init ISP parameters
-			ai_glass_pre_init_params.isp_init_enable = 1;
-			ai_glass_pre_init_params.init_isp_items.init_brightness = 0;
-			ai_glass_pre_init_params.init_isp_items.init_contrast = 50;
-			ai_glass_pre_init_params.init_isp_items.init_flicker = 1;
-			ai_glass_pre_init_params.init_isp_items.init_hdr_mode = 0;
-			ai_glass_pre_init_params.init_isp_items.init_mirrorflip = 0xf3; // flip and mirror
-			ai_glass_pre_init_params.init_isp_items.init_saturation = 50;
-			ai_glass_pre_init_params.init_isp_items.init_wdr_level = 50;
-			ai_glass_pre_init_params.init_isp_items.init_wdr_mode = 2;
-			ai_glass_pre_init_params.init_isp_items.init_mipi_mode = 0;
-			mm_module_ctrl(video_fake_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&ai_glass_pre_init_params);
+			mm_module_ctrl(video_fake_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&pre_init_params);
 
+			media_update_preinit_isp_data(&pre_init_params);
 			mm_module_ctrl(video_fake_ctx, CMD_VIDEO_SET_PARAMS, (int)&video_fake_params);
 			mm_module_ctrl(video_fake_ctx, MM_CMD_SET_QUEUE_LEN, 60);
 			mm_module_ctrl(video_fake_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
@@ -825,6 +870,9 @@ void initial_media_parameters(void)
 void deinitial_media(void)
 {
 	if (video_fake_ctx) {
+		// Update AE and AWB when closing the channel
+		media_update_preinit_isp_ae();
+		media_update_preinit_isp_awb();
 		mm_module_ctrl(video_fake_ctx, CMD_VIDEO_STREAM_STOP, OPEN_CHANNEL);
 		mm_module_close(video_fake_ctx);
 		video_fake_ctx = NULL;

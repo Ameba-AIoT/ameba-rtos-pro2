@@ -160,6 +160,7 @@ typedef struct jpeg_crop_parm_s {
 #define MASK_RECT_ID_1 0X02
 #define MASK_RECT_ID_2 0X03
 #define MASK_RECT_ID_3 0X04
+#define USE_VIDEO_HR_FLOW 0
 typedef struct video_pre_init_params_s {
 	uint32_t meta_enable;
 	uint32_t meta_size;
@@ -196,9 +197,14 @@ typedef struct video_pre_init_params_s {
 	uint32_t video_meta_extend_total_size;//the extend meta total size
 	uint32_t meta_enable_extend;//Add the 3A info at I frame
 	uint32_t meta_gop_duration;//Setup times to the I frame by gop duration.
-	
-	uint32_t first_raw_enable;
-	struct verify_ctrl_config *v_cfg;
+
+#if USE_VIDEO_HR_FLOW
+	//only use for high resolution flow.
+	uint32_t isp_init_raw; //enable first image in raw format
+	uint32_t isp_raw_mode_tnr_dis; //disable isp tnr function
+	struct verify_ctrl_config *v_cfg; //verify seqeunce dirver config
+	uint8_t *zoom_coef; //work around.
+#endif
 } video_pre_init_params_t;
 
 typedef struct private_mask_single_s {

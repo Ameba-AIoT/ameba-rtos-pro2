@@ -952,16 +952,20 @@ int wifi_wowlan_set_wdt(u8  gpio,
 extern void rtw_set_bcn_track(u8  start_window,
 							  u16  max_window,
 							  u8  increment_steps,
-							  u8  duration);
+							  u8  duration,
+							  u8  null_num,
+							  u8  loop_num);
 
 
 int wifi_wowlan_set_bcn_track(u8  start_window,
 							  u16  max_window,
 							  u8  increment_steps,
-							  u8  duration)
+							  u8  duration,
+							  u8  null_num,
+							  u8  loop_num)
 {
 	int ret = 0;
-	rtw_set_bcn_track(start_window, max_window, increment_steps, duration);
+	rtw_set_bcn_track(start_window, max_window, increment_steps, duration, null_num, loop_num);
 	return ret;
 }
 
@@ -1180,9 +1184,26 @@ int wifi_set_dhcp_offload(void)
 	dhcprenew_msg->options[0] = 0x35;
 	dhcprenew_msg->options[1] = 0x1;
 	dhcprenew_msg->options[2] = 0x3;
-	dhcprenew_msg->options[3] = 0xFF;
+	dhcprenew_msg->options[3] = 0x39;
+	dhcprenew_msg->options[4] = 0x2;
+	dhcprenew_msg->options[5] = 0x5;
+	dhcprenew_msg->options[6] = 0xdc;
+	dhcprenew_msg->options[7] = 0x37;
+	dhcprenew_msg->options[8] = 0x4;
+	dhcprenew_msg->options[9] = 0x1;
+	dhcprenew_msg->options[10] = 0x3;
+	dhcprenew_msg->options[11] = 0x1c;
+	dhcprenew_msg->options[12] = 0x6;
+	dhcprenew_msg->options[13] = 0xc;
+	dhcprenew_msg->options[14] = 0x5;
+	dhcprenew_msg->options[15] = 0x6c;
+	dhcprenew_msg->options[16] = 0x77;
+	dhcprenew_msg->options[17] = 0x69;
+	dhcprenew_msg->options[18] = 0x70;
+	dhcprenew_msg->options[19] = 0x30;
+	dhcprenew_msg->options[20] = 0xFF;
 
-	len = 244;
+	len = 261;
 	dhcp_payload = (uint8_t *)dhcprenew_msg;
 
 	// ip header
@@ -1219,7 +1240,6 @@ int wifi_set_dhcp_offload(void)
 	ip_header[11] = (uint8_t)(ip_checksum16 & 0xff);
 
 	// pseudo header
-#if 0
 	uint8_t pseudo_header[12] = {/*srcip*/ 0x00, 0x00, 0x00, 0x00 /*srcip*/, /*dstip*/ 0x00, 0x00, 0x00, 0x00 /*dstip*/,
 										   0x00, /*protocol*/ 0x00 /*protocol*/, /*l4len*/ 0x00, 0x00 /*l4len*/
 								};
@@ -1239,7 +1259,7 @@ int wifi_set_dhcp_offload(void)
 	uint16_t l4_len = 8 + len;
 	pseudo_header[10] = (uint8_t)(l4_len >> 8);
 	pseudo_header[11] = (uint8_t)(l4_len & 0xff);
-#endif
+
 	// udp header
 	uint8_t udp_header[8] = {/*srcport*/ 0x00, 0x44 /*srcport*/, /*dstport*/ 0x00, 0x43 /*dstport*/, /*len*/ 0x00, 0x00 /*len*/, /*checksum*/ 0x00, 0x00 /*checksum*/};
 
@@ -1248,6 +1268,21 @@ int wifi_set_dhcp_offload(void)
 	udp_header[4] = (uint8_t)(udp_len >> 8);
 	udp_header[5] = (uint8_t)(udp_len & 0xff);
 
+	// udp checksum
+	int psize = sizeof(pseudo_header) + 8 + len;
+	uint8_t *udp_buf = malloc(psize);
+	uint32_t udp_checksum32 = 0;
+	uint16_t udp_checksum16 = 0;
+
+	memcpy(udp_buf, &pseudo_header, sizeof(pseudo_header));
+	memcpy(udp_buf + sizeof(pseudo_header), udp_header, 8);
+	memcpy(udp_buf + sizeof(pseudo_header) + 8, dhcp_payload, len);
+
+	udp_checksum32 = _checksum32(udp_checksum32, udp_buf, psize);
+	udp_checksum16 = _checksum32to16(udp_checksum32);
+	udp_header[6] = (uint8_t)(udp_checksum16 >> 8);
+	udp_header[7] = (uint8_t)(udp_checksum16 & 0xff);
+	free(udp_buf);
 
 	// eth header
 	uint8_t eth_header[ETH_HDR_LEN] = {/*dstaddr*/ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF /*dstaddr*/,

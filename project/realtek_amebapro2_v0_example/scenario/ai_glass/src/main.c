@@ -106,7 +106,7 @@ void log_uart_port_init(int log_uart_tx, int log_uart_rx, uint32_t baud_rate)
 
 void setup(void)
 {
-#if 0 //CONFIG_WLAN
+#if CONFIG_WLAN
 #if ENABLE_FAST_CONNECT
 	wifi_fast_connect_enable(1);
 #else

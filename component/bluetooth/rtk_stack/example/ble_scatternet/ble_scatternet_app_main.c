@@ -44,6 +44,12 @@
 #include "bas.h"
 #include "rtk_coex.h"
 #include <simple_ble_service.h>
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+#include <gap_ext_adv.h>
+#include <gap_ext_scan.h>
+#include <ble_central_client_app.h>
+#include <peripheral_app.h>
+#endif
 
 /** @defgroup  CENTRAL_CLIENT_DEMO_MAIN Central Client Main
     * @brief Main file to initialize hardware and BT stack and start task scheduling
@@ -86,7 +92,64 @@ static const uint8_t adv_data[] = {
 	GAP_ADTYPE_LOCAL_NAME_COMPLETE,
 	'B', 'L', 'E', '_', 'S', 'C', 'A', 'T', 'T', 'E', 'R', 'N', 'E', 'T',
 };
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+extern ext_adv_info_t ext_adv_tbl[GAP_MAX_EXT_ADV_SETS];
+static ext_scan_param_t ext_scan_param = {
+	.own_addr_type 				= GAP_LOCAL_ADDR_LE_PUBLIC,
+	.ext_scan_phys      		= {1, 1},
+	.type               		= {GAP_SCAN_MODE_ACTIVE, GAP_SCAN_MODE_ACTIVE},
+	.ext_scan_interval      	= {108, 108},
+	.ext_scan_window			= {54, 54},
+	.ext_scan_duration			= 0,
+	.ext_scan_period			= 0,
+	.ext_scan_filter_policy		= GAP_SCAN_FILTER_ANY,
+	.ext_scan_filter_duplicate	= GAP_SCAN_FILTER_DUPLICATE_ENABLE,
+};
 
+static uint8_t ext_adv_data[] = {
+	// Flags
+	0x02,
+	GAP_ADTYPE_FLAGS,
+	GAP_ADTYPE_FLAGS_LIMITED | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED,
+	// Local name
+	0x12,
+	GAP_ADTYPE_LOCAL_NAME_COMPLETE,
+	'B', 'L', 'E', '_', 'E', 'X', 'T', '_', 'A', 'D', 'V', '_','T','E','S','T','2',
+	// Manufacturer Specific Data
+	0xc3,
+	GAP_ADTYPE_MANUFACTURER_SPECIFIC,
+	0xc0, 0x00,
+	0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+	0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3,
+	0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4,
+	0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5,
+	0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6,
+	0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7,
+	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8,
+	0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9,
+	0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa,
+	0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb,
+};
+
+static ext_adv_param_t ext_adv_param = {
+	.adv_event_prop = LE_EXT_ADV_EXTENDED_ADV_CONN_UNDIRECTED,
+	.primary_adv_interval_min = 32,
+	.primary_adv_interval_max = 32,
+	.primary_adv_channel_map = GAP_ADVCHAN_ALL,
+	.own_addr_type = GAP_LOCAL_ADDR_LE_PUBLIC,
+	.own_addr = {0},
+	.peer_addr_type = GAP_REMOTE_ADDR_LE_PUBLIC,
+	.peer_addr = {0},//;{0x8A, 0xAA, 0xAA, 0x4C, 0xE0, 0x00},
+	.filter_policy = GAP_ADV_FILTER_ANY,
+	.tx_power = 0x7E,
+	.primary_adv_phy = GAP_PHYS_PRIM_ADV_1M,
+	.secondary_adv_max_skip = 0,
+	.secondary_adv_phy = GAP_PHYS_2M,
+	.adv_sid = 0,
+};
+#endif
 /** @brief  Default minimum advertising interval when device is discoverable (units of 625us, 160=100ms) */
 #define DEFAULT_ADVERTISING_INTERVAL_MIN            352 //220ms
 /** @brief  Default maximum advertising interval */
@@ -122,22 +185,6 @@ void ble_scatternet_app_le_gap_init(void)
 	uint8_t  device_name[GAP_DEVICE_NAME_LEN] = "BLE_SCATTERNET";
 	uint16_t appearance = GAP_GATT_APPEARANCE_UNKNOWN;
 
-	/* Advertising parameters */
-	uint8_t  adv_evt_type = GAP_ADTYPE_ADV_IND;
-	uint8_t  adv_direct_type = GAP_REMOTE_ADDR_LE_PUBLIC;
-	uint8_t  adv_direct_addr[GAP_BD_ADDR_LEN] = {0};
-	uint8_t  adv_chann_map = GAP_ADVCHAN_ALL;
-	uint8_t  adv_filter_policy = GAP_ADV_FILTER_ANY;
-	uint16_t adv_int_min = DEFAULT_ADVERTISING_INTERVAL_MIN;
-	uint16_t adv_int_max = DEFAULT_ADVERTISING_INTERVAL_MAX;
-
-	/* Scan parameters */
-	uint8_t  scan_mode = GAP_SCAN_MODE_ACTIVE;
-	uint16_t scan_interval = DEFAULT_SCAN_INTERVAL;
-	uint16_t scan_window = DEFAULT_SCAN_WINDOW;
-	uint8_t  scan_filter_policy = GAP_SCAN_FILTER_ANY;
-	uint8_t  scan_filter_duplicate = GAP_SCAN_FILTER_DUPLICATE_ENABLE;
-
 	/* GAP Bond Manager parameters */
 	uint8_t  auth_pair_mode = GAP_PAIRING_MODE_PAIRABLE;
 	uint16_t auth_flags = GAP_AUTHEN_BIT_BONDING_FLAG;
@@ -149,10 +196,21 @@ void ble_scatternet_app_le_gap_init(void)
 	uint32_t auth_fix_passkey = 0;
 	uint8_t  auth_sec_req_enable = false;
 	uint16_t auth_sec_req_flags = GAP_AUTHEN_BIT_BONDING_FLAG;
-
-	/* Set device name and device appearance */
-	le_set_gap_param(GAP_PARAM_DEVICE_NAME, GAP_DEVICE_NAME_LEN, device_name);
-	le_set_gap_param(GAP_PARAM_APPEARANCE, sizeof(appearance), &appearance);
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+	uint8_t adv_handle = 0;
+	ble_peripheral_init_ext_adv();
+	ble_peripheral_create_ext_adv(&ext_adv_param, &adv_handle);
+	ble_peripheral_set_ext_adv_data(adv_handle, sizeof(ext_adv_data), ext_adv_data);
+	printf("Ext adv_handle %d\r\n", adv_handle);
+#else
+	/* Advertising parameters */
+	uint8_t  adv_evt_type = GAP_ADTYPE_ADV_IND;
+	uint8_t  adv_direct_type = GAP_REMOTE_ADDR_LE_PUBLIC;
+	uint8_t  adv_direct_addr[GAP_BD_ADDR_LEN] = {0};
+	uint8_t  adv_chann_map = GAP_ADVCHAN_ALL;
+	uint8_t  adv_filter_policy = GAP_ADV_FILTER_ANY;
+	uint16_t adv_int_min = DEFAULT_ADVERTISING_INTERVAL_MIN;
+	uint16_t adv_int_max = DEFAULT_ADVERTISING_INTERVAL_MAX;
 
 	/* Set advertising parameters */
 	le_adv_set_param(GAP_PARAM_ADV_EVENT_TYPE, sizeof(adv_evt_type), &adv_evt_type);
@@ -164,6 +222,18 @@ void ble_scatternet_app_le_gap_init(void)
 	le_adv_set_param(GAP_PARAM_ADV_INTERVAL_MAX, sizeof(adv_int_max), &adv_int_max);
 	le_adv_set_param(GAP_PARAM_ADV_DATA, sizeof(adv_data), (void *)adv_data);
 	le_adv_set_param(GAP_PARAM_SCAN_RSP_DATA, sizeof(scan_rsp_data), (void *)scan_rsp_data);
+#endif
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT	
+	/* Ext scan parameters */
+	le_ext_scan_gap_msg_info_way(false);
+	ble_central_set_ext_scan_param(&ext_scan_param);
+#else
+	/* Scan parameters */
+	uint8_t  scan_mode = GAP_SCAN_MODE_ACTIVE;
+	uint16_t scan_interval = DEFAULT_SCAN_INTERVAL;
+	uint16_t scan_window = DEFAULT_SCAN_WINDOW;
+	uint8_t  scan_filter_policy = GAP_SCAN_FILTER_ANY;
+	uint8_t  scan_filter_duplicate = GAP_SCAN_FILTER_DUPLICATE_ENABLE;
 
 	/* Set scan parameters */
 	le_scan_set_param(GAP_PARAM_SCAN_MODE, sizeof(scan_mode), &scan_mode);
@@ -173,6 +243,10 @@ void ble_scatternet_app_le_gap_init(void)
 					  &scan_filter_policy);
 	le_scan_set_param(GAP_PARAM_SCAN_FILTER_DUPLICATES, sizeof(scan_filter_duplicate),
 					  &scan_filter_duplicate);
+#endif
+	/* Set device name and device appearance */
+	le_set_gap_param(GAP_PARAM_DEVICE_NAME, GAP_DEVICE_NAME_LEN, device_name);
+	le_set_gap_param(GAP_PARAM_APPEARANCE, sizeof(appearance), &appearance);
 
 	/* Setup the GAP Bond Manager */
 	gap_set_param(GAP_PARAM_BOND_PAIRING_MODE, sizeof(auth_pair_mode), &auth_pair_mode);
@@ -324,6 +398,9 @@ int ble_scatternet_app_init(void)
 extern void gcs_delete_client(void);
 void ble_scatternet_app_deinit(void)
 {
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+	memset((void *)ext_adv_tbl, 0, sizeof(ext_adv_info_t) * GAP_MAX_EXT_ADV_SETS);
+#endif
 	ble_scatternet_app_task_deinit();
 	T_GAP_DEV_STATE state;
 	le_get_gap_param(GAP_PARAM_DEV_STATE, &state);

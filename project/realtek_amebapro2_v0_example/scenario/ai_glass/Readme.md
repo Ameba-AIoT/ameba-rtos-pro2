@@ -1,12 +1,12 @@
 
 # Realtek SDK Scenario #
 
-This scenario serves as a template for AI glass scenario
+This scenario is intended for a templete for ai glass scenario
 
 ## Scenario information ##
 
-- AI glass scenario template
-- This template provides sample code for users to perform uart communication, video snapshot, video recording, wifi connectivity and file management
+- ai glass scenario templete
+- This templete shows samples for user to do uart communication, video snapshot, video recording, wifi and file management
 
 ## Update in SDK ##
 
@@ -72,7 +72,7 @@ This scenario serves as a template for AI glass scenario
 		.resolution = 0,
 		.width = sensor_params[USE_SENSOR].sensor_width,
 		.height = sensor_params[USE_SENSOR].sensor_height,
-		.bps = 12 * 1024 * 1024, // extend to a larger size
+		.bps = 20 * 1024 * 1024,
 		.fps = sensor_params[USE_SENSOR].sensor_fps,
 		.gop = sensor_params[USE_SENSOR].sensor_fps,
 		.rc_mode = 2,
@@ -95,18 +95,11 @@ This scenario serves as a template for AI glass scenario
 	video_boot_stream.init_isp_items.init_contrast = 50;     //Default:50
 	video_boot_stream.init_isp_items.init_flicker = 1;        //Default:1
 	video_boot_stream.init_isp_items.init_hdr_mode = 0;       //Default:0
-	video_boot_stream.init_isp_items.init_mirrorflip = 0xf0;  //No flip and no mirror
+	video_boot_stream.init_isp_items.init_mirrorflip = 0xf0;  //Mirror and flip
 	video_boot_stream.init_isp_items.init_saturation = 50;    //Default:50
 	video_boot_stream.init_isp_items.init_wdr_level = 50;     //Default:50
 	video_boot_stream.init_isp_items.init_wdr_mode = 2;       //Default:0
 	video_boot_stream.init_isp_items.init_mipi_mode = 0;	  //Default:0
-Note init_mirrorflip is the isp default mirror or flip:
-0xf0: no flip and no mirror
-0xf1: flip
-0xf2: mirror
-0xf3: flip and mirror
-for example:
-	video_boot_stream.init_isp_items.init_mirrorflip = 0xf3;  //flip and mirror
 
 5. \project\realtek_amebapro2_v0_example\inc\sensor.h
 - in sensor_params, modify [SENSOR_SC5356]       = {2592, 1944, 24},
@@ -213,3 +206,30 @@ Note: this baudrate will have strong influence to the process time but need to s
 - HTTP_PORT: the port when open http as server, default 8080
 - HTTPS_PORT: the port when open https as server, default 8080
 - HTTP_OTA_TEST: enable simple OTA flow for 8735
+
+## 12M Sensor Init Configuration ##
+
+1. Please modify sensor driver setting and enable FCS bootup.
+	project\realtek_amebapro2_v0_example\inc\sensor.h
+	static const unsigned char sen_id[SENSOR_MAX] = {
+		SENSOR_DUMMY,
+		SENSOR_IMX681,
+		SENSOR_IMX681_12M,
+		SENSOR_IMX681_12M_SEQ,
+	};
+	#define USE_SENSOR      	SENSOR_IMX681
+	static const      char manual_iq[SENSOR_MAX][64] = {
+		"iq",
+		"iq_imx681",
+		"iq_imx681_12m",
+		"iq_imx681_12m_seq",
+	};
+	#define ENABLE_FCS      	1
+
+2. Please enable video high resolution settings.
+	component\video\driver\RTL8735B\video_api.h
+	#define USE_VIDEO_HR_FLOW 1
+
+3. Disable OSD function
+	component\media\mmfv2\module_video.c
+	#define OSD_ENABLE 0

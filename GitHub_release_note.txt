@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: f11ec09d9ee47b572a91426f013df05600e84abc
+* [amebapro2][ai glass] add 12M snapshot and recording flow
+
 SHA-1: 46ed9f03df916dd7c890d380c1362e2064bf907e
 * [amebapro2][sdk] correct gps parser flow
 * with patch 0001-amebapro2-sdk-optimize-the-ai-glass-process

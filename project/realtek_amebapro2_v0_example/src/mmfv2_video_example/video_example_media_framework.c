@@ -71,6 +71,9 @@ static void example_mmf2_video_surport(void)
 
 	// CH1 Video -> H264/HEVC -> RTSP + SNAPSHOT
 	//mmf2_video_example_v1_shapshot_init();
+	
+	// CH1 Video -> SNAPSHOT
+	//mmf2_video_example_v1_snapshot_hr_init();
 
 	// 1 Video (H264/HEVC) -> 2 RTSP (V1, V2)
 	//mmf2_video_example_simo_init();

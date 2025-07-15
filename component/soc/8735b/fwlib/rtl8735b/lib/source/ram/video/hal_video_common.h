@@ -573,7 +573,7 @@ typedef struct {
 
 	u8 *manual_zoom_filter_coef;
 
-	u32 isp_tnr_dis;
+	u32 isp_raw_mode_tnr_dis;
 
 	u32 rsvd[26];   //When add new element, please reduce same rsvd size
 

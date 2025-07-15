@@ -44,7 +44,9 @@
 #include "rtk_coex.h"
 #include "gatt_builtin_services.h"
 #include "vendor_cmd.h"
-
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+#include <gap_ext_adv.h>
+#endif
 /** @defgroup  PERIPH_DEMO_MAIN Peripheral Main
     * @brief Main file to initialize hardware and BT stack and start task scheduling
     * @{
@@ -87,7 +89,52 @@ static const uint8_t adv_data[] = {
 	GAP_ADTYPE_LOCAL_NAME_COMPLETE,
 	'B', 'L', 'E', '_', 'P', 'E', 'R', 'I', 'P', 'H', 'E', 'R', 'A', 'L',
 };
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+extern ext_adv_info_t ext_adv_tbl[GAP_MAX_EXT_ADV_SETS];
+static uint8_t ext_adv_data[] = {
+	// Flags
+	0x02,
+	GAP_ADTYPE_FLAGS,
+	GAP_ADTYPE_FLAGS_LIMITED | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED,
+	// Local name
+	0x12,
+	GAP_ADTYPE_LOCAL_NAME_COMPLETE,
+	'B', 'L', 'E', '_', 'E', 'X', 'T', '_', 'A', 'D', 'V', '_','T','E','S','T','1',
+	// Manufacturer Specific Data
+	0xc3,
+	GAP_ADTYPE_MANUFACTURER_SPECIFIC,
+	0xc0, 0x00,
+	0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+	0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3,
+	0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4,
+	0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5,
+	0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6,
+	0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7,
+	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8,
+	0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9,
+	0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa,
+	0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb,
+};
 
+static ext_adv_param_t ext_adv_param = {
+	.adv_event_prop = LE_EXT_ADV_EXTENDED_ADV_CONN_UNDIRECTED,
+	.primary_adv_interval_min = 32,
+	.primary_adv_interval_max = 32,
+	.primary_adv_channel_map = GAP_ADVCHAN_ALL,
+	.own_addr_type = GAP_LOCAL_ADDR_LE_PUBLIC,
+	.own_addr = {0},
+	.peer_addr_type = GAP_REMOTE_ADDR_LE_PUBLIC,
+	.peer_addr = {0},//;{0x8A, 0xAA, 0xAA, 0x4C, 0xE0, 0x00},
+	.filter_policy = GAP_ADV_FILTER_ANY,
+	.tx_power = -15,
+	.primary_adv_phy = GAP_PHYS_PRIM_ADV_1M,
+	.secondary_adv_max_skip = 0,
+	.secondary_adv_phy = GAP_PHYS_2M,
+	.adv_sid = 0,
+};
+#endif
 #if ((LEGACY_ADV_CONCURRENT == 1) && (F_BT_LE_USE_RANDOM_ADDR == 1))
 extern uint8_t local_static_random_addr[6];
 #endif
@@ -119,16 +166,6 @@ void app_le_gap_init(void)
 	uint16_t appearance = GAP_GATT_APPEARANCE_UNKNOWN;
 	uint8_t  slave_init_mtu_req = false;
 
-
-	/* Advertising parameters */
-	uint8_t  adv_evt_type = GAP_ADTYPE_ADV_IND;
-	uint8_t  adv_direct_type = GAP_REMOTE_ADDR_LE_PUBLIC;
-	uint8_t  adv_direct_addr[GAP_BD_ADDR_LEN] = {0};
-	uint8_t  adv_chann_map = GAP_ADVCHAN_ALL;
-	uint8_t  adv_filter_policy = GAP_ADV_FILTER_ANY;
-	uint16_t adv_int_min = DEFAULT_ADVERTISING_INTERVAL_MIN;
-	uint16_t adv_int_max = DEFAULT_ADVERTISING_INTERVAL_MAX;
-
 	/* GAP Bond Manager parameters */
 	uint8_t  auth_pair_mode = GAP_PAIRING_MODE_PAIRABLE;
 	uint16_t auth_flags = GAP_AUTHEN_BIT_BONDING_FLAG;
@@ -146,6 +183,21 @@ void app_le_gap_init(void)
 	le_set_gap_param(GAP_PARAM_APPEARANCE, sizeof(appearance), &appearance);
 	le_set_gap_param(GAP_PARAM_SLAVE_INIT_GATT_MTU_REQ, sizeof(slave_init_mtu_req),
 					 &slave_init_mtu_req);
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+	uint8_t adv_handle = 0;
+	ble_peripheral_init_ext_adv();
+	ble_peripheral_create_ext_adv(&ext_adv_param, &adv_handle);
+	ble_peripheral_set_ext_adv_data(adv_handle, sizeof(ext_adv_data), ext_adv_data);
+	printf("Ext adv_handle %d\r\n", adv_handle);
+#else
+	/* Advertising parameters */
+	uint8_t  adv_evt_type = GAP_ADTYPE_ADV_IND;
+	uint8_t  adv_direct_type = GAP_REMOTE_ADDR_LE_PUBLIC;
+	uint8_t  adv_direct_addr[GAP_BD_ADDR_LEN] = {0};
+	uint8_t  adv_chann_map = GAP_ADVCHAN_ALL;
+	uint8_t  adv_filter_policy = GAP_ADV_FILTER_ANY;
+	uint16_t adv_int_min = DEFAULT_ADVERTISING_INTERVAL_MIN;
+	uint16_t adv_int_max = DEFAULT_ADVERTISING_INTERVAL_MAX;
 
 	/* Set advertising parameters */
 	le_adv_set_param(GAP_PARAM_ADV_EVENT_TYPE, sizeof(adv_evt_type), &adv_evt_type);
@@ -157,7 +209,7 @@ void app_le_gap_init(void)
 	le_adv_set_param(GAP_PARAM_ADV_INTERVAL_MAX, sizeof(adv_int_max), &adv_int_max);
 	le_adv_set_param(GAP_PARAM_ADV_DATA, sizeof(adv_data), (void *)adv_data);
 	le_adv_set_param(GAP_PARAM_SCAN_RSP_DATA, sizeof(scan_rsp_data), (void *)scan_rsp_data);
-
+#endif
 	/* Setup the GAP Bond Manager */
 	gap_set_param(GAP_PARAM_BOND_PAIRING_MODE, sizeof(auth_pair_mode), &auth_pair_mode);
 	gap_set_param(GAP_PARAM_BOND_AUTHEN_REQUIREMENTS_FLAGS, sizeof(auth_flags), &auth_flags);
@@ -352,6 +404,9 @@ extern T_GAP_DEV_STATE gap_dev_state;
 
 void ble_app_deinit(void)
 {
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+	memset((void *)ext_adv_tbl, 0, sizeof(ext_adv_info_t) * GAP_MAX_EXT_ADV_SETS);
+#endif
 	app_task_deinit();
 
 	T_GAP_DEV_STATE state;

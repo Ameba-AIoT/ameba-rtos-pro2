@@ -4,6 +4,8 @@
 #include <platform_stdlib.h>
 #include "platform_opts.h"
 #include "wifi_structures.h"
+#include "wifi_fast_connect.h"
+#include "system_data_api.h"
 
 // Static IP ADDRESS for AI glass
 #define AI_GLASS_AP_IP_ADDR0    192

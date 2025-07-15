@@ -1060,6 +1060,10 @@ int wifi_get_ap_setting(rtw_softap_info_t *wifi_cfg)
 // TODO function to enable station mode and at the same time start the http server
 int wifi_enable_sta_mode(rtw_network_info_t *connect_param, int timeout, int retry)
 {
+	struct wlan_fast_reconnect read_data = {0};
+	/* get last time fast connect info from flash */
+	memset(&read_data, 0xff, sizeof(struct wlan_fast_reconnect));
+	sys_read_wlan_data_from_flash((uint8_t *) &read_data,  sizeof(struct wlan_fast_reconnect));
 	WLAN_SCEN_MSG("AI glass deinit dhcps %lu\r\n", mm_read_mediatime_ms());
 	dhcps_deinit();
 	WLAN_SCEN_MSG("AI glass wifi_enable_station_mode %lu\r\n", mm_read_mediatime_ms());
@@ -1086,16 +1090,17 @@ int wifi_enable_sta_mode(rtw_network_info_t *connect_param, int timeout, int ret
 
 	wifi_config_autoreconnect_ms(1, retry, timeout);
 
-	wifi_connect(connect_param, 1);
+	if (strcmp((const char *) read_data.psk_essid, (const char *) connect_param->ssid.val) != 0) {
+		wifi_connect(connect_param, 1);
 
-	WLAN_SCEN_MSG("wifi_connect cmd done %lu\r\n", mm_read_mediatime_ms());
+		WLAN_SCEN_MSG("wifi_connect cmd done %lu\r\n", mm_read_mediatime_ms());
 
-	WLAN_SCEN_MSG("LwIP_DHCP start %lu\r\n", mm_read_mediatime_ms());
-	LwIP_DHCP(0, DHCP_START);
-	WLAN_SCEN_MSG("LwIP_DHCP start done %lu\r\n", mm_read_mediatime_ms());
+		WLAN_SCEN_MSG("LwIP_DHCP start %lu\r\n", mm_read_mediatime_ms());
+		LwIP_DHCP(0, DHCP_START);
+		WLAN_SCEN_MSG("LwIP_DHCP start done %lu\r\n", mm_read_mediatime_ms());
 
-	WLAN_SCEN_MSG("Connecting to station... %lu\r\n", mm_read_mediatime_ms());
-
+		WLAN_SCEN_MSG("Connecting to station... %lu\r\n", mm_read_mediatime_ms());
+	}
 	WLAN_SCEN_MSG("STA mode start done\r\n");
 	//ensure terminate signal is 0
 	terminate_signal = 0;

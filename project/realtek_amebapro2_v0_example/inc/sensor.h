@@ -74,7 +74,13 @@ struct sensor_params_t {
 #define SENSOR_K306P          0x33  //  |   v    |   -    |   -    |   -    |
 #define SENSOR_OV9734_SD      0x34  //  |   v    |   -    |   v    |   -    |
 #define SENSOR_IMX471         0x35  //  |   v    |   v    |   v    |   -    |
-#define SENSOR_IMX681         0x36  //  |   v    |   v    |   v    |   -    |
+#define SENSOR_IMX471_12M     0x36  //  |   v    |   -    |   v    |   -    |
+#define SENSOR_IMX471_12M_SEQ 0x37  //  |   v    |   -    |   v    |   -    |
+#define SENSOR_IMX681         0x38  //  |   v    |   v    |   v    |   -    |
+#define SENSOR_IMX681_12M     0x39  //  |   v    |   -    |   v    |   -    |
+#define SENSOR_IMX681_12M_SEQ 0x3A  //  |   v    |   -    |   v    |   -    |
+#define SENSOR_FIXP_5M        0x3B  //  |   v    |   -    |   -    |   -    |
+#define SENSOR_FIXP_2K        0x3C  //  |   v    |   -    |   -    |   -    |
 
 static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_DUMMY]        = {1920, 1080, 30},
@@ -131,7 +137,13 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_K306P]        = {2560, 1440, 24},
 	[SENSOR_OV9734_SD]    = { 640,  360, 60},
 	[SENSOR_IMX471]       = {2304, 1728, 24},
+	[SENSOR_IMX471_12M]       = {4032, 3024, 5},
+	[SENSOR_IMX471_12M_SEQ]   = {2032, 3024, 5}, //width = 2016 + 16(overlap)
 	[SENSOR_IMX681]       = {2000, 1500, 30},
+	[SENSOR_IMX681_12M]       = {4016, 3008, 4},
+	[SENSOR_IMX681_12M_SEQ]   = {2032, 3008, 4}, //width = 2008 + 24(overlap)
+	[SENSOR_FIXP_5M]        = {2592, 1944, 30}, //fix pattern
+	[SENSOR_FIXP_2K]        = {2560, 1440, 30},
 };
 
 #define SENSOR_MAX         5

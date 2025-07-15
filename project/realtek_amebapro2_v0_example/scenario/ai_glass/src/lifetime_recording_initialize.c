@@ -15,6 +15,7 @@
 #include "ai_glass_media.h"
 #include "media_filesystem.h"
 #include "ai_glass_dbg.h"
+#include "ai_glass_media.h"
 
 // Definition of the audio interfcae
 #define I2S_INTERFACE           0
@@ -755,18 +756,7 @@ int lifetime_recording_initialize(uint8_t record_filename_length, const char *fi
 	video_pre_init_params_t ai_glass_pre_init_params = {0};
 	lr_video_ctx = mm_module_open(&video_module);
 	if (lr_video_ctx) {
-		mm_module_ctrl(lr_video_ctx, CMD_VIDEO_GET_PRE_INIT_PARM, (int)&ai_glass_pre_init_params);
-		// Init ISP parameters
-		ai_glass_pre_init_params.isp_init_enable = 1;
-		ai_glass_pre_init_params.init_isp_items.init_brightness = 0;
-		ai_glass_pre_init_params.init_isp_items.init_contrast = 50;
-		ai_glass_pre_init_params.init_isp_items.init_flicker = 1;
-		ai_glass_pre_init_params.init_isp_items.init_hdr_mode = 0;
-		ai_glass_pre_init_params.init_isp_items.init_mirrorflip = 0xf3; // flip and mirror
-		ai_glass_pre_init_params.init_isp_items.init_saturation = 50;
-		ai_glass_pre_init_params.init_isp_items.init_wdr_level = 50;
-		ai_glass_pre_init_params.init_isp_items.init_wdr_mode = 2;
-		ai_glass_pre_init_params.init_isp_items.init_mipi_mode = 0;
+		media_get_preinit_isp_data(&ai_glass_pre_init_params);
 		mm_module_ctrl(lr_video_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&ai_glass_pre_init_params);
 
 		mm_module_ctrl(lr_video_ctx, CMD_VIDEO_SET_PARAMS, (int)&lr_video_params);

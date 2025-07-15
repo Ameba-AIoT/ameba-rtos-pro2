@@ -4,6 +4,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "sensor.h"
+#include "video_api.h"
 
 /**
 * Nor Flash Address To Store Snapshot/Record data
@@ -95,8 +96,8 @@ typedef struct ai_glass_snapshot_param_s {
 #define MAX_LIFESNAP_HEIGHT         sensor_params[USE_SENSOR].sensor_height
 #define MAX_AISNAP_WIDTH            sensor_params[USE_SENSOR].sensor_width
 #define MAX_AISNAP_HEIGHT           sensor_params[USE_SENSOR].sensor_height
-#define MAX_RECORD_WIDTH            ((sensor_params[USE_SENSOR].sensor_width > WIDTH_2K) ? WIDTH_2K : sensor_params[USE_SENSOR].sensor_width)
-#define MAX_RECORD_HEIGHT           ((sensor_params[USE_SENSOR].sensor_height > HEIGHT_2K) ? HEIGHT_2K : sensor_params[USE_SENSOR].sensor_height)
+#define MAX_RECORD_WIDTH            sensor_params[USE_SENSOR].sensor_width
+#define MAX_RECORD_HEIGHT           sensor_params[USE_SENSOR].sensor_height
 #define MAX_RECORD_BPS              (12*1024*1024)
 #define MIN_RECORD_BPS              (512*1024)
 #define MAX_RECORD_FPS              sensor_params[USE_SENSOR].sensor_fps
@@ -107,8 +108,8 @@ typedef struct ai_glass_snapshot_param_s {
 #define MIN_RECORD_RECTIME          10
 
 #define DEFAULT_RECORD_TYPE         VIDEO_H264
-#define DEFAULT_RECORD_WIDTH        ((sensor_params[USE_SENSOR].sensor_width > WIDTH_2K) ? WIDTH_2K : sensor_params[USE_SENSOR].sensor_width)
-#define DEFAULT_RECORD_HEIGHT       ((sensor_params[USE_SENSOR].sensor_height > HEIGHT_2K) ? HEIGHT_2K : sensor_params[USE_SENSOR].sensor_height)
+#define DEFAULT_RECORD_WIDTH        sensor_params[USE_SENSOR].sensor_width
+#define DEFAULT_RECORD_HEIGHT       sensor_params[USE_SENSOR].sensor_height
 #define DEFAULT_RECORD_BPS          (2*1024*1024)
 #define DEFAULT_RECORD_FPS          24
 #define DEFAULT_RECORD_GOP          24
@@ -147,6 +148,10 @@ void print_record_data(const ai_glass_record_param_t *params);
 void print_snapshot_data(const ai_glass_snapshot_param_t *params);
 void initial_media_parameters(void);
 void deinitial_media(void);
+void media_update_preinit_isp_data(video_pre_init_params_t *isp_data);
+void media_get_preinit_isp_data(video_pre_init_params_t *isp_data);
+void media_update_preinit_isp_ae(void);
+void media_update_preinit_isp_awb(void);
 
 // ai snapshot
 int ai_snapshot_initialize(void);
@@ -156,6 +161,7 @@ int ai_snapshot_deinitialize(void);
 // life snapshot
 int lifetime_snapshot_initialize(void);
 int lifetime_snapshot_take(const char *file_name);
+int lifetime_highres_save(const char *file_name);
 int lifetime_snapshot_deinitialize(void);
 
 // life recording
