@@ -18,7 +18,10 @@
 #include "profile_server.h"
 #include "os_mem.h"
 #include "basic_types.h"
-
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+#include "gap_ext_adv.h"
+#include <peripheral_app.h>
+#endif
 #if defined(CONFIG_BT_PERIPHERAL) && CONFIG_BT_PERIPHERAL
 extern void *evt_queue_handle;
 extern void *io_queue_handle;
@@ -377,7 +380,263 @@ int ble_peripheral_change_to_pair_mode(int argc, char **argv)
 }
 #endif
 #endif
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+static uint8_t def_ext_adv_data[] = {
+	// Flags
+	0x02,
+	GAP_ADTYPE_FLAGS,
+	GAP_ADTYPE_FLAGS_LIMITED | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED,
+	// Local name
+	0x12,
+	GAP_ADTYPE_LOCAL_NAME_COMPLETE,
+	'R', 'T', 'K', '_', 'B', 'T', '_', 'A', 'D', 'V', '_', 'T', 'E', 'S', 'T', '_', '1',
+	// Manufacturer Specific Data
+	0xd8,
+	GAP_ADTYPE_MANUFACTURER_SPECIFIC,
+	0xd5, 0x00,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0xf, 0xf, 0xf, 0xf, 0xf,
+};
 
+static uint8_t def_ext_scan_response[] = {
+	//GAP_ADTYPE_APPEARANCE
+	0x3,
+	GAP_ADTYPE_APPEARANCE,
+	LO_WORD(GAP_GATT_APPEARANCE_UNKNOWN),
+	HI_WORD(GAP_GATT_APPEARANCE_UNKNOWN),
+	// Manufacturer Specific Data
+	0xf6,
+	GAP_ADTYPE_MANUFACTURER_SPECIFIC,
+	0x5d, 0x00,
+	0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+	0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1,
+	0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2, 0x2,
+	0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3, 0x3,
+	0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4,
+	0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5, 0x5,
+	0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6, 0x6,
+	0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7, 0x7,
+	0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8, 0x8,
+	0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9, 0x9,
+	0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa, 0xa,
+	0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb,
+	0xc, 0xc, 0xc, 0xc, 0xc, 0xc, 0xc, 0xc, 0xc, 0xc, 0xc, 0xc, 0xc, 0xc, 0xc, 0xc,
+	0xd, 0xd, 0xd, 0xd, 0xd, 0xd, 0xd, 0xd, 0xd, 0xd, 0xd, 0xd, 0xd, 0xd, 0xd, 0xd,
+	0xe, 0xe, 0xe, 0xe, 0xe, 0xe, 0xe, 0xe, 0xe, 0xe, 0xe, 0xe, 0xe, 0xe, 0xe, 0xe,
+	0xf, 0xf, 0xf,
+};
+
+static ext_adv_param_t def_ext_adv_param = {
+	.adv_event_prop = LE_EXT_ADV_EXTENDED_ADV_CONN_UNDIRECTED,
+	.primary_adv_interval_min = 320,
+	.primary_adv_interval_max = 320,
+	.primary_adv_channel_map = GAP_ADVCHAN_ALL,
+	.own_addr_type = GAP_LOCAL_ADDR_LE_PUBLIC,
+	.own_addr = {0},
+	.peer_addr_type = GAP_REMOTE_ADDR_LE_PUBLIC,
+	.peer_addr = {0},//;{0x8A, 0xAA, 0xAA, 0x4C, 0xE0, 0x00},
+	.filter_policy = GAP_ADV_FILTER_ANY,
+	.tx_power = 0x7E,
+	.primary_adv_phy = GAP_PHYS_PRIM_ADV_1M,
+	.secondary_adv_max_skip = 0,
+	.secondary_adv_phy = GAP_PHYS_2M,
+	.adv_sid = 0,
+};
+
+static u8 hex_str_to_bd_addr(u32 str_len, s8 *str, u8 *num_arr)
+{
+	num_arr += str_len / 2 - 1;
+	u32 n = 0;
+	u8 num = 0;
+
+	if (str_len < 2) {
+		return FALSE;
+	}
+	while (n < str_len) {
+		if ((num = ctoi(str[n++])) == 0xFF) {
+			return FALSE;
+		}
+		*num_arr = num << 4;
+		if ((num = ctoi(str[n++])) == 0xFF) {
+			return FALSE;
+		}
+		*num_arr |= num;
+		num_arr--;
+	}
+	return TRUE;
+}
+
+void ble_peripheral_at_cmd_op_eadv(int argc, char **argv)
+{
+	uint8_t adv_handle;
+	uint8_t phy;
+	T_GAP_CAUSE cause = GAP_CAUSE_SUCCESS;
+	ext_adv_param_t adv_param;
+	ext_adv_create_t adv_create_param;
+	uint8_t update_flags = EXT_ADV_SET_ADV_PARAS | EXT_ADV_SET_ADV_DATA | EXT_ADV_SET_SCAN_RSP_DATA | EXT_ADV_SET_RANDOM_ADDR;
+
+	if(strcmp(argv[1], "eadv_param") == 0){      //config ext adv parameter
+		memcpy(&adv_param, &def_ext_adv_param, sizeof(ext_adv_param_t));
+
+		if (argc > 2) {
+			adv_param.adv_sid = hex_str_to_int(strlen(argv[2]), (s8 *) argv[2]);
+			if (0x0F < adv_param.adv_sid) {
+				printf("invalid adv_sid %d\r\n", adv_param.adv_sid);
+				return;
+			}
+		}
+		if (argc > 3) {
+			adv_param.adv_event_prop = (T_LE_EXT_ADV_EXTENDED_ADV_PROPERTY)hex_str_to_int(strlen(argv[3]), (s8 *) argv[3]);
+			if (LE_EXT_ADV_EXTENDED_ADV_NON_SCAN_NON_CONN_UNDIRECTED != adv_param.adv_event_prop &&
+			LE_EXT_ADV_EXTENDED_ADV_NON_SCAN_NON_CONN_DIRECTED != adv_param.adv_event_prop &&
+			LE_EXT_ADV_EXTENDED_ADV_CONN_UNDIRECTED != adv_param.adv_event_prop &&
+			LE_EXT_ADV_EXTENDED_ADV_CONN_DIRECTED != adv_param.adv_event_prop &&
+			LE_EXT_ADV_EXTENDED_ADV_SCAN_UNDIRECTED != adv_param.adv_event_prop &&
+			LE_EXT_ADV_EXTENDED_ADV_SCAN_DIRECTED != adv_param.adv_event_prop &&
+			LE_EXT_ADV_LEGACY_ADV_CONN_SCAN_UNDIRECTED != adv_param.adv_event_prop &&
+			LE_EXT_ADV_LEGACY_ADV_CONN_LOW_DUTY_DIRECTED != adv_param.adv_event_prop &&
+			LE_EXT_ADV_LEGACY_ADV_CONN_HIGH_DUTY_DIRECTED != adv_param.adv_event_prop &&
+			LE_EXT_ADV_LEGACY_ADV_SCAN_UNDIRECTED != adv_param.adv_event_prop &&
+			LE_EXT_ADV_LEGACY_ADV_NON_SCAN_NON_CONN_UNDIRECTED != adv_param.adv_event_prop) {
+			printf("invalid adv_event_prop %d\r\n", adv_param.adv_event_prop);
+				return;
+			}
+		}
+		if (argc > 4) {
+			phy = hex_str_to_int(strlen(argv[4]), (s8 *) argv[4]);
+			adv_param.primary_adv_phy = (T_GAP_PHYS_PRIM_ADV_TYPE)((phy >> 4) & 0xF);
+			adv_param.secondary_adv_phy = (T_GAP_PHYS_TYPE)(phy & 0xF);
+			if (GAP_PHYS_PRIM_ADV_1M != adv_param.primary_adv_phy && GAP_PHYS_PRIM_ADV_CODED != adv_param.primary_adv_phy) {
+				printf("invalid primary adv phy %d phy 0x%x\r\n", adv_param.primary_adv_phy, phy);
+				return;
+			}
+			if (GAP_PHYS_1M != adv_param.secondary_adv_phy && GAP_PHYS_2M != adv_param.secondary_adv_phy && GAP_PHYS_CODED != adv_param.secondary_adv_phy) {
+				printf("invalid secondary_adv_phy %d phy 0x%x\r\n", adv_param.secondary_adv_phy, phy);
+				return;
+			}
+		}
+		if (argc > 5) {
+			adv_param.filter_policy = (T_GAP_ADV_FILTER_POLICY)hex_str_to_int(strlen(argv[5]), (s8 *) argv[5]);
+			if (GAP_ADV_FILTER_WHITE_LIST_ALL < adv_param.filter_policy) {
+				printf("invalid adv_param.filter_policy %d\r\n", adv_param.filter_policy);
+				return;
+			}
+		}
+		if (argc > 6) {
+			adv_param.tx_power = (int8_t)atoi(argv[6]);
+		}
+		if (argc > 7) {
+			adv_param.primary_adv_interval_min = hex_str_to_int(strlen(argv[7]), (s8 *) argv[7]);
+			adv_param.primary_adv_interval_max = hex_str_to_int(strlen(argv[8]), (s8 *) argv[8]);
+			if (0x0020 > adv_param.primary_adv_interval_min) {
+				printf("invalid primary_adv_interval_min %ld\r\n", adv_param.primary_adv_interval_min);
+				return;
+			}
+			if (0x0020 > adv_param.primary_adv_interval_max || adv_param.primary_adv_interval_max < adv_param.primary_adv_interval_min) {
+				printf("invalid primary_adv_interval_max %ld\r\n", adv_param.primary_adv_interval_max);
+				return;
+			}
+		}
+
+		if (argc > 9) {
+			adv_param.own_addr_type = (T_GAP_LOCAL_ADDR_TYPE)hex_str_to_int(strlen(argv[9]), (s8 *) argv[9]);
+			if (GAP_LOCAL_ADDR_LE_RAP_OR_RAND < adv_param.own_addr_type) {
+				printf("invalid own_addr_type %d\r\n", adv_param.own_addr_type);
+				return;
+			}
+			if (GAP_LOCAL_ADDR_LE_RANDOM == adv_param.own_addr_type) {
+				if (false == hex_str_to_bd_addr(strlen(argv[10]), (s8 *)argv[10], (u8 *)adv_param.own_addr)) {
+					return;
+				}
+			}
+		}
+		if (argc > 11) {
+			adv_param.peer_addr_type = (T_GAP_REMOTE_ADDR_TYPE)hex_str_to_int(strlen(argv[11]), (s8 *) argv[11]);
+			if (GAP_REMOTE_ADDR_LE_RANDOM_IDENTITY < adv_param.peer_addr_type) {
+				printf("invalid peer_addr_type %d\r\n", adv_param.peer_addr_type);
+				return;
+			}
+			if (false == hex_str_to_bd_addr(strlen(argv[12]), (s8 *)argv[12], (u8 *)adv_param.peer_addr)) {
+				return;
+			}
+		}
+
+		ble_peripheral_create_ext_adv(&adv_param, &adv_handle);
+		printf("Ext adv_handle %d\r\n", adv_handle);
+	} else if(strcmp(argv[1], "remove_eadv") == 0){        //remove an ext advertising set by adv handle
+		if (argc != 3) {
+			printf("[remove_eadv]invalid argc num %d\r\n", argc);
+			return;
+		}
+		adv_handle = hex_str_to_int(strlen(argv[2]), (s8 *) argv[2]);
+		ble_peripheral_remove_ext_adv_set(adv_handle);
+	} else if (strcmp(argv[1], "clear_eadv") == 0) {			//remove all ext advertising set
+		if (argc != 2) {
+			printf("[clear_eadv]invalid argc num %d\r\n", argc);
+			return;
+		}
+		ble_peripheral_clear_all_ext_adv_set();
+	} else if(strcmp(argv[1], "stop_eadv") == 0){   		//stop ext adv
+		if (argc != 3) {
+			printf("[stop_eadv]invalid argc num %d\r\n", argc);
+			return;
+		}
+		adv_handle = hex_str_to_int(strlen(argv[2]), (s8 *) argv[2]);
+		ble_peripheral_stop_ext_adv(adv_handle);
+	} else if(strcmp(argv[1], "start_eadv") == 0) {			//start ext adv
+		ext_adv_start_t adv_start_param = {0,0};
+		if (argc < 2 || argc > 5) {
+			printf("[ext_adv_start]invalid argc num %d\r\n", argc);
+			return;
+		}
+		adv_start_param.adv_handle = hex_str_to_int(strlen(argv[2]), (s8 *) argv[2]);
+		if (!ble_peripheral_app_gap_ext_adv_handle_valid(adv_start_param.adv_handle)) {
+			printf("invalid ext adv handle %d\r\n", adv_start_param.adv_handle);
+			return;
+		}
+		if (argc > 3) {
+			adv_start_param.duration = hex_str_to_int(strlen(argv[3]), (s8 *) argv[3]);
+		}
+		if (argc > 4) {
+			adv_start_param.num_events = hex_str_to_int(strlen(argv[4]), (s8 *) argv[4]);
+		}
+		ble_peripheral_start_ext_adv(&adv_start_param);
+	} else if (strcmp(argv[1], "eadv_data") == 0) {
+		if (argc != 4) {
+			printf("[eadv_data]invalid argc num %d\r\n", argc);
+			return;
+		}
+		adv_handle = hex_str_to_int(strlen(argv[2]), (s8 *) argv[2]);
+		uint8_t *pdata = (uint8_t *)def_ext_adv_data;
+		uint16_t len = sizeof(def_ext_adv_data);
+		len = hex_str_to_int(strlen(argv[3]), (s8 *) argv[3]);
+		ble_peripheral_set_ext_adv_data(adv_handle, len, pdata);
+	} else if (strcmp(argv[1], "escanrsp_data") == 0) {
+		if (argc != 4) {
+			printf("[escanrsp_data]invalid argc num %d\r\n", argc);
+			return;
+		}
+		adv_handle = hex_str_to_int(strlen(argv[2]), (s8 *) argv[2]);
+		uint8_t *pdata = (uint8_t *)def_ext_scan_response;
+		uint16_t len = sizeof(def_ext_scan_response);
+		len = hex_str_to_int(strlen(argv[3]), (s8 *) argv[3]);
+
+		ble_peripheral_set_ext_scan_rsp_data(adv_handle, len, pdata);
+	}
+}
+#endif
 int ble_peripheral_app_handle_at_cmd(uint16_t subtype, void *arg)
 {
 #if SUPPORT_LOG_SERVICE
@@ -407,6 +666,11 @@ int ble_peripheral_app_handle_at_cmd(uint16_t subtype, void *arg)
 	case BT_ATCMD_CHANGE_TO_PAIR_MODE:
 #if APP_PRIVACY_EN
 		ble_peripheral_change_to_pair_mode(argc, argv);
+#endif
+		break;
+		case BT_ATCMD_OP_EXT_ADV:
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+		ble_peripheral_at_cmd_op_eadv(argc, argv);
 #endif
 		break;
 	default:

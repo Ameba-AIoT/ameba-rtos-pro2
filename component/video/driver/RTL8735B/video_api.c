@@ -69,7 +69,10 @@ static int fcs_queue_start_time = 0;
 static int fcs_queue_end_time = 0;
 static video_pre_init_params_t video_pre_init_param = {
 	.voe_dbg_disable = !APP_VOE_LOG_EN,
+#if USE_VIDEO_HR_FLOW
 	.v_cfg = NULL,
+	.zoom_coef = NULL,
+#endif
 };
 
 //Video boot config//
@@ -173,7 +176,8 @@ void video_mpu_trigger(void)
 }
 #endif
 
-void video_set_isp_ch_buf(int ch, int slot_num) {
+void video_set_isp_ch_buf(int ch, int slot_num)
+{
 	video_dprintf(VIDEO_LOG_INF, "modify ch%d slot num %d\r\n", ch, slot_num);
 	isp_ch_buf_num[ch] = slot_num;
 }
@@ -275,7 +279,7 @@ static void video_output_cb(void *param1, void  *param2, uint32_t arg)
 	int ch = enc2out->ch;
 	voe_info.ch_info[ch].incb = 1;
 
-	if(voe_info.ch_info[ch].video_output_cb) {
+	if (voe_info.ch_info[ch].video_output_cb) {
 		voe_info.ch_info[ch].video_output_cb(param1, param2, arg);
 	} else {
 		temp_output_cb(param1, param2, arg);
@@ -283,7 +287,7 @@ static void video_output_cb(void *param1, void  *param2, uint32_t arg)
 
 	if (enc2out->codec & CODEC_H264 || enc2out->codec & CODEC_HEVC) {
 		video_rc_callback(ch, voe_info.ch_info[ch].bps_stbl_ctrl, enc2out->enc_len);
-	} else if(enc2out->codec & CODEC_JPEG){
+	} else if (enc2out->codec & CODEC_JPEG) {
 		video_rc_callback(ch, voe_info.ch_info[ch].bps_stbl_ctrl, enc2out->jpg_len);
 	}
 	voe_info.ch_info[ch].incb = 0;
@@ -505,7 +509,7 @@ int video_ctrl(int ch, int cmd, int arg)
 	case VIDEO_ISPFPS: {
 		int video_type = voe_info.ch_info[ch].param->type;
 		ret = hal_video_set_isp_stream_fps(ch, arg);
-		if(ret == OK) {
+		if (ret == OK) {
 			voe_info.ch_info[ch].isp_fps = arg;
 		}
 		if (video_type != VIDEO_NV12 && video_type != VIDEO_NV16 && video_type != VIDEO_RGB) {
@@ -589,39 +593,53 @@ int video_ctrl(int ch, int cmd, int arg)
 	return ret;
 }
 
-int video_bps_stbl_ctrl_en(int ch, int enable)
+static int video_bps_stbl_ctrl_deinit(int ch)
 {
-	if(enable) {
-		if(voe_info.ch_info[ch].bps_stbl_ctrl) {
-			bps_stbl_ctrl_t *bps_stbl_ctrl = voe_info.ch_info[ch].bps_stbl_ctrl;
-			bps_stbl_ctrl->en = 1;
-			video_dprintf(VIDEO_LOG_INF, "fps stage %u, %u, %u\r\n", bps_stbl_ctrl->fps_stage[0], bps_stbl_ctrl->fps_stage[1], bps_stbl_ctrl->fps_stage[2]);
-			video_dprintf(VIDEO_LOG_INF, "gop stage %u, %u, %u\r\n", bps_stbl_ctrl->gop_stage[0], bps_stbl_ctrl->gop_stage[1], bps_stbl_ctrl->gop_stage[2]);
-		} else {
-			video_dprintf(VIDEO_LOG_ERR, "ch%d set bps stbl parameter before enable\r\n", ch);
-			return NOK;
-		}
-	} else {
-		if(voe_info.ch_info[ch].bps_stbl_ctrl) {
-			free(voe_info.ch_info[ch].bps_stbl_ctrl);
-			voe_info.ch_info[ch].bps_stbl_ctrl = NULL;
-		}
+	if (voe_info.ch_info[ch].bps_stbl_ctrl) {
+		free(voe_info.ch_info[ch].bps_stbl_ctrl);
+		voe_info.ch_info[ch].bps_stbl_ctrl = NULL;
 	}
 	return OK;
 }
 
-int video_set_bps_stbl_ctrl_params(int ch, bps_stbl_ctrl_param_t *bps_stbl_ctrl_param, uint32_t* fps_stage, uint32_t* gop_stage)
+static int video_bps_stbl_ctrl_init(int ch)
 {
-	if(voe_info.ch_info[ch].bps_stbl_ctrl == NULL) {
-		voe_info.ch_info[ch].bps_stbl_ctrl = malloc(sizeof(bps_stbl_ctrl_t));
-		if(voe_info.ch_info[ch].bps_stbl_ctrl == NULL) {
+	voe_info.ch_info[ch].bps_stbl_ctrl = malloc(sizeof(bps_stbl_ctrl_t));
+	if (voe_info.ch_info[ch].bps_stbl_ctrl == NULL) {
+		video_dprintf(VIDEO_LOG_ERR, "ch%d failed to create bps_stbl_ctrl\r\n", ch);
+		return NOK;
+	}
+	memset(voe_info.ch_info[ch].bps_stbl_ctrl, 0, sizeof(bps_stbl_ctrl_t));
+	return OK;
+}
+
+int video_bps_stbl_ctrl_en(int ch, int enable)
+{
+	if (voe_info.ch_info[ch].bps_stbl_ctrl == NULL) {
+		video_dprintf(VIDEO_LOG_ERR, "ch%d set bps stbl parameter before enable\r\n", ch);
+		return NOK;
+	}
+	bps_stbl_ctrl_t *bps_stbl_ctrl = voe_info.ch_info[ch].bps_stbl_ctrl;
+	if (enable) {
+		bps_stbl_ctrl->en = 1;
+		video_dprintf(VIDEO_LOG_INF, "fps stage %u, %u, %u\r\n", bps_stbl_ctrl->fps_stage[0], bps_stbl_ctrl->fps_stage[1], bps_stbl_ctrl->fps_stage[2]);
+		video_dprintf(VIDEO_LOG_INF, "gop stage %u, %u, %u\r\n", bps_stbl_ctrl->gop_stage[0], bps_stbl_ctrl->gop_stage[1], bps_stbl_ctrl->gop_stage[2]);
+	} else {
+		bps_stbl_ctrl->en = 0;
+	}
+	return OK;
+}
+
+int video_set_bps_stbl_ctrl_params(int ch, bps_stbl_ctrl_param_t *bps_stbl_ctrl_param, uint32_t *fps_stage, uint32_t *gop_stage)
+{
+	if (voe_info.ch_info[ch].bps_stbl_ctrl == NULL) {
+		if (video_bps_stbl_ctrl_init(ch) == NOK) {
 			video_dprintf(VIDEO_LOG_ERR, "ch%d failed to create bps_stbl_ctrl\r\n", ch);
 			return NOK;
 		}
-		memset(voe_info.ch_info[ch].bps_stbl_ctrl, 0, sizeof(bps_stbl_ctrl_t));
 	}
 	bps_stbl_ctrl_t *bps_stbl_ctrl = voe_info.ch_info[ch].bps_stbl_ctrl;
-	if(bps_stbl_ctrl_param) {
+	if (bps_stbl_ctrl_param) {
 		int rcMode = voe_info.ch_info[ch].param->rc_mode - 1;
 		if (rcMode) { //VBR
 			bps_stbl_ctrl->params.minimum_bitrate = bps_stbl_ctrl_param->minimum_bitrate / 2;
@@ -637,10 +655,10 @@ int video_set_bps_stbl_ctrl_params(int ch, bps_stbl_ctrl_param_t *bps_stbl_ctrl_
 		bps_stbl_ctrl->stats_info.sum_sr = 0;
 		bps_stbl_ctrl->stats_info.cnt_sr = 0;
 	}
-	if(fps_stage) {
+	if (fps_stage) {
 		memcpy(bps_stbl_ctrl->fps_stage, fps_stage, sizeof(bps_stbl_ctrl->fps_stage));
 	}
-	if(gop_stage) {
+	if (gop_stage) {
 		memcpy(bps_stbl_ctrl->gop_stage, gop_stage, sizeof(bps_stbl_ctrl->gop_stage));
 	}
 	return OK;
@@ -671,8 +689,8 @@ static void video_bps_stbl_ctrl_update_fps_gop(int ch, int fps, int gop)
 static int video_bps_stbl_ctrl_get_fps_stage(bps_stbl_ctrl_t *bps_stbl_ctrl)
 {
 	int cur_fps = bps_stbl_ctrl->current_framerate;
-	for(int i = 0; i < BPS_STBL_CTRL_STG_CNT; i++) {
-		if(cur_fps == bps_stbl_ctrl->fps_stage[i]) {
+	for (int i = 0; i < BPS_STBL_CTRL_STG_CNT; i++) {
+		if (cur_fps == bps_stbl_ctrl->fps_stage[i]) {
 			return i;
 		}
 	}
@@ -688,9 +706,9 @@ static void video_bps_stbl_ctrl_process(int ch, bps_stbl_ctrl_t *bps_stbl_ctrl, 
 	rate_ctrl_s rc_ctrl;
 	bps_stbl_ctrl_param_t *bps_stbl_ctrl_param = &(bps_stbl_ctrl->params);
 
-	if(frame_size == 0) {
+	if (frame_size == 0) {
 		return;
-	}	
+	}
 	bps_stbl_ctrl->current_framerate = cur_fps;
 	//calculate sample bitrate
 	bps_stbl_ctrl->stats_info.cnt_sr++;
@@ -702,20 +720,20 @@ static void video_bps_stbl_ctrl_process(int ch, bps_stbl_ctrl_t *bps_stbl_ctrl, 
 	bps_stbl_ctrl->sample_bitrate = bps_stbl_ctrl->stats_info.sum_sr * 8 / bps_stbl_ctrl->stats_info.cnt_sr * bps_stbl_ctrl->current_framerate;
 	bps_stbl_ctrl->stats_info.sum_sr = 0;
 	bps_stbl_ctrl->stats_info.cnt_sr = 0;
-	
+
 	//check if fps not manually change
-	if(atomic_load(&voe_info.ch_info[ch].rc_info->update_flag) && (voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps != voe_info.ch_info[ch].rc_info->rc_ctrl.fps)) {
+	if (atomic_load(&voe_info.ch_info[ch].rc_info->update_flag) && (voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps != voe_info.ch_info[ch].rc_info->rc_ctrl.fps)) {
 		video_dprintf(VIDEO_LOG_INF, "[%s] ch%d fps gop manual change, skip bps stable control\r\n", __FUNCTION__, ch);
 		return;
 	}
 
 	//get fps stage index
 	bps_stbl_ctrl->fps_stage_idx = video_bps_stbl_ctrl_get_fps_stage(bps_stbl_ctrl);
-	if(bps_stbl_ctrl->fps_stage_idx < 0) {
+	if (bps_stbl_ctrl->fps_stage_idx < 0) {
 		video_dprintf(VIDEO_LOG_INF, "[%s] ch%d get fps stage fail %d\r\n", __FUNCTION__, ch, cur_fps);
 		return;
 	}
-	
+
 	if (bps_stbl_ctrl->sample_bitrate > bps_stbl_ctrl_param->maximun_bitrate) {
 		//if not min fps (fps stage 0~1), cut fps, raise fps stage
 		if ((0 <= bps_stbl_ctrl->fps_stage_idx) && (bps_stbl_ctrl->fps_stage_idx <= (BPS_STBL_CTRL_STG_CNT - 2))) {
@@ -726,7 +744,7 @@ static void video_bps_stbl_ctrl_process(int ch, bps_stbl_ctrl_t *bps_stbl_ctrl, 
 				gop = (int)(bps_stbl_ctrl->gop_stage[bps_stbl_ctrl->fps_stage_idx]);
 				video_bps_stbl_ctrl_update_fps_gop(ch, fps, gop);
 				video_dprintf(VIDEO_LOG_INF, "\r\nch = %d sample rate = %ld	maximun bitrate = %ld fps = %d gop = %d\r\n",
-							   ch, bps_stbl_ctrl->sample_bitrate, bps_stbl_ctrl_param->maximun_bitrate, fps, gop);
+							  ch, bps_stbl_ctrl->sample_bitrate, bps_stbl_ctrl_param->maximun_bitrate, fps, gop);
 				bps_stbl_ctrl->switch_fps_down = 0;
 			}
 		}
@@ -740,7 +758,7 @@ static void video_bps_stbl_ctrl_process(int ch, bps_stbl_ctrl_t *bps_stbl_ctrl, 
 				gop = (int)(bps_stbl_ctrl->gop_stage[bps_stbl_ctrl->fps_stage_idx]);
 				video_bps_stbl_ctrl_update_fps_gop(ch, fps, gop);
 				video_dprintf(VIDEO_LOG_INF, "\r\nch = %d sample rate = %ld	minimum bitrate = %ld fps = %d gop = %d\r\n",
-							   ch, bps_stbl_ctrl->sample_bitrate, bps_stbl_ctrl_param->minimum_bitrate, fps, gop);
+							  ch, bps_stbl_ctrl->sample_bitrate, bps_stbl_ctrl_param->minimum_bitrate, fps, gop);
 				bps_stbl_ctrl->switch_fps_up = 0;
 			}
 		}
@@ -752,37 +770,37 @@ static void video_bps_stbl_ctrl_process(int ch, bps_stbl_ctrl_t *bps_stbl_ctrl, 
 
 static int video_rc_update_param(int ch, rate_ctrl_s *dis_rc, rate_ctrl_s *src_rc)
 {
-	if(src_rc->isp_fps) {
+	if (src_rc->isp_fps) {
 		dis_rc->isp_fps = src_rc->isp_fps;
 	}
-	if(src_rc->fps) {
+	if (src_rc->fps) {
 		dis_rc->fps = src_rc->fps;
 	}
-	if(src_rc->gop) {
+	if (src_rc->gop) {
 		dis_rc->gop = src_rc->gop;
 	}
-	if(src_rc->bps) {
+	if (src_rc->bps) {
 		dis_rc->bps = src_rc->bps;
 	}
-	if(src_rc->maxqp) {
+	if (src_rc->maxqp) {
 		dis_rc->maxqp = src_rc->maxqp;
 	}
-	if(src_rc->minqp) {
+	if (src_rc->minqp) {
 		dis_rc->minqp = src_rc->minqp;
 	}
-	if(src_rc->fixedIntraQp) {
+	if (src_rc->fixedIntraQp) {
 		dis_rc->fixedIntraQp = src_rc->fixedIntraQp;
 	}
-	if(src_rc->intraQpDelta) {
+	if (src_rc->intraQpDelta) {
 		dis_rc->intraQpDelta = src_rc->intraQpDelta;
 	}
-	if(src_rc->qpMaxI) {
+	if (src_rc->qpMaxI) {
 		dis_rc->qpMaxI = src_rc->qpMaxI;
 	}
-	if(src_rc->qpMinI) {
+	if (src_rc->qpMinI) {
 		dis_rc->qpMinI = src_rc->qpMinI;
 	}
-	if(src_rc->forcei) {
+	if (src_rc->forcei) {
 		dis_rc->forcei = src_rc->forcei;
 	}
 	return OK;
@@ -793,7 +811,7 @@ static int video_rc_init(video_params_t *video_param)
 	static char rc_version[] = "RC_v1";
 	video_dprintf(VIDEO_LOG_MSG, "rc_version %s\n", rc_version);
 	int ch = video_param->stream_id;
-	if(!voe_info.ch_info[ch].rc_info) {
+	if (!voe_info.ch_info[ch].rc_info) {
 		voe_info.ch_info[ch].rc_info = malloc(sizeof(video_rc_info_t));
 		if (!voe_info.ch_info[ch].rc_info) {
 			video_dprintf(VIDEO_LOG_ERR, "rc_info malloc fail\n");
@@ -817,7 +835,7 @@ static int video_rc_init(video_params_t *video_param)
 
 static int video_rc_deinit(int ch)
 {
-	if(voe_info.ch_info[ch].rc_info) {
+	if (voe_info.ch_info[ch].rc_info) {
 		free(voe_info.ch_info[ch].rc_info);
 		voe_info.ch_info[ch].rc_info = NULL;
 	}
@@ -826,34 +844,38 @@ static int video_rc_deinit(int ch)
 
 static void video_rc_callback(int ch, bps_stbl_ctrl_t *bps_stbl_ctrl, uint32_t frame_size)
 {
-	if(voe_info.ch_info[ch].rc_info == NULL) {
+	if (voe_info.ch_info[ch].rc_info == NULL) {
 		return;
 	}
 	int cur_fps = voe_info.ch_info[ch].rc_info->rc_ctrl.fps;
 
 	//bps stable control
-	if(bps_stbl_ctrl && bps_stbl_ctrl->en) {
+	if (bps_stbl_ctrl && bps_stbl_ctrl->en) {
 		video_bps_stbl_ctrl_process(ch, bps_stbl_ctrl, frame_size);
 	}
-	
+
 	uint64_t rc_update_duration = (hal_read_systime_us() - voe_info.ch_info[ch].rc_info->update_time) / 1000;
 	if ((rc_update_duration > (1000 / cur_fps)) && atomic_exchange(&(voe_info.ch_info[ch].rc_info->update_flag), false)) {
-		if(voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps != 0 && (voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps > voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps)) {
-			video_dprintf(VIDEO_LOG_MSG,"[%s] invalid fps(%d) > ispfps(%d)\r\n", __FUNCTION__, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps);
+		if (voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps != 0 &&
+			(voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps > voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps)) {
+			video_dprintf(VIDEO_LOG_MSG, "[%s] invalid fps(%d) > ispfps(%d)\r\n", __FUNCTION__, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps,
+						  voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps);
 			voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps = 0;
 		}
 		// if update_flag = ture, update rc parameters and set update_flag to false
 		int ret = hal_video_set_rc(&(voe_info.ch_info[ch].rc_info->temp_rc_ctrl), ch);
-		if(ret == OK) {
+		if (ret == OK) {
 			voe_info.ch_info[ch].rc_info->update_time = hal_read_systime_us();
 			// update the rc info
 			hal_video_set_fps(voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps, ch);
-			video_rc_update_param(ch, &(voe_info.ch_info[ch].rc_info->rc_ctrl), &(voe_info.ch_info[ch].rc_info->temp_rc_ctrl));	
-			video_dprintf(VIDEO_LOG_INF,"[%s] update rc fps = %d, isp_fps = %d, gop = %d, bps = %d\r\n", __FUNCTION__, voe_info.ch_info[ch].rc_info->rc_ctrl.fps,
-				voe_info.ch_info[ch].rc_info->rc_ctrl.isp_fps, voe_info.ch_info[ch].rc_info->rc_ctrl.gop, voe_info.ch_info[ch].rc_info->rc_ctrl.bps);
+			video_rc_update_param(ch, &(voe_info.ch_info[ch].rc_info->rc_ctrl), &(voe_info.ch_info[ch].rc_info->temp_rc_ctrl));
+			video_dprintf(VIDEO_LOG_INF, "[%s] ch %d update rc fps = %d, isp_fps = %d, gop = %d, bps = %d\r\n", __FUNCTION__, ch, voe_info.ch_info[ch].rc_info->rc_ctrl.fps,
+						  voe_info.ch_info[ch].rc_info->rc_ctrl.isp_fps, voe_info.ch_info[ch].rc_info->rc_ctrl.gop, voe_info.ch_info[ch].rc_info->rc_ctrl.bps);
 		} else {
 			//if set rc fail
-			video_dprintf(VIDEO_LOG_ERR,"ch%d rc fail:isp_fps%d,fps%d,gop%d,bps%d,maxqp%d,minqp%d\r\n", ch, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.gop, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.bps, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.maxqp, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.minqp);
+			video_dprintf(VIDEO_LOG_ERR, "ch%d rc fail:isp_fps%d,fps%d,gop%d,bps%d,maxqp%d,minqp%d\r\n", ch, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps,
+						  voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.gop, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.bps,
+						  voe_info.ch_info[ch].rc_info->temp_rc_ctrl.maxqp, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.minqp);
 			memset(&(voe_info.ch_info[ch].rc_info->temp_rc_ctrl), 0, sizeof(rate_ctrl_s));
 		}
 		voe_info.ch_info[ch].rc_info->update_status = ret;
@@ -879,7 +901,7 @@ int video_set_rc(int ch, rate_ctrl_s *rc_ctrl)
 	}
 
 	video_rc_update_param(ch, &(voe_info.ch_info[ch].rc_info->temp_rc_ctrl), rc_ctrl);
-	if(rc_ctrl->bps) {
+	if (rc_ctrl->bps) {
 		int rcMode = voe_info.ch_info[ch].param->rc_mode - 1;
 		int bps;
 		if (rcMode) { //VBR
@@ -887,7 +909,7 @@ int video_set_rc(int ch, rate_ctrl_s *rc_ctrl)
 		} else { //CBR
 			bps = rc_ctrl->bps;
 		}
-		if(bps >= 10000) { //encoder HW limit
+		if (bps >= 10000) { //encoder HW limit
 			voe_info.ch_info[ch].rc_info->temp_rc_ctrl.bps = bps;
 		} else {
 			video_dprintf(VIDEO_LOG_MSG, "[%s] ch%d invlid bps setting\r\n", __FUNCTION__, ch);
@@ -899,23 +921,23 @@ int video_set_rc(int ch, rate_ctrl_s *rc_ctrl)
 	return OK;
 }
 
-int video_get_realfps(int ch, int* isp_fps, int* enc_fps)
+int video_get_realfps(int ch, int *isp_fps, int *enc_fps)
 {
 	int ispfpsx100, encfpsx100;
 	int ret = hal_video_get_realfps(ch, &ispfpsx100, &encfpsx100); //FPS are multiplied with 100
-	if(ret == OK) {
+	if (ret == OK) {
 		*isp_fps = ispfpsx100 / 100;
 		*enc_fps = encfpsx100 / 100;
-	}	
+	}
 	return ret;
 }
 
 int video_wait_target_fps(int ch, int target_fps, int timeout)
 {
 	int ispfps, encfps, wait_time = 0, delay = 67;
-	while(wait_time < timeout) {
+	while (wait_time < timeout) {
 		video_get_realfps(ch, &ispfps, &encfps);
-		if(ispfps == target_fps) {
+		if (ispfps == target_fps) {
 			return OK;
 		}
 		vTaskDelay(delay);
@@ -1770,18 +1792,31 @@ void video_pre_init_procedure(int ch, video_pre_init_params_t *parm)
 		v_adp->cmd[ch]->all_init_iq_set_flag = 1;
 		v_adp->cmd[ch]->drop_frame_num = parm->video_drop_frame;
 	}
-	
-	if(parm->first_raw_enable) {
+
+#if USE_VIDEO_HR_FLOW
+	if (parm->isp_init_raw) {
 		//for trigger first raw
 		video_dprintf(VIDEO_LOG_INF, "hal_video_isp_init_raw(%d, 1)\r\n", ch);
 		hal_video_isp_init_raw(ch, 1);
 	}
 
-	if(parm->v_cfg) {
+	if (parm->isp_raw_mode_tnr_dis) {
+		video_dprintf(VIDEO_LOG_INF, "hal_video_isp_tnr_dis(%d, 1)\r\n", ch);
+		hal_video_isp_raw_mode_tnr_dis(ch, 1);
+	}
+
+	if (parm->v_cfg) {
 		video_dprintf(VIDEO_LOG_INF, "hal_isp_set_verify_info(%d, %x)\r\n", ch, parm->v_cfg);
 		hal_video_isp_verify_info(ch, *(parm->v_cfg));
 	}
 
+	if (parm->zoom_coef) {
+		video_dprintf(VIDEO_LOG_INF, "hal_video_isp_zoom_filter_coef_init(%d, %x)\r\n", ch, parm->zoom_coef);
+		video_dprintf(VIDEO_LOG_INF, "%d %d %d %d\r\n", parm->zoom_coef[ISP_ZOOM_FILTER_COEF_NUM - 1], parm->zoom_coef[ISP_ZOOM_FILTER_COEF_NUM - 2],
+					  parm->zoom_coef[ISP_ZOOM_FILTER_COEF_NUM - 3], parm->zoom_coef[ISP_ZOOM_FILTER_COEF_NUM - 4]);
+		hal_video_isp_zoom_filter_coef_init(ch, &(parm->zoom_coef[0]));
+	}
+#endif
 }
 
 int video_open_status(void)//0:No video open 1:video open
@@ -1951,7 +1986,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 			hal_video_out_mode(ch, TYPE_RGB, MODE_ENABLE);
 		}
 		if ((codec & (CODEC_HEVC | CODEC_H264)) != 0) {
-			if(video_rc_init(v_stream) != OK) {
+			if (video_rc_init(v_stream) != OK) {
 				video_dprintf(VIDEO_LOG_ERR, "ch%d rc task init fail\r\n", ch);
 				status = NOK;
 				goto EXIT;
@@ -2073,7 +2108,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 					   , fps_cmd3
 					   , v_stream->width
 					   , v_stream->height
-					   , (v_stream->out_mode ? v_stream->out_mode: 0) //set out mode if not 0
+					   , (v_stream->out_mode ? v_stream->out_mode : 0) //set out mode if not 0
 					   , 3
 					   , paramter_table[value]);
 		if (ret < 0 || ret >= sizeof(cmd3)) {
@@ -2105,7 +2140,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 	hal_video_isp_set_i2c_id(ch, g_video_peri_info.i2c_id);
 
 	if ((codec & (CODEC_HEVC | CODEC_H264)) != 0) {
-		if(video_rc_init(v_stream) != OK) {
+		if (video_rc_init(v_stream) != OK) {
 			video_dprintf(VIDEO_LOG_ERR, "ch%d rc task init fail\r\n", ch);
 			status = NOK;
 			goto EXIT;
@@ -2165,7 +2200,9 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 			status = NOK;
 			goto EXIT;
 		}
-		if (enc_in_w <= origin_width && enc_in_h <= origin_height) { //scale down
+		if (v_stream->out_mode == MODE_EXT) {
+			video_dprintf(VIDEO_LOG_INF, "ch%d ext mode skip roi check\r\n", ch);
+		} else if (enc_in_w <= origin_width && enc_in_h <= origin_height) { //scale down
 			if (v_stream->use_roi) {
 				video_dprintf(VIDEO_LOG_INF, "ch%d set_roi (%d,%d,%d,%d)\r\n", ch, v_stream->roi.xmin, v_stream->roi.ymin, origin_width, origin_height);
 				hal_video_isp_set_roi(ch, v_stream->roi.xmin, v_stream->roi.ymin, origin_width, origin_height);
@@ -2323,7 +2360,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 #endif
 EXIT:
 
-	if(status == NOK) {
+	if (status == NOK) {
 		video_rc_deinit(ch);
 	}
 
@@ -2360,7 +2397,7 @@ int video_close(int ch)
 	last_isp_ts[ch] = 0;
 	isp_ts_initialed_flag[ch] = 0;
 	video_rc_deinit(ch);
-	video_bps_stbl_ctrl_en(ch, 0);
+	video_bps_stbl_ctrl_deinit(ch);
 EXIT:
 	rtw_mutex_put(&video_open_close_mutex);
 	return status;
@@ -3551,7 +3588,7 @@ void video_set_private_mask_single(int ch, private_mask_single_t *pmask)
 	}
 	int is_video_not_open = 1;
 	for (int i = 0; i < MAX_CHANNEL; i++) {
-		if(voe_info.ch_info[i].stream_is_open) {
+		if (voe_info.ch_info[i].stream_is_open) {
 			is_video_not_open = 0;
 			break;
 		}

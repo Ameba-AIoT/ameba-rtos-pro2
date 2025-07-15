@@ -38,7 +38,9 @@
 #include "rtk_coex.h"
 #include "platform_stdlib.h"
 #include <gap_adv.h>
-
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+#include <gap_ext_scan.h>
+#endif
 extern bool bt_trace_deinit(void);
 
 /** @defgroup  CENTRAL_CLIENT_DEMO_MAIN Central Client Main
@@ -54,7 +56,19 @@ extern bool bt_trace_deinit(void);
 /** @brief Default scan window (units of 0.625ms, 0x520=820ms) */
 #define DEFAULT_SCAN_WINDOW       0x520
 
-
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+static ext_scan_param_t ext_scan_param = {
+	.own_addr_type 				= GAP_LOCAL_ADDR_LE_PUBLIC,
+	.ext_scan_phys      		= {1, 1},
+	.type               		= {GAP_SCAN_MODE_ACTIVE, GAP_SCAN_MODE_ACTIVE},
+	.ext_scan_interval      	= {108, 108},
+	.ext_scan_window			= {54, 54},
+	.ext_scan_duration			= 0,
+	.ext_scan_period			= 0,
+	.ext_scan_filter_policy		= GAP_SCAN_FILTER_ANY,
+	.ext_scan_filter_duplicate	= GAP_SCAN_FILTER_DUPLICATE_ENABLE,
+};
+#endif
 /*============================================================================*
  *                              Functions
  *============================================================================*/
@@ -82,13 +96,6 @@ void ble_central_app_le_gap_init(void)
 	uint8_t  device_name[GAP_DEVICE_NAME_LEN] = "BLE_CENTRAL_CLIENT";
 	uint16_t appearance = GAP_GATT_APPEARANCE_UNKNOWN;
 
-	/* Scan parameters */
-	uint8_t  scan_mode = GAP_SCAN_MODE_ACTIVE;
-	uint16_t scan_interval = DEFAULT_SCAN_INTERVAL;
-	uint16_t scan_window = DEFAULT_SCAN_WINDOW;
-	uint8_t  scan_filter_policy = GAP_SCAN_FILTER_ANY;
-	uint8_t  scan_filter_duplicate = GAP_SCAN_FILTER_DUPLICATE_ENABLE;
-
 	/* GAP Bond Manager parameters */
 	uint8_t  auth_pair_mode = GAP_PAIRING_MODE_PAIRABLE;
 	uint16_t auth_flags = GAP_AUTHEN_BIT_BONDING_FLAG;
@@ -100,10 +107,19 @@ void ble_central_app_le_gap_init(void)
 	uint32_t auth_fix_passkey = 0;
 	uint8_t  auth_sec_req_enable = false;
 	uint16_t auth_sec_req_flags = GAP_AUTHEN_BIT_BONDING_FLAG;
-
-	/* Set device name and device appearance */
-	le_set_gap_param(GAP_PARAM_DEVICE_NAME, GAP_DEVICE_NAME_LEN, device_name);
-	le_set_gap_param(GAP_PARAM_APPEARANCE, sizeof(appearance), &appearance);
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+	uint8_t use_ext_adv = true;
+	/* Ext scan parameters */
+	le_ext_scan_gap_msg_info_way(false);
+	le_set_gap_param(GAP_PARAM_USE_EXTENDED_ADV, sizeof(use_ext_adv), &use_ext_adv);
+	ble_central_set_ext_scan_param(&ext_scan_param);
+#else
+	/* Scan parameters */
+	uint8_t  scan_mode = GAP_SCAN_MODE_ACTIVE;
+	uint16_t scan_interval = DEFAULT_SCAN_INTERVAL;
+	uint16_t scan_window = DEFAULT_SCAN_WINDOW;
+	uint8_t  scan_filter_policy = GAP_SCAN_FILTER_ANY;
+	uint8_t  scan_filter_duplicate = GAP_SCAN_FILTER_DUPLICATE_ENABLE;
 
 	/* Set scan parameters */
 	le_scan_set_param(GAP_PARAM_SCAN_MODE, sizeof(scan_mode), &scan_mode);
@@ -113,6 +129,11 @@ void ble_central_app_le_gap_init(void)
 					  &scan_filter_policy);
 	le_scan_set_param(GAP_PARAM_SCAN_FILTER_DUPLICATES, sizeof(scan_filter_duplicate),
 					  &scan_filter_duplicate);
+#endif
+
+	/* Set device name and device appearance */
+	le_set_gap_param(GAP_PARAM_DEVICE_NAME, GAP_DEVICE_NAME_LEN, device_name);
+	le_set_gap_param(GAP_PARAM_APPEARANCE, sizeof(appearance), &appearance);
 
 	/* Setup the GAP Bond Manager */
 	gap_set_param(GAP_PARAM_BOND_PAIRING_MODE, sizeof(auth_pair_mode), &auth_pair_mode);

@@ -960,8 +960,8 @@ void main(void)
 	HAL_WRITE32(0x40009000, 0x18, 0x1 | HAL_READ32(0x40009000, 0x18)); //SWR 1.35V
 
 	if (wowlan_wake_reason != 0) {
-		extern uint8_t *read_rf_conuter_report(void);
-		read_rf_conuter_report();
+		extern uint8_t *read_rf_conuter_report(uint8_t log_en);
+		read_rf_conuter_report(0);
 		printf("\r\nwake fom wlan: 0x%02X\r\n", wowlan_wake_reason);
 		u32 value32;
 		value32 = HAL_READ32(0x40080000, 0x54);

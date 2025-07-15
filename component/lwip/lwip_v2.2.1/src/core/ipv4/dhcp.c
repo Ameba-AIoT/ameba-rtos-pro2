@@ -80,6 +80,7 @@
 #include "lwip/etharp.h"
 #include "lwip/prot/dhcp.h"
 #include "lwip/prot/iana.h"
+#include "lwip/sys.h" //Realtek add
 
 #include <string.h>
 
@@ -223,6 +224,12 @@ static u8_t dhcp_discover_request_options[] = {
 static u32_t xid;
 static u8_t xid_initialised;
 #endif /* DHCP_GLOBAL_XID */
+
+/* Added by Realtek start*/
+#if CONFIG_FAST_DHCP
+static u8_t is_fast_dhcp = 0;
+#endif
+/* Added by Realtek end*/
 
 #define dhcp_option_given(dhcp, idx)          (dhcp_rx_options_given[idx] != 0)
 #define dhcp_got_option(dhcp, idx)            (dhcp_rx_options_given[idx] = 1)
@@ -470,8 +477,15 @@ dhcp_select(struct netif *netif)
     options_out_len = dhcp_option(options_out_len, msg_out->options, DHCP_OPTION_REQUESTED_IP, 4);
     options_out_len = dhcp_option_long(options_out_len, msg_out->options, lwip_ntohl(ip4_addr_get_u32(&dhcp->offered_ip_addr)));
 
-    options_out_len = dhcp_option(options_out_len, msg_out->options, DHCP_OPTION_SERVER_ID, 4);
-    options_out_len = dhcp_option_long(options_out_len, msg_out->options, lwip_ntohl(ip4_addr_get_u32(ip_2_ip4(&dhcp->server_ip_addr))));
+/* Added by Realtek start*/
+#if CONFIG_FAST_DHCP
+    if(lwip_ntohl(ip4_addr_get_u32(ip_2_ip4(&dhcp->server_ip_addr))) != 0)
+#endif
+/* Added by Realtek end*/
+    {
+      options_out_len = dhcp_option(options_out_len, msg_out->options, DHCP_OPTION_SERVER_ID, 4);
+      options_out_len = dhcp_option_long(options_out_len, msg_out->options, lwip_ntohl(ip4_addr_get_u32(ip_2_ip4(&dhcp->server_ip_addr))));
+    }
 
     options_out_len = dhcp_option(options_out_len, msg_out->options, DHCP_OPTION_PARAMETER_REQUEST_LIST, LWIP_ARRAYSIZE(dhcp_discover_request_options));
     for (i = 0; i < LWIP_ARRAYSIZE(dhcp_discover_request_options); i++) {
@@ -628,6 +642,11 @@ dhcp_t1_timeout(struct netif *netif)
                 ("dhcp_t1_timeout(): must renew\n"));
     /* This slightly different to RFC2131: DHCPREQUEST will be sent from state
        DHCP_STATE_RENEWING, not DHCP_STATE_BOUND */
+//Realtek add
+    if (dhcp->state != DHCP_STATE_RENEWING) {
+      dhcp->seconds_elapsed = sys_now();
+    }
+//Realtek add end
     dhcp_renew(netif);
     /* Calculate next timeout */
     if (((dhcp->t2_timeout - dhcp->lease_used) / 2) >= DHCP_NEXT_TIMEOUT_THRESHOLD) {
@@ -829,6 +848,16 @@ dhcp_start(struct netif *netif)
     return ERR_MEM;
   }
 
+/* Added by Realtek start*/
+#if CONFIG_FAST_DHCP
+  is_fast_dhcp = 0;
+#endif
+#if DHCP_CREATE_RAND_XID && defined(LWIP_SRAND)
+  /* For each system startup, fill in a random seed with different system ticks. */
+  LWIP_SRAND();
+#endif /* DHCP_CREATE_RAND_XID && defined(LWIP_SRAND) */
+/* Added by Realtek end*/
+
   /* no DHCP client attached yet? */
   if (dhcp == NULL) {
     LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_start(): mallocing new DHCP client\n"));
@@ -848,6 +877,26 @@ dhcp_start(struct netif *netif)
     if (dhcp->pcb_allocated != 0) {
       dhcp_dec_pcb_refcount(); /* free DHCP PCB if not needed any more */
     }
+
+/* Added by Realtek start*/
+#if CONFIG_FAST_DHCP
+    if(lwip_ntohl(ip4_addr_get_u32(&dhcp->offered_ip_addr)) != 0){
+      if (dhcp_inc_pcb_refcount() != ERR_OK) { /* ensure DHCP PCB is allocated */
+        return ERR_MEM;
+      }
+      dhcp->pcb_allocated = 1;
+      dhcp->seconds_elapsed = sys_now();
+      is_fast_dhcp = 1;
+#if LWIP_DHCP_DOES_ACD_CHECK
+      /* add acd struct to list*/
+      acd_add(netif, &dhcp->acd, dhcp_conflict_callback);
+#endif /* LWIP_DHCP_DOES_ACD_CHECK */
+      result = dhcp_reboot(netif);
+      return result;
+    }
+#endif
+/* Added by Realtek end*/
+
     /* dhcp is cleared below, no need to reset flag*/
   }
 
@@ -876,6 +925,7 @@ dhcp_start(struct netif *netif)
   }
 
   /* (re)start the DHCP negotiation */
+  dhcp->seconds_elapsed = sys_now();        //Realtek add end
   result = dhcp_discover(netif);
   if (result != ERR_OK) {
     /* free resources allocated above */
@@ -953,6 +1003,7 @@ dhcp_network_changed_link_up(struct netif *netif)
     case DHCP_STATE_BOUND:
     case DHCP_STATE_REBOOTING:
       dhcp->tries = 0;
+      dhcp->seconds_elapsed = sys_now();                //Realtek add end
       dhcp_reboot(netif);
       break;
     case DHCP_STATE_OFF:
@@ -965,6 +1016,7 @@ dhcp_network_changed_link_up(struct netif *netif)
          same state */
       /* ensure we start with short timeouts, even if already discovering */
       dhcp->tries = 0;
+      dhcp->seconds_elapsed = sys_now();                //Realtek add end
       dhcp_discover(netif);
       break;
   }
@@ -999,6 +1051,17 @@ dhcp_decline(struct netif *netif)
     options_out_len = dhcp_option_long(options_out_len, msg_out->options, lwip_ntohl(ip4_addr_get_u32(&dhcp->offered_ip_addr)));
 
     LWIP_HOOK_DHCP_APPEND_OPTIONS(netif, dhcp, DHCP_STATE_BACKING_OFF, msg_out, DHCP_DECLINE, &options_out_len);
+//Realtek add
+#if LWIP_IPV4 && !LWIP_IPV6
+#if LWIP_VERSION_MAJOR >= 2 && LWIP_VERSION_MINOR >= 1
+    options_out_len = dhcp_option(options_out_len, msg_out->options, DHCP_OPTION_SERVER_ID, 4);
+    options_out_len = dhcp_option_long(options_out_len, msg_out->options, lwip_ntohl(ip4_addr_get_u32(&dhcp->server_ip_addr)));
+#else
+    dhcp_option(dhcp, DHCP_OPTION_SERVER_ID, 4);
+    dhcp_option_long(dhcp, lwip_ntohl(ip4_addr_get_u32(&dhcp->server_ip_addr)));
+#endif
+#endif
+//Realtek add end
     dhcp_option_trailer(options_out_len, msg_out->options, p_out);
 
     /* per section 4.4.4, broadcast DECLINE messages */
@@ -1037,6 +1100,12 @@ dhcp_discover(struct netif *netif)
     autoip_start(netif);
   }
 #endif /* LWIP_DHCP_AUTOIP_COOP */
+
+/* Added by Realtek start*/
+#if CONFIG_FAST_DHCP
+  is_fast_dhcp = 0;
+#endif
+/* Added by Realtek end*/
 
   ip4_addr_set_any(&dhcp->offered_ip_addr);
   dhcp_set_state(dhcp, DHCP_STATE_SELECTING);
@@ -1920,7 +1989,13 @@ dhcp_create_msg(struct netif *netif, struct dhcp *dhcp, u8_t message_type, u16_t
               (p_out->len >= sizeof(struct dhcp_msg)));
 
   /* DHCP_REQUEST should reuse 'xid' from DHCPOFFER */
+/* Added by Realtek start*/
+#if CONFIG_FAST_DHCP
+  if ((is_fast_dhcp == 1) ||(message_type != DHCP_REQUEST) || (dhcp->state == DHCP_STATE_REBOOTING)) {
+#else
   if ((message_type != DHCP_REQUEST) || (dhcp->state == DHCP_STATE_REBOOTING)) {
+#endif
+/* Added by Realtek end*/
     /* reuse transaction identifier in retransmissions */
     if (dhcp->tries == 0) {
 #if DHCP_CREATE_RAND_XID && defined(LWIP_RAND)
@@ -1942,6 +2017,9 @@ dhcp_create_msg(struct netif *netif, struct dhcp *dhcp, u8_t message_type, u16_t
   msg_out->htype = LWIP_IANA_HWTYPE_ETHERNET;
   msg_out->hlen = netif->hwaddr_len;
   msg_out->xid = lwip_htonl(dhcp->xid);
+  if ((message_type == DHCP_DISCOVER) || (message_type == DHCP_REQUEST)) {
+    msg_out->secs = (uint16_t)((sys_now() - dhcp->seconds_elapsed) / configTICK_RATE_HZ);			//Realtek add
+  }
   /* we don't need the broadcast flag since we can receive unicast traffic
      before being fully configured! */
   /* set ciaddr to netif->ip_addr based on message_type and state */

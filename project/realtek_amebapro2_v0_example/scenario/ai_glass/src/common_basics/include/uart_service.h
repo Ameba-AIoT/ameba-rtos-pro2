@@ -96,6 +96,7 @@ typedef enum {
 	AI_GLASS_OTA_FILE_NOT_EXISTED   = 0x30,
 	AI_GLASS_OTA_PROCESS_FAILED     = 0x31,
 	AI_GLASS_OTA_BATTERY_LOW        = 0x32,
+	AI_GLASS_HR_SAVE_FAILED         = 0x33,
 } ai_glass_status_e;
 
 // Uart error code

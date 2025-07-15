@@ -30,7 +30,9 @@
 #include <ble_central_link_mgr.h>
 #include <gcs_client.h>
 #include "ble_central_at_cmd.h"
-
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+#include <gap_ext_scan.h>
+#endif
 /** @defgroup  CENTRAL_CLIENT_APP Central Client Application
     * @brief This file handles BLE central client application routines.
     * @{
@@ -52,6 +54,61 @@ T_GAP_DEV_STATE ble_central_gap_dev_state = {0, 0, 0, 0, 0};                /**<
 /*============================================================================*
  *                              Functions
  *============================================================================*/
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+void ble_central_set_ext_scan_param(ext_scan_param_t *p_param)
+{
+	T_GAP_CAUSE cause = GAP_CAUSE_SUCCESS;
+	uint8_t scan_phys = 0;
+	T_GAP_LE_EXT_SCAN_PARAM scan_phy_param[GAP_EXT_SCAN_MAX_PHYS_NUM];
+
+	cause = le_ext_scan_set_param(GAP_PARAM_EXT_SCAN_LOCAL_ADDR_TYPE, sizeof(p_param->own_addr_type), &p_param->own_addr_type);
+	if (cause) {
+		printf("GAP_PARAM_EXT_SCAN_LOCAL_ADDR_TYPE cause = %x \r\n", cause);
+		return;
+	}
+	cause = le_ext_scan_set_param(GAP_PARAM_EXT_SCAN_FILTER_POLICY, sizeof(p_param->ext_scan_filter_policy), &p_param->ext_scan_filter_policy);
+	if (cause) {
+		printf("GAP_PARAM_EXT_SCAN_FILTER_POLICY cause = %x \r\n", cause);
+		return;
+	}
+	cause = le_ext_scan_set_param(GAP_PARAM_EXT_SCAN_FILTER_DUPLICATES, sizeof(p_param->ext_scan_filter_duplicate), &p_param->ext_scan_filter_duplicate);
+	if (cause) {
+		printf("GAP_PARAM_EXT_SCAN_FILTER_DUPLICATES cause = %x \r\n", cause);
+		return;
+	}
+	cause = le_ext_scan_set_param(GAP_PARAM_EXT_SCAN_DURATION, sizeof(p_param->ext_scan_duration), &p_param->ext_scan_duration);
+	if (cause) {
+		printf("GAP_PARAM_EXT_SCAN_DURATION cause = %x \r\n", cause);
+		return;
+	}
+	cause = le_ext_scan_set_param(GAP_PARAM_EXT_SCAN_PERIOD, sizeof(p_param->ext_scan_period),&p_param->ext_scan_period);
+	if (cause) {
+		printf("GAP_PARAM_EXT_SCAN_PERIOD cause = %x \r\n", cause);
+		return;
+	}
+
+	if (p_param->ext_scan_phys[0]) {
+		scan_phys |=  GAP_EXT_SCAN_PHYS_1M_BIT;
+		scan_phy_param[0].scan_type = p_param->type[0];
+		scan_phy_param[0].scan_interval = p_param->ext_scan_interval[0];
+		scan_phy_param[0].scan_window = p_param->ext_scan_window[0];
+		le_ext_scan_set_phy_param(LE_SCAN_PHY_LE_1M, &scan_phy_param[0]);
+	}
+
+	if (p_param->ext_scan_phys[1]) {
+		scan_phys |=  GAP_EXT_SCAN_PHYS_CODED_BIT;
+		scan_phy_param[1].scan_type = p_param->type[1];
+		scan_phy_param[1].scan_interval = p_param->ext_scan_interval[1];
+		scan_phy_param[1].scan_window = p_param->ext_scan_window[1];
+		le_ext_scan_set_phy_param(LE_SCAN_PHY_LE_CODED, &scan_phy_param[1]);
+	}
+
+	cause = le_ext_scan_set_param(GAP_PARAM_EXT_SCAN_PHYS, sizeof(scan_phys), &scan_phys);
+	if (cause) {
+		printf("GAP_PARAM_EXT_SCAN_PHYS cause = %x \r\n", cause);
+	}
+}
+#endif
 void ble_central_app_handle_gap_msg(T_IO_MSG  *p_gap_msg);
 /**
  * @brief    All the application messages are pre-handled in this function
@@ -129,6 +186,31 @@ void ble_central_app_handle_dev_state_evt(T_GAP_DEV_STATE new_state, uint16_t ca
 
 	ble_central_gap_dev_state = new_state;
 }
+
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+void ble_central_app_handle_ext_scan_state_evt(uint8_t pre_state, uint8_t new_state, uint16_t cause)
+{
+    APP_PRINT_INFO3("ble_central_app_handle_ext_scan_state_evt: oldState %d, newState %d, cause 0x%x",
+                    pre_state, new_state, cause);
+	if (pre_state != new_state) {
+		if (GAP_SCAN_STATE_START == pre_state) {
+			if (GAP_SCAN_STATE_IDLE == new_state) {
+				printf("[ext_scan_state]Scan start fail\r\n");
+			} else if (GAP_SCAN_STATE_SCANNING == new_state) {
+				printf("[ext_scan_state]Scan start\r\n");
+			}
+		} else if (GAP_SCAN_STATE_STOP == pre_state) {
+			if (GAP_SCAN_STATE_IDLE == new_state) {
+				printf("[ext_scan_state]Scan stop\r\n");
+			} else if (GAP_SCAN_STATE_SCANNING == new_state) {
+				printf("[ext_scan_state]Scan stop fail\r\n");
+			}
+		} else if (GAP_SCAN_STATE_SCANNING == pre_state && GAP_SCAN_STATE_IDLE == new_state) {
+			printf("[ext_scan_state]Scan stop due to timeout\r\n");
+		}
+	}
+}
+#endif
 
 /**
  * @brief    Handle msg GAP_MSG_LE_CONN_STATE_CHANGE
@@ -641,7 +723,49 @@ T_APP_RESULT ble_central_app_gap_callback(uint8_t cb_type, void *p_cb_data)
 	}
 	break;
 #endif
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+	case GAP_MSG_LE_EXT_SCAN_STATE_CHANGE_INFO:
+	{
+			uint8_t pre_scan_state = ble_central_gap_dev_state.gap_scan_state;
+			ble_central_gap_dev_state.gap_scan_state = p_data->p_le_ext_scan_state_change_info->state;
+			ble_central_app_handle_ext_scan_state_evt(pre_scan_state, ble_central_gap_dev_state.gap_scan_state,
+													  p_data->p_le_ext_scan_state_change_info->cause);
+		}
+		break;
+	case GAP_MSG_LE_EXT_ADV_REPORT_INFO:
+		APP_PRINT_INFO6("GAP_MSG_LE_EXT_ADV_REPORT_INFO:connectable %d, scannable %d, direct %d, scan response %d, legacy %d, data status 0x%x",
+						   p_data->p_le_ext_adv_report_info->event_type & GAP_EXT_ADV_REPORT_BIT_CONNECTABLE_ADV,
+						   p_data->p_le_ext_adv_report_info->event_type & GAP_EXT_ADV_REPORT_BIT_SCANNABLE_ADV,
+						   p_data->p_le_ext_adv_report_info->event_type & GAP_EXT_ADV_REPORT_BIT_DIRECTED_ADV,
+						   p_data->p_le_ext_adv_report_info->event_type & GAP_EXT_ADV_REPORT_BIT_SCAN_RESPONSE,
+						   p_data->p_le_ext_adv_report_info->event_type & GAP_EXT_ADV_REPORT_BIT_USE_LEGACY_ADV,
+						   p_data->p_le_ext_adv_report_info->data_status);
+		APP_PRINT_INFO5("GAP_MSG_LE_EXT_ADV_REPORT_INFO:event_type 0x%x, bd_addr %s, addr_type %d, rssi %d, data_len %d",
+						   p_data->p_le_ext_adv_report_info->event_type,
+						   TRACE_BDADDR(p_data->p_le_ext_adv_report_info->bd_addr),
+						   p_data->p_le_ext_adv_report_info->addr_type,
+						   p_data->p_le_ext_adv_report_info->rssi,
+						   p_data->p_le_ext_adv_report_info->data_len);
+		if ((p_data->p_le_ext_adv_report_info->event_type & GAP_EXT_ADV_REPORT_BIT_USE_LEGACY_ADV) == 0) {
+		APP_PRINT_INFO5("GAP_MSG_LE_EXT_ADV_REPORT_INFO:primary_phy %d, secondary_phy %d, adv_sid %d, tx_power %d, peri_adv_interval %d",
+						   p_data->p_le_ext_adv_report_info->primary_phy,
+						   p_data->p_le_ext_adv_report_info->secondary_phy,
+						   p_data->p_le_ext_adv_report_info->adv_sid,
+						   p_data->p_le_ext_adv_report_info->tx_power,
+						   p_data->p_le_ext_adv_report_info->peri_adv_interval);
+		}
+		if (p_data->p_le_ext_adv_report_info->event_type & GAP_EXT_ADV_REPORT_BIT_DIRECTED_ADV) {
+		APP_PRINT_INFO2("GAP_MSG_LE_EXT_ADV_REPORT_INFO:direct_addr_type 0x%x, direct_addr %s",
+						   p_data->p_le_ext_adv_report_info->direct_addr_type,
+						   TRACE_BDADDR(p_data->p_le_ext_adv_report_info->direct_addr));
+		}
 
+		printf("Ext Scan info, [Device]:"BD_ADDR_FMT", AD evt type: 0x%2x, RSSI: %3d, PHY: 0x%x, TxPower: %d, Len: %d\r\n",
+				BD_ADDR_ARG(p_data->p_le_ext_adv_report_info->bd_addr), p_data->p_le_ext_adv_report_info->event_type, p_data->p_le_ext_adv_report_info->rssi,
+				(p_data->p_le_ext_adv_report_info->primary_phy << 4) | p_data->p_le_ext_adv_report_info->secondary_phy,
+				p_data->p_le_ext_adv_report_info->tx_power, p_data->p_le_ext_adv_report_info->data_len);
+		break;
+#endif
 	case GAP_MSG_LE_MODIFY_WHITE_LIST:
 		APP_PRINT_INFO2("GAP_MSG_LE_MODIFY_WHITE_LIST: operation  0x%x, cause 0x%x",
 						p_data->p_le_modify_white_list_rsp->operation,

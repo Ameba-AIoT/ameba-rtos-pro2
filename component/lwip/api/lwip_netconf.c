@@ -413,6 +413,10 @@ uint8_t LwIP_DHCP(uint8_t idx, uint8_t dhcp_state)
 				iptab[3] = (uint8_t)(IPaddress);
 				printf("\n\rInterface %d IP address : %d.%d.%d.%d\n", idx, iptab[3], iptab[2], iptab[1], iptab[0]);
 
+				/* Get dhcp server mac address */
+				extern void etharp_issue_dhcpserver_arp_task(void);
+				etharp_issue_dhcpserver_arp_task();
+
 #if defined(CONFIG_FAST_DHCP) && CONFIG_FAST_DHCP
 #if LWIP_VERSION_MAJOR >= 2
 				dhcp = ((struct dhcp *)netif_get_client_data(pnetif, LWIP_NETIF_CLIENT_DATA_INDEX_DHCP));
@@ -428,6 +432,8 @@ uint8_t LwIP_DHCP(uint8_t idx, uint8_t dhcp_state)
 #endif
 				}
 #endif
+
+				RTW_API_INFO("[%s] dhcp offered_t0_lease: %d", __FUNCTION__, dhcp->offered_t0_lease);
 				return DHCP_ADDRESS_ASSIGNED;
 			} else {
 				/* DHCP timeout */

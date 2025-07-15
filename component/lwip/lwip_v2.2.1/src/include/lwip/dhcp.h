@@ -62,7 +62,11 @@ typedef u16_t dhcp_timeout_t;
 #endif /* DHCP_TIMEOUT_SIZE_T*/
 /** period (in seconds) of the application calling dhcp_coarse_tmr() */
 #ifndef DHCP_COARSE_TIMER_SECS
+#if CONFIG_LWIP_DHCP_COARSE_TIMER
+#define DHCP_COARSE_TIMER_SECS CONFIG_LWIP_DHCP_COARSE_TIMER    //Realtek add
+#else
 #define DHCP_COARSE_TIMER_SECS  60
+#endif
 #endif /* DHCP_COARSE_TIMER_SECS */
 /** period (in milliseconds) of the application calling dhcp_coarse_tmr() */
 #define DHCP_COARSE_TIMER_MSECS (DHCP_COARSE_TIMER_SECS * 1000UL)
@@ -116,6 +120,7 @@ struct dhcp
   /** acd struct */
   struct acd acd;
 #endif /* LWIP_DHCP_DOES_ACD_CHECK */
+  u32_t seconds_elapsed;            //Realtek add end
 };
 
 

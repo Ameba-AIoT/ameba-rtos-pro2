@@ -46,9 +46,9 @@ static uint8_t bcn_limit = 5;
 
 //stage2 setting
 static uint8_t  stage2_start_window = 10;
-static uint8_t  stage2_max_window = 210;
-static uint8_t  stage2_increment_steps = 40;
-static uint8_t  stage2_duration = 10;
+static uint16_t  stage2_max_window = 310;
+static uint8_t  stage2_increment_steps = 50;
+static uint8_t  stage2_duration = 13;
 
 static uint8_t set_rxbcnlimit = 8;
 static uint8_t set_pstimeout = 16;
@@ -199,9 +199,9 @@ void tcp_app_task(void *param)
 
 	//set bcn track stage2 parmeters
 	// static uint8_t  stage2_start_window = 10;
-	// static uint8_t  stage2_max_window = 210;
-	// static uint8_t  stage2_increment_steps = 40;
-	// static uint8_t  stage2_duration = 10;
+	// static uint16_t  stage2_max_window = 310;
+	// static uint8_t  stage2_increment_steps = 50;
+	// static uint8_t  stage2_duration = 13;
 	wifi_wowlan_set_bcn_track(stage2_start_window, stage2_max_window, stage2_increment_steps, stage2_duration);
 
 	wifi_set_unicast_wakeup(unicast_wakeup_enable);
@@ -396,8 +396,8 @@ void main(void)
 			if (wowlan_wake_reason != 0) {
 				printf("\r\nwake fom wlan: 0x%02X\r\n", wowlan_wake_reason);
 
-				extern uint8_t *read_rf_conuter_report(void);
-				read_rf_conuter_report();
+				extern uint8_t *read_rf_conuter_report(uint8_t log_en);
+				read_rf_conuter_report(0);
 				if (wowlan_wake_reason == 0x22) {
 					printf("\r\nunicast wakeup!!\r\n");
 					unicast_wakeup = 1;

@@ -720,24 +720,22 @@ int video_control(void *p, int cmd, int arg)
 #endif
 	}
 	break;
-	case CMD_VIDEO_SET_SENSOR_ID: 
-	{
+	case CMD_VIDEO_SET_SENSOR_ID: {
 		int sensor_id = arg;
 		if(sensor_id == 0 || sensor_id >= SENSOR_MAX) {
 			VIDEO_DBG_ERROR("invalid sensor id %d\r\n", sensor_id);
 			return NOK;
 		}
-		if (video_open_status() == 0) {
-			voe_get_sensor_info(sensor_id, &ctx->iq_addr, &ctx->sensor_addr);
-			sensor_id_value = sensor_id;
-			info.sensor_fps    = sensor_params[sen_id[sensor_id_value]].sensor_fps;
-			info.sensor_width  = sensor_params[sen_id[sensor_id_value]].sensor_width;
-			info.sensor_height = sensor_params[sen_id[sensor_id_value]].sensor_height;
-			video_set_isp_info(&info);
-		} else {
+		if (video_open_status() != 0) {
 			VIDEO_DBG_ERROR("Close streams before switch sensors.\r\n");
 			return NOK;
 		}
+		voe_get_sensor_info(sensor_id, &ctx->iq_addr, &ctx->sensor_addr);
+		sensor_id_value = sensor_id;
+		info.sensor_fps    = sensor_params[sen_id[sensor_id_value]].sensor_fps;
+		info.sensor_width  = sensor_params[sen_id[sensor_id_value]].sensor_width;
+		info.sensor_height = sensor_params[sen_id[sensor_id_value]].sensor_height;
+		video_set_isp_info(&info);
 	}
 	break;
 	case CMD_VIDEO_SET_TIMESTAMP_OFFSET: {

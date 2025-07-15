@@ -878,13 +878,13 @@ static __inline__ int hal_video_isp_verify_info(int ch, struct verify_ctrl_confi
 	return OK;
 }
 
-static __inline__ int hal_video_isp_tnr_dis(int ch, int dis)
+static __inline__ int hal_video_isp_raw_mode_tnr_dis(int ch, int dis)
 {
 	hal_video_adapter_t *v_adp = &vv_adapter;
 	commandLine_s *cml;
 
 	cml = v_adp->cmd[ch];
-	cml->isp_tnr_dis = dis;
+	cml->isp_raw_mode_tnr_dis = dis;
 	dcache_clean_invalidate_by_addr((uint32_t *)v_adp->cmd[ch], sizeof(commandLine_s));
 	return OK;
 }

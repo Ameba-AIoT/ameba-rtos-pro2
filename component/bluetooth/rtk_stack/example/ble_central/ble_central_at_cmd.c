@@ -20,6 +20,9 @@
 #include "os_sched.h"
 #include "os_mem.h"
 #include "basic_types.h"
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+#include "gap_ext_scan.h"
+#endif
 
 #if defined(CONFIG_BT_CENTRAL) && CONFIG_BT_CENTRAL
 #include "ble_central_app_flags.h"
@@ -185,7 +188,7 @@ int ble_central_at_cmd_connect(int argc, char **argv)
 		return 0;
 	}
 #endif
-
+	uint8_t init_phys = 0;
 	u8 DestAddr[6] = {0};
 	u8 DestAddrType = GAP_REMOTE_ADDR_LE_PUBLIC;
 #if F_BT_LE_USE_STATIC_RANDOM_ADDR
@@ -207,7 +210,19 @@ int ble_central_at_cmd_connect(int argc, char **argv)
 	}
 
 	hex_str_to_bd_addr(strlen(argv[2]), (s8 *)argv[2], (u8 *)DestAddr);
-
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+	if(argc > 3)
+		init_phys = atoi(argv[3]);
+	if(init_phys != 0) {
+		if(init_phys < GAP_PHYS_CONN_INIT_1M_BIT || init_phys > (GAP_PHYS_CONN_INIT_CODED_BIT | \
+																GAP_PHYS_CONN_INIT_2M_BIT | \
+																GAP_PHYS_CONN_INIT_1M_BIT))
+		{
+			printf("ERROR: init phys[%d] error! \r\n", init_phys);
+			return -1;
+		}
+	}
+#endif
 	conn_req_param.scan_interval = 0xA0;	//100ms
 	conn_req_param.scan_window = 0x80;		//80ms
 	conn_req_param.conn_interval_min = 0x60;	//120ms
@@ -217,11 +232,16 @@ int ble_central_at_cmd_connect(int argc, char **argv)
 	conn_req_param.ce_len_min = 2 * (conn_req_param.conn_interval_min - 1);
 	conn_req_param.ce_len_max = 2 * (conn_req_param.conn_interval_max - 1);
 	le_set_conn_param(GAP_CONN_PARAM_1M, &conn_req_param);
-
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+	if(init_phys & GAP_CONN_PARAM_2M)
+		le_set_conn_param(GAP_CONN_PARAM_2M, &conn_req_param);
+	if(init_phys & GAP_PHYS_CONN_INIT_CODED_BIT)
+		le_set_conn_param(GAP_CONN_PARAM_CODED, &conn_req_param);
+#endif
 	printf("cmd_con, DestAddr: 0x%02X:0x%02X:0x%02X:0x%02X:0x%02X:0x%02X\r\n",
 			DestAddr[5], DestAddr[4], DestAddr[3], DestAddr[2], DestAddr[1], DestAddr[0]);
 
-	le_connect(0, DestAddr, (T_GAP_REMOTE_ADDR_TYPE)DestAddrType, local_addr_type, 1000);
+	le_connect(init_phys, DestAddr, (T_GAP_REMOTE_ADDR_TYPE)DestAddrType, local_addr_type, 1000);
 
 	return 0;
 }
@@ -567,7 +587,277 @@ int ble_central_at_cmd_scan(int argc, char **argv)
 
 	return 0;
 }
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+static ext_scan_param_t def_ext_scan_param = {
+	.own_addr_type 				= GAP_LOCAL_ADDR_LE_PUBLIC,
+	.ext_scan_phys				= {1, 1},
+	.type						= {GAP_SCAN_MODE_ACTIVE, GAP_SCAN_MODE_ACTIVE},
+	.ext_scan_interval			= {108, 108},
+	.ext_scan_window			= {54, 54},
+	.ext_scan_duration			= 0,
+	.ext_scan_period			= 0,
+	.ext_scan_filter_policy		= GAP_SCAN_FILTER_ANY,
+	.ext_scan_filter_duplicate	= GAP_SCAN_FILTER_DUPLICATE_ENABLE,
+};
 
+static T_GAP_LE_CONN_REQ_PARAM def_ext_conn_req_param = {
+		.scan_interval = 0x60,
+		.scan_window = 0x30,
+		.conn_interval_min = 0x60,
+		.conn_interval_max = 0x60,
+		.conn_latency = 0,
+		.supv_tout = 0x100,
+		.ce_len_min = 0xBE,
+		.ce_len_max = 0xBE,
+};
+
+bool ble_central_judge_ext_scan_param(ext_scan_param_t *ext_scan_param, uint8_t i)
+{
+	if (GAP_SCAN_MODE_PASSIVE != ext_scan_param->type[i] && GAP_SCAN_MODE_ACTIVE != ext_scan_param->type[i]) {
+		printf("invalid scan type[%d] %d\r\n", i, ext_scan_param->type[i]);
+		return false;
+	}
+
+	if (0x0004 > ext_scan_param->ext_scan_interval[i] || 0x0004 > ext_scan_param->ext_scan_window[i] || ext_scan_param->ext_scan_interval[i] < ext_scan_param->ext_scan_window[i]) {
+		printf("invalid ext_scan_interval[%d] 0x%x or  ext_scan_window[%d] 0%x\r\n", i, ext_scan_param->ext_scan_interval[i], i, ext_scan_param->ext_scan_window[i]);
+		return false;
+	}
+	return true;
+}
+
+void ble_central_parse_set_ext_scan_param(int argc, char **argv)
+{
+	ext_scan_param_t ext_scan_param;
+	uint8_t scan_phys = 0;
+	bool ret = true;
+
+	memcpy(&ext_scan_param, &def_ext_scan_param, sizeof(def_ext_scan_param));
+	if (2!= argc) {
+		ext_scan_param.own_addr_type = (T_GAP_LOCAL_ADDR_TYPE)hex_str_to_int(strlen(argv[2]), (s8 *) argv[2]);
+		if (GAP_LOCAL_ADDR_LE_RANDOM != ext_scan_param.own_addr_type && GAP_LOCAL_ADDR_LE_PUBLIC != ext_scan_param.own_addr_type) {
+			printf("invalid own_address_type %d\r\n", ext_scan_param.own_addr_type);
+			return;
+		}
+		ext_scan_param.ext_scan_filter_policy = (T_GAP_SCAN_FILTER_POLICY)hex_str_to_int(strlen(argv[3]), (s8 *) argv[3]);
+		if (GAP_SCAN_FILTER_WHITE_LIST_RPA < ext_scan_param.ext_scan_filter_policy) {
+			printf("invalid ext_scan_filter_policy %d\r\n", ext_scan_param.ext_scan_filter_policy);
+			return;
+		}
+		ext_scan_param.ext_scan_filter_duplicate = (T_GAP_SCAN_FILTER_DUPLICATE)hex_str_to_int(strlen(argv[4]), (s8 *) argv[4]);
+		if (GAP_SCAN_FILTER_DUPLICATE_ENABLED_RESET_FOR_EACH_PERIOD < ext_scan_param.ext_scan_filter_duplicate) {
+			printf("invalid ext_scan_filter_duplicate %d\r\n", ext_scan_param.ext_scan_filter_duplicate);
+			return;
+		}
+
+		if (argc > 5) {
+			ext_scan_param.ext_scan_duration = hex_str_to_int(strlen(argv[5]), (s8 *) argv[5]);
+			ext_scan_param.ext_scan_period = hex_str_to_int(strlen(argv[6]), (s8 *) argv[6]);
+			scan_phys = hex_str_to_int(strlen(argv[7]), (s8 *) argv[7]);
+			if ((0x1 != scan_phys) && (0x4 != scan_phys) && (0x5 != scan_phys)) {
+				printf("invalid scan_phys %d\r\n", scan_phys);
+				return;
+			}
+			ext_scan_param.ext_scan_phys[0] = scan_phys & 1 << 0;
+			ext_scan_param.ext_scan_phys[1] = scan_phys & 1 << 2;
+		}
+
+		if (argc > 8 && ext_scan_param.ext_scan_phys[0]) {  //phy pri
+			ext_scan_param.type[0] = (T_GAP_SCAN_MODE)hex_str_to_int(strlen(argv[8]), (s8 *) argv[8]);
+			ext_scan_param.ext_scan_interval[0] = hex_str_to_int(strlen(argv[9]), (s8 *) argv[9]);
+			ext_scan_param.ext_scan_window[0] = hex_str_to_int(strlen(argv[10]), (s8 *) argv[10]);
+			ret = ble_central_judge_ext_scan_param(&ext_scan_param, 0);
+			if (false == ret)
+				return;
+		}
+
+		if (argc > 11 && ext_scan_param.ext_scan_phys[1]) {  //phy pri
+			ext_scan_param.type[1] = (T_GAP_SCAN_MODE)hex_str_to_int(strlen(argv[11]), (s8 *) argv[11]);
+			ext_scan_param.ext_scan_interval[1] = hex_str_to_int(strlen(argv[12]), (s8 *) argv[12]);
+			ext_scan_param.ext_scan_window[1] = hex_str_to_int(strlen(argv[13]), (s8 *) argv[13]);
+			ret = ble_central_judge_ext_scan_param(&ext_scan_param, 1);
+			if (false == ret)
+				return;
+		}
+	}
+
+	ble_central_set_ext_scan_param(&ext_scan_param);
+}
+
+void ble_central_stop_ext_scan(void)
+{
+	T_GAP_CAUSE cause = GAP_CAUSE_SUCCESS;
+	cause = le_ext_scan_stop();
+	if (cause) {
+		printf("le_ext_scan_stop cause = %x \r\n", cause);
+	}
+}
+
+void ble_central_start_ext_scan(void)
+{
+	T_GAP_CAUSE cause = GAP_CAUSE_SUCCESS;
+	cause = le_ext_scan_start();
+		if (cause) {
+			printf("le_ext_scan_start cause = %x \r\n", cause);
+		}
+}
+void ble_central_at_cmd_op_escan(int argc, char **argv)
+{
+	if (2 != argc && 5 != argc && 8!= argc && 11 != argc && 14 != argc) {
+		printf("GAP scan param failed! wrong args number\r\n");
+		return;
+	}
+
+	if(strcmp(argv[1], "stop_escan") == 0){
+		if (2 != argc) {
+			printf("invalid argc num %d\r\n", argc);
+			return;
+		}
+		ble_central_stop_ext_scan();
+	} else if(strcmp(argv[1], "start_escan") == 0){
+		if (2 != argc) {
+			printf("invalid argc num %d\r\n", argc);
+			return;
+		}
+		ble_central_start_ext_scan();
+	} else if(strcmp(argv[1], "escan_param") == 0) {
+		ble_central_parse_set_ext_scan_param(argc, argv);
+	}
+}
+
+bool ble_central_judge_ext_connect_param(T_GAP_LE_CONN_REQ_PARAM *param)
+{
+	if (param->scan_interval < 0x0004 || param->scan_window < 0x0004 || param->scan_window > param->scan_interval) {
+		printf("invalid scan_interval 0x%x or scan_window 0x%x\r\n", param->scan_interval, param->scan_window);
+		return false;
+	}
+
+	if (param->conn_interval_min < 0x0006 || param->conn_interval_min > 0xC080) {
+		printf("invalid conn_interval_min 0x%x \r\n", param->conn_interval_min);
+		return false;
+	}
+
+	if (param->conn_interval_max < 0x0006 || param->conn_interval_max > 0xC080 || param->conn_interval_max < param->conn_interval_min) {
+		printf("invalid conn_interval_min 0x%x \r\n", param->conn_interval_max);
+		return false;
+	}
+
+	if (param->conn_latency > 0x01F3) {
+		printf("invalid param->conn_latency 0x%x \r\n", param->conn_latency);
+		return false;
+	}
+
+	if (param->supv_tout < 0x0A || param->supv_tout > 0x0C80) {
+		printf("invalid param->supv_tout 0x%x \r\n", param->supv_tout);
+		return false;
+	}
+	return true;
+}
+
+void ble_central_at_cmd_ext_connect(int argc, char **argv)
+{
+	(void) argc;
+#if defined(CONFIG_BT_SCATTERNET) && CONFIG_BT_SCATTERNET
+	if (ble_scatternet_central_app_max_links >= BLE_SCATTERNET_CENTRAL_APP_MAX_LINKS) {
+		printf("scatternet: exceed the max links number\r\n");
+		return;
+	}
+#endif
+#if defined(CONFIG_BT_MESH_SCATTERNET) && CONFIG_BT_MESH_SCATTERNET
+	if (bt_mesh_scatternet_central_app_max_links >= BLE_SCATTERNET_CENTRAL_APP_MAX_LINKS) {
+		printf("scatternet: exceed the max links number\r\n");
+		return;
+	}
+#endif
+	uint8_t DestAddr[6] = {0};
+	T_GAP_CAUSE cause;
+	T_GAP_REMOTE_ADDR_TYPE DestAddrType = GAP_REMOTE_ADDR_LE_PUBLIC;
+	T_GAP_LOCAL_ADDR_TYPE local_addr_type = GAP_LOCAL_ADDR_LE_PUBLIC;
+	T_GAP_LE_CONN_REQ_PARAM ext_conn_req_param[3] = {0};
+	T_GAP_CONN_PARAM_TYPE phy_type = 0;
+	uint16_t scan_timeout = 1000;
+	uint8_t phys_bit = 0;
+	uint8_t init_phys[3] = {0};
+	uint8_t init_filter_policy = 0;
+	uint8_t i = 0;
+	bool ret = true;
+
+	if (0 == strcmp(argv[1], "econn")) {
+		if (argc > 2) {
+			DestAddrType = (T_GAP_REMOTE_ADDR_TYPE)hex_str_to_int(strlen(argv[2]), (s8 *) argv[2]);
+			if (GAP_REMOTE_ADDR_LE_RANDOM_IDENTITY < DestAddrType) {
+				printf("invalid DestAddrType %d \r\n", DestAddrType);
+				return;
+			}
+			if (FALSE == hex_str_to_bd_addr(strlen(argv[3]), (s8 *)argv[3], (u8 *)DestAddr)) {
+				printf("invalid address\r\n");
+				return;
+			}
+			phys_bit = hex_str_to_int(strlen(argv[4]), (s8 *) argv[4]);
+			if((GAP_PHYS_CONN_INIT_1M_BIT > phys_bit) || (phys_bit > (GAP_PHYS_CONN_INIT_CODED_BIT | GAP_PHYS_CONN_INIT_2M_BIT | GAP_PHYS_CONN_INIT_1M_BIT))) {
+				printf("invalid phys_bit %d\r\n", phys_bit);
+				return;
+			}
+			init_phys[0] = phys_bit & 1 << 0;
+			init_phys[1] = phys_bit & 1 << 1;
+			init_phys[2] = phys_bit & 1 << 2;
+		}
+
+		if (argc > 5) {
+			local_addr_type = (T_GAP_LOCAL_ADDR_TYPE)hex_str_to_int(strlen(argv[5]), (s8 *) argv[5]);
+			if (GAP_LOCAL_ADDR_LE_RAP_OR_RAND < local_addr_type) {
+				printf("invalid local_addr_type[%d]\r\n", local_addr_type);
+				return;
+			}
+			///init conn filter policy
+			init_filter_policy = hex_str_to_int(strlen(argv[6]), (s8 *) argv[6]);
+			if ((1 != init_filter_policy) && (0 != init_filter_policy)) {
+				printf("invalid init_filter_policy %d\r\n", init_filter_policy);
+				return;
+			}
+
+			scan_timeout = hex_str_to_int(strlen(argv[7]), (s8 *) argv[7]);
+		}
+		for (i = 0; i < 3; i ++) {
+			if (0 == i) {
+				phy_type = GAP_CONN_PARAM_1M;
+			} else if (1 == i) {
+				phy_type = GAP_CONN_PARAM_2M;
+			} else if (2 == i) {
+				phy_type = GAP_CONN_PARAM_CODED;
+			}
+
+			memcpy(&ext_conn_req_param[i], &def_ext_conn_req_param, sizeof(def_ext_conn_req_param));
+			if (0 != init_phys[i]) {
+				if (argc > 8) {
+					ext_conn_req_param[i].scan_interval = hex_str_to_int(strlen(argv[8]), (s8 *) argv[8]);
+					ext_conn_req_param[i].scan_window = hex_str_to_int(strlen(argv[9]), (s8 *) argv[9]);
+					ext_conn_req_param[i].conn_interval_min = hex_str_to_int(strlen(argv[10]), (s8 *) argv[10]);
+					ext_conn_req_param[i].conn_interval_max = hex_str_to_int(strlen(argv[11]), (s8 *) argv[11]);
+					ext_conn_req_param[i].conn_latency = hex_str_to_int(strlen(argv[12]), (s8 *) argv[12]);
+					ext_conn_req_param[i].supv_tout = hex_str_to_int(strlen(argv[13]), (s8 *) argv[13]);
+					ext_conn_req_param[i].ce_len_min = 2 *(ext_conn_req_param[i].conn_interval_min - 1);
+					ext_conn_req_param[i].ce_len_max = 2 * (ext_conn_req_param[i].conn_interval_max - 1);
+					ret = ble_central_judge_ext_connect_param(&ext_conn_req_param[i]);
+					if (false == ret) 
+						return;
+				}
+			}
+			cause = le_set_conn_param(phy_type, &ext_conn_req_param[i]);
+			if (cause) {
+				printf("le_set_conn_param cause = %x \r\n", cause);
+				return;
+			}
+		}
+		if (1 == init_filter_policy)
+			cause = le_connect(phys_bit, NULL, DestAddrType, local_addr_type, scan_timeout);
+		else
+			cause = le_connect(phys_bit, DestAddr, DestAddrType, local_addr_type, scan_timeout);
+		if (cause) {
+			printf("le_connect cause = %x \r\n", cause);
+		}
+	}
+}
+#endif
 int ble_central_at_cmd_auth(int argc, char **argv)
 {
 	u8 conn_id;
@@ -895,6 +1185,16 @@ int ble_central_app_handle_at_cmd(uint16_t subtype, void *arg)
 	case BT_ATCMD_SET_PHY:
 #if F_BT_LE_5_0_SET_PHY_SUPPORT
 		ble_central_at_cmd_set_phy(argc, argv);
+#endif
+		break;
+	case BT_ATCMD_OP_EXT_SCAN:
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+		ble_central_at_cmd_op_escan(argc, argv);
+#endif
+		break;
+	case BT_ATCMD_EXT_CONNECT:
+#if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
+		ble_central_at_cmd_ext_connect(argc, argv);
 #endif
 		break;
 	default:

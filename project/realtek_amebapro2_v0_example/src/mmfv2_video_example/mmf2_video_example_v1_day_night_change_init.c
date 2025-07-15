@@ -187,21 +187,21 @@ static rate_ctrl_s rc_ctrl_night = {
 
 #if BPS_STABLE_CONTROL
 static bps_stbl_ctrl_param_t bps_stbl_ctrl_day_params = {
-	.maximun_bitrate = (uint32_t)(DAY_BPS * 1.2),
-	.minimum_bitrate = (uint32_t)(DAY_BPS * 0.8),
-	.target_bitrate = (uint32_t)(DAY_BPS),
+	.maximun_bitrate = DAY_BPS * 1.2,
+	.minimum_bitrate = DAY_BPS * 0.8,
+	.target_bitrate = DAY_BPS,
 	.sampling_time = 2000,
 };
 static bps_stbl_ctrl_param_t bps_stbl_ctrl_night_params = {
-	.maximun_bitrate = (uint32_t)(NIGHT_BPS * 1.2),
-	.minimum_bitrate = (uint32_t)(NIGHT_BPS * 0.8),
-	.target_bitrate = (uint32_t)(NIGHT_BPS),
+	.maximun_bitrate = NIGHT_BPS * 1.2,
+	.minimum_bitrate = NIGHT_BPS * 0.8,
+	.target_bitrate = NIGHT_BPS,
 	.sampling_time = 2000,
 };
-static uint32_t bps_stbl_ctrl_day_fps_stage[BPS_STBL_CTRL_STG_CNT] = {DAY_FPS, (uint32_t)(DAY_FPS * 0.8), (uint32_t)(DAY_FPS * 0.6)};
-static uint32_t bps_stbl_ctrl_day_gop_stage[BPS_STBL_CTRL_STG_CNT] = {DAY_FPS * 2, (uint32_t)(DAY_FPS * 0.8 * 2), (uint32_t)(DAY_FPS * 0.6 * 2)}; //default set gop = fps * 2
-static uint32_t bps_stbl_ctrl_night_fps_stage[BPS_STBL_CTRL_STG_CNT] = {NIGHT_FPS, (uint32_t)(NIGHT_FPS * 0.8), (uint32_t)(NIGHT_FPS * 0.6)};
-static uint32_t bps_stbl_ctrl_night_gop_stage[BPS_STBL_CTRL_STG_CNT] = {NIGHT_FPS * 2, (uint32_t)(NIGHT_FPS * 0.8 * 2), (uint32_t)(NIGHT_FPS * 0.6 * 2)}; //default set gop = fps * 2
+static uint32_t bps_stbl_ctrl_day_fps_stage[BPS_STBL_CTRL_STG_CNT] = {DAY_FPS, DAY_FPS * 0.8, DAY_FPS * 0.6};
+static uint32_t bps_stbl_ctrl_day_gop_stage[BPS_STBL_CTRL_STG_CNT] = {DAY_FPS * 2, DAY_FPS * 0.8 * 2, DAY_FPS * 0.6 * 2}; //default set gop = fps * 2
+static uint32_t bps_stbl_ctrl_night_fps_stage[BPS_STBL_CTRL_STG_CNT] = {NIGHT_FPS, NIGHT_FPS * 0.8, NIGHT_FPS * 0.6};
+static uint32_t bps_stbl_ctrl_night_gop_stage[BPS_STBL_CTRL_STG_CNT] = {NIGHT_FPS * 2, NIGHT_FPS * 0.8 * 2, NIGHT_FPS * 0.6 * 2}; //default set gop = fps * 2
 #endif
 
 typedef enum {
@@ -209,9 +209,34 @@ typedef enum {
 	NIGHT_MODE,
 } day_night_mode_change_t;
 
-void day_night_mode_change(day_night_mode_change_t mode)
+static void fps_change(day_night_mode_change_t mode, int sensor_fps, rate_ctrl_s *rc, bps_stbl_ctrl_param_t *bps_stbl_ctrl_param, uint32_t *fps_stage, uint32_t *gop_stage)
 {
+#if BPS_STABLE_CONTROL
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_BPS_STBL_CTRL_EN, 0);
+#endif
+	if (mode == DAY_MODE) {
+		//Set ISP FPS. raise maxfps first. minfps cannot set larger than maxfps.
+		isp_set_max_fps(sensor_fps);
+		isp_set_min_fps(sensor_fps);
+	} else {
+		//Set ISP FPS. lower minfps first. minfps cannot set larger than maxfps.
+		isp_set_min_fps(sensor_fps);
+		isp_set_max_fps(sensor_fps);
+	}
+	if(video_wait_target_fps(V1_CHANNEL, sensor_fps, 500) == OK) {
+		//Set Encode configuration
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_MULTI_RCCTRL, (int)rc);
+#if BPS_STABLE_CONTROL
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_PARAMS, (int)bps_stbl_ctrl_param);
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_FPS_STG, (int)fps_stage);
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_GOP_STG, (int)gop_stage);
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_BPS_STBL_CTRL_EN, 1);
+#endif
+	}
+}
 
+static void day_night_mode_change(day_night_mode_change_t mode)
+{
 	if (mode == DAY_MODE) {
 #if CONFIG_RTK_EVB_IR_CTRL
 		ir_ctrl_set_brightness_d(0); //close ir light
@@ -221,17 +246,10 @@ void day_night_mode_change(day_night_mode_change_t mode)
 		isp_set_day_night(0);
 		//Set to Color Mode, IQ table has a default minfps.
 		isp_set_gray_mode(0);
-		//Set ISP FPS. raise maxfps first. minfps cannot set larger than maxfps.
-		isp_set_max_fps(DAY_FPS);
-		isp_set_min_fps(DAY_FPS);
-		if(video_wait_target_fps(V1_CHANNEL, DAY_FPS, 500) == OK) {
-			//Set Encode configuration
-			mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_MULTI_RCCTRL, (int)&rc_ctrl_day);
-		}
 #if BPS_STABLE_CONTROL
-		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_PARAMS, (int)&bps_stbl_ctrl_day_params);
-		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_FPS_STG, (int)bps_stbl_ctrl_day_fps_stage);
-		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_GOP_STG, (int)bps_stbl_ctrl_day_gop_stage);
+		fps_change(mode, DAY_FPS, &rc_ctrl_day, &bps_stbl_ctrl_day_params, bps_stbl_ctrl_day_fps_stage, bps_stbl_ctrl_day_gop_stage);
+#else
+		fps_change(mode, DAY_FPS, &rc_ctrl_day, NULL, NULL, NULL);
 #endif
 	} else if (mode == NIGHT_MODE) {
 		//Change iq paramter
@@ -242,17 +260,10 @@ void day_night_mode_change(day_night_mode_change_t mode)
 #endif
 		//Set to Gray Mode, IQ table has a default minfps.
 		isp_set_day_night(1);
-		//Set ISP FPS. lower minfps first. minfps cannot set larger than maxfps.
-		isp_set_min_fps(NIGHT_FPS);
-		isp_set_max_fps(NIGHT_FPS);
-		if(video_wait_target_fps(V1_CHANNEL, NIGHT_FPS, 500) == OK) {
-			//Set Encode configuration
-			mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_MULTI_RCCTRL, (int)&rc_ctrl_night);
-		}
 #if BPS_STABLE_CONTROL
-		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_PARAMS, (int)&bps_stbl_ctrl_night_params);
-		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_FPS_STG, (int)bps_stbl_ctrl_night_fps_stage);
-		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_GOP_STG, (int)bps_stbl_ctrl_night_gop_stage);
+		fps_change(mode, NIGHT_FPS, &rc_ctrl_night, &bps_stbl_ctrl_night_params, bps_stbl_ctrl_night_fps_stage, bps_stbl_ctrl_night_gop_stage);
+#else
+		fps_change(mode, NIGHT_FPS, &rc_ctrl_night, NULL, NULL, NULL);
 #endif
 	}
 };

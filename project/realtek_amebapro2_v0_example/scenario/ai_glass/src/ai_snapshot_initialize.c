@@ -8,6 +8,7 @@
 #include "ai_glass_media.h"
 #include "media_filesystem.h"
 #include "ai_glass_dbg.h"
+#include "ai_glass_media.h"
 
 // Configure
 #define MAXIMUM_FILE_TAG_SIZE   32
@@ -144,18 +145,7 @@ int ai_snapshot_initialize(void)
 		rtw_mutex_init(&ai_snap_ctx->snapshot_mutex);
 		ai_snap_ctx->snapshot_write = aisnapshot_write_picture;
 		if (ai_snap_ctx->video_snapshot_ctx) {
-			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_GET_PRE_INIT_PARM, (int)&ai_glass_pre_init_params);
-			// Init ISP parameters
-			ai_glass_pre_init_params.isp_init_enable = 1;
-			ai_glass_pre_init_params.init_isp_items.init_brightness = 0;
-			ai_glass_pre_init_params.init_isp_items.init_contrast = 50;
-			ai_glass_pre_init_params.init_isp_items.init_flicker = 1;
-			ai_glass_pre_init_params.init_isp_items.init_hdr_mode = 0;
-			ai_glass_pre_init_params.init_isp_items.init_mirrorflip = 0xf3; // flip and mirror
-			ai_glass_pre_init_params.init_isp_items.init_saturation = 50;
-			ai_glass_pre_init_params.init_isp_items.init_wdr_level = 50;
-			ai_glass_pre_init_params.init_isp_items.init_wdr_mode = 2;
-			ai_glass_pre_init_params.init_isp_items.init_mipi_mode = 0;
+			media_get_preinit_isp_data(&ai_glass_pre_init_params);
 			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&ai_glass_pre_init_params);
 
 			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_SNAPSHOT_CB, (int)video_snapshot_cb);

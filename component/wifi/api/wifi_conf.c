@@ -253,6 +253,35 @@ void wifi_join_status_debug(rtw_join_status_t join_status)
 		is_filter_security = 0;
 		is_unsupport_security = 0;
 	}
+#if 0
+	//Check the wrong password method
+	if ((join_status == RTW_JOINSTATUS_FAIL)) {
+		extern int rltk_get_connecting_security_type(unsigned int *connecting_security_type);
+		unsigned int connecting_security_type = 0;
+		rltk_get_connecting_security_type(&connecting_security_type);
+		if (connecting_security_type == WPA3_SECURITY) {
+			if ((g_wifi_last_status > RTW_JOINSTATUS_SCANN_DONE && g_wifi_last_status < RTW_JOINSTATUS_ASSOCIATING)
+				|| (g_wifi_last_status > RTW_JOINSTATUS_ASSOCIATED && g_wifi_last_status < RTW_JOINSTATUS_4WAY_HANDSHAKE_DONE)) {
+				int reason_code = 0;
+				wifi_get_disconn_reason_code((unsigned short *)&reason_code);
+				if (reason_code == 0) {
+					wifi_get_status_code((unsigned short *)&reason_code);
+				}
+				printf("\n\r[%s] reason: %d, password wrong(WPA3)!!!!!!!!!!!\n\r\n\r", __FUNCTION__, reason_code);
+			}
+		} else {
+			if (g_wifi_last_status > RTW_JOINSTATUS_ASSOCIATED && g_wifi_last_status < RTW_JOINSTATUS_4WAY_HANDSHAKE_DONE) {
+				int reason_code = 0;
+				wifi_get_disconn_reason_code((unsigned short *)&reason_code);
+				if (reason_code == 0) {
+					wifi_get_status_code((unsigned short *)&reason_code);
+				}
+				printf("\n\r[%s] reason: %d, password wrong(WPA2)!!!!!!!!!!!\n\r\n\r", __FUNCTION__, reason_code);
+			}
+		}
+	}
+#endif
+
 	g_wifi_last_status = join_status;
 
 }
@@ -419,6 +448,29 @@ error:
 		}
 		rtw_free((u8 *)block_param);
 		join_block_param = NULL;
+	}
+
+	if (result == RTW_TIMEOUT) {
+		int ret;
+		ret = wifi_disconnect();
+
+		int timeout = 10;
+		while (1) {
+			if (wifi_is_connected_to_ap() != RTW_SUCCESS) {
+				printf("WIFI disconnect succeed\n\r");
+				break;
+			}
+
+			if (timeout == 0) {
+				printf("Deassoc timeout!\n\r");
+				ret = RTW_TIMEOUT;
+				break;
+			}
+
+			vTaskDelay(1 * configTICK_RATE_HZ);
+			timeout --;
+		}
+		printf("\n\r");
 	}
 
 	if (rtw_join_status == RTW_JOINSTATUS_FAIL) {
@@ -1163,6 +1215,12 @@ int wifi_connection_abort(void)
 {
 	extern int rtw_wx_connection_abort(void);
 	return rtw_wx_connection_abort();
+}
+
+int wifi_cancel_connection(int mode)
+{
+	extern int rtw_wx_cancel_connection(int mode);
+	return rtw_wx_cancel_connection(mode);
 }
 //----------------------------------------------------------------------------//
 

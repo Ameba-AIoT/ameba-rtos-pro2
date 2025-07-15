@@ -429,6 +429,8 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 
 			int ret = lifetime_snapshot_initialize();
 			if (ret == 0) {
+				status = AI_GLASS_CMD_COMPLETE; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
+				uart_resp_snapshot(param, status);
 				uint8_t file_name_length = snapshot_param[0];
 				char temp_record_filename_buffer[160] = {0};
 				uint8_t lifetime_snap_name[160] = {0};
@@ -450,9 +452,14 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 					}
 				}
 				if (lifetime_snapshot_take((const char *)lifetime_snap_name) == 0) {
-					status = AI_GLASS_CMD_COMPLETE;
+					if (lifetime_highres_save((const char *)lifetime_snap_name) != 0) {
+						AI_GLASS_WARN("lifetime snapshot high res save failed\r\n");
+						status = AI_GLASS_HR_SAVE_FAILED;
+						uart_resp_snapshot(param, status);
+					}
 				} else {
 					status = AI_GLASS_PROC_FAIL;
+					uart_resp_snapshot(param, status);
 				}
 
 				AI_GLASS_MSG("wait for lifetime snapshot deinit\r\n");
@@ -462,10 +469,11 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 				AI_GLASS_MSG("lifetime snapshot deinit done = %lu\r\n", mm_read_mediatime_ms());
 			} else if (ret == -2) {
 				status = AI_GLASS_BUSY;
+				uart_resp_snapshot(param, status);
 			} else {
 				status = AI_GLASS_PROC_FAIL;
+				uart_resp_snapshot(param, status);
 			}
-			uart_resp_snapshot(param, status);
 			// Save filelist to EMMC
 			extdisk_save_file_cntlist();
 		} else {
@@ -1202,6 +1210,7 @@ void fENABLESTAMODE(void *arg)
 
 void fLFSNAPSHOT(void *arg)
 {
+	uint8_t status = AI_GLASS_CMD_COMPLETE;
 	if (xSemaphoreTake(video_proc_sema, 0) != pdTRUE) {
 		AI_GLASS_WARN("AI glass is snapshot or record, current snapshot busy fail\r\n");
 		goto endofsnapshot;
@@ -1212,22 +1221,37 @@ void fLFSNAPSHOT(void *arg)
 
 	int ret = lifetime_snapshot_initialize();
 	if (ret == 0) {
-		char *cur_time_str = (char *)media_filesystem_get_current_time_string();
-		char temp_buffer[160] = {0};
+		char temp_record_filename_buffer[160] = {0};
 		uint8_t lifetime_snap_name[160] = {0};
-		extdisk_generate_unique_filename("lifesnap_", cur_time_str, ".jpg", (char *)temp_buffer, 160);
-		snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s%s", (const char *)temp_buffer, ".jpg");
-		free(cur_time_str);
-		lifetime_snapshot_take((const char *)lifetime_snap_name);
+
+		char *cur_time_str = (char *)media_filesystem_get_current_time_string();
+		if (cur_time_str) {
+			extdisk_generate_unique_filename("PICTURE_0_0_", cur_time_str, ".jpg", (char *)temp_record_filename_buffer, 160);
+			snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s%s", (const char *)temp_record_filename_buffer, ".jpg");
+			free(cur_time_str);
+		} else {
+			AI_GLASS_WARN("no memory for lifetime snapshot file name\r\n");
+			extdisk_generate_unique_filename("PICTURE_0_0_", "19800101", ".jpg", (char *)temp_record_filename_buffer, 160);
+		}
+		if (lifetime_snapshot_take((const char *)lifetime_snap_name) == 0) {
+			status = AI_GLASS_CMD_COMPLETE;
+			if (lifetime_highres_save((const char *)lifetime_snap_name) != 0) {
+				AI_GLASS_WARN("lifetime snapshot high res save failed\r\n");
+				status = AI_GLASS_HR_SAVE_FAILED;
+			}
+		} else {
+			status = AI_GLASS_PROC_FAIL;
+		}
+
 		AI_GLASS_MSG("wait for lifetime snapshot deinit\r\n");
 		while (lifetime_snapshot_deinitialize()) {
 			vTaskDelay(1);
 		}
-		AI_GLASS_MSG("lifetime snapshot deinit done\r\n");
+		AI_GLASS_MSG("lifetime snapshot deinit done = %lu\r\n", mm_read_mediatime_ms());
 	} else if (ret == -2) {
-		AI_GLASS_WARN("AI glass is snapshot or record, current snapshot busy fail\r\n");
+		status = AI_GLASS_BUSY;
 	} else {
-		AI_GLASS_WARN("AI glass lifetime snapshot process fail\r\n");
+		status = AI_GLASS_PROC_FAIL;
 	}
 	// Save filelist to EMMC
 	extdisk_save_file_cntlist();

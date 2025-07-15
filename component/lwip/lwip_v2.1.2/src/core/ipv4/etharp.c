@@ -252,20 +252,57 @@ void etharp_issue_dhcpserver_arp_task(void) {
 	}
 
 }
+
+void etharp_issue_dhcpserver_arp_function(void){
+  extern struct netif xnetif[NET_IF_NUM];
+  ip4_addr_t *dhcp_dst_ip, *dhcp_dst_ip_ret = NULL;
+  dhcp_dst_ip = (ip4_addr_t *) LwIP_GetDHCPSERVER(0);
+  struct eth_addr *dhcp_dst_eth_ret = NULL;
+  int retry_cnt = 0;
+
+  if (LwIP_etharp_find_addr(0, dhcp_dst_ip, &dhcp_dst_eth_ret, (const ip4_addr_t **)&dhcp_dst_ip_ret) >= 0) {
+	etharp_request_dst(&xnetif[0], netif_ip4_gw(&xnetif[0]), dhcp_dst_eth_ret->addr);	
+	//printf("[etharp_issue_dhcpserver_arp_function] (1) "MAC_FMT", retry_cnt: %d\n\r",MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);
+  } else {
+	LwIP_etharp_request(0, dhcp_dst_ip);
+
+	vTaskDelay(10);
+	while (LwIP_etharp_find_addr(0, dhcp_dst_ip, &dhcp_dst_eth_ret, (const ip4_addr_t **)&dhcp_dst_ip_ret) < 0) {
+	  LwIP_etharp_request(0, dhcp_dst_ip);
+	  vTaskDelay(10);
+	  retry_cnt++;
+	  if (retry_cnt > 10) {
+		break;
+	  }
+	}
+
+	if (retry_cnt < 10) {
+	  //printf("[etharp_issue_dhcpserver_arp_function] (2_1) "MAC_FMT", retry_cnt: %d\n\r",MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);	
+	  etharp_request_dst(&xnetif[0], netif_ip4_gw(&xnetif[0]), dhcp_dst_eth_ret->addr);		  
+	}
+	else{
+	  //printf("[etharp_issue_dhcpserver_arp_function] (2_2) "MAC_FMT", retry_cnt: %d\n\r",MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);		  
+	  etharp_request_dst(&xnetif[0], netif_ip4_gw(&xnetif[0]), &ethbroadcast);		 
+	}
+
+  }
+
+}
+
 void
 etharp_tmr(void)
 {
   int i;
-//Realtek add
+  //Realtek add
   extern struct netif xnetif[NET_IF_NUM];
   extern int wifi_issue_nulldata(unsigned int power_mode); 
   arp_timer_count++;
   if (wifi_is_running(WLAN0_IDX) && ((wifi_get_join_status() == RTW_JOINSTATUS_SUCCESS) && (*(u32 *)LwIP_GetIP(0) != IP_ADDR_INVALID))) {  
-  	if((arp_timer_count >= wifi_user_config.active_keepalive_interval) && (wifi_user_config.active_keepalive_interval) 
-	   && (wifi_user_config.active_keepalive_enabled)){
-		etharp_issue_dhcpserver_arp_task();
-		arp_timer_count = 0;
-  	}
+    if((arp_timer_count >= wifi_user_config.active_keepalive_interval) && (wifi_user_config.active_keepalive_interval) 
+       && (wifi_user_config.active_keepalive_enabled)){
+         etharp_issue_dhcpserver_arp_function();
+         arp_timer_count = 0;
+       }
   }
 //Realtek add
   LWIP_DEBUGF(ETHARP_DEBUG, ("etharp_timer\n"));
