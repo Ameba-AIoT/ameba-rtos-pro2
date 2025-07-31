@@ -145,11 +145,23 @@ void set_initial_tick_count(void)
   * @retval None
   */
 #include "time.h"
+
 void main(void)
 {
 	/* for debug, protect rodata*/
 	//mpu_rodata_protect_init();
 	console_init();
+
+	// // Init chip id info for VOE
+    // AON_TypeDef *aon = AON;
+    // u32 chip_id = 0;
+    // chip_id = 0xbfffffef;
+    // // Assign chip id for 12M enable
+    // aon->AON_REG_AON_FAST_RESUME = chip_id;
+    // Check real chip id
+    // hal_sys_get_chip_id(&chip_id);
+    // printf("[Chip_ID_Check] AON_id=%x, chip_id=%x\r\n", aon->AON_REG_AON_FAST_RESUME,chip_id);
+
 	voe_t2ff_prealloc();
 
 	setup();
