@@ -160,7 +160,7 @@ typedef struct jpeg_crop_parm_s {
 #define MASK_RECT_ID_1 0X02
 #define MASK_RECT_ID_2 0X03
 #define MASK_RECT_ID_3 0X04
-#define USE_VIDEO_HR_FLOW 0
+#define USE_VIDEO_HR_FLOW 1
 typedef struct video_pre_init_params_s {
 	uint32_t meta_enable;
 	uint32_t meta_size;
@@ -352,6 +352,60 @@ typedef struct video_encoder_nalu_paylaod_info_s {
 	int nalu_count;
 } video_encoder_nalu_payload_info_t;
 
+typedef enum {
+	TYPE_BYTE = 1,
+	TYPE_ASCII = 2,
+	TYPE_SHORT = 3,
+	TYPE_LONG = 4,
+	TYPE_RATIONAL = 5,
+} ExifType;
+
+typedef struct {
+	uint16_t tag;
+	ExifType type;
+	uint32_t count;
+	union {
+		const uint8_t  *bytes;
+		const char     *ascii;
+		struct {
+			uint32_t num, den;
+		} rational;
+		const uint16_t *short_arr;
+		uint16_t short_val;
+		uint32_t long_val;
+		const uint32_t *rational_arr;
+	} data;
+} ExifTag;
+
+typedef struct {
+	const char *make;       // Manufacturer   (ASCII) EX: "Realtek"
+	const char *model;      // Model          (ASCII) EX: "Rtl8735b"
+	const char *datetime;   // Date and Time  (EXIF format: "YYYY:MM:DD HH:MM:SS")
+	// Other EXIF fields
+	float exposure_time;    // Exposure time  (example: 1/125 = 0.008 or directly 1.0/125)
+	float fnumber;          // Aperture       (e.g., 2.8)
+	float focal_length;     // Focal length   (in mm)
+	int white_balance;      // White balance  (0=auto, 1=manual, -1=not provided)
+	int iso;                // ISO            (e.g., 200)
+	// GPS-related fields
+	double gps_latitude;    // Latitude       (positive: North, negative: South)
+	double gps_longitude;   // Longitude      (positive: East, negative: West)
+	double gps_altitude;    // Altitude       (in meters)
+	int has_gps;            // Whether GPS is included (1/0)
+} ExifParams;
+
+typedef struct {
+	// Tag workspace
+	ExifTag main_tags[8], exif_tags[16], gps_tags[8];
+	int main_count, exif_count, gps_count;
+	// GPS temporary buffers
+	uint32_t gps_lat_arr[6];
+	uint32_t gps_lon_arr[6];
+	uint32_t gps_alt_arr[2];
+	uint8_t latref_buf[2], lonref_buf[2], altref_buf[1];
+} ExifWorkspace;
+
+
 int video_ctrl(int ch, int cmd, int arg);
 
 int video_set_roi_region(int ch, int x, int y, int width, int height, int value);
@@ -484,7 +538,7 @@ int video_get_rc(int ch, rate_ctrl_s *rc_ctrl);
 
 int video_bps_stbl_ctrl_en(int ch, int enable);
 
-int video_set_bps_stbl_ctrl_params(int ch, bps_stbl_ctrl_param_t *bps_stbl_ctrl_param, uint32_t* fps_stage, uint32_t* gop_stage);
+int video_set_bps_stbl_ctrl_params(int ch, bps_stbl_ctrl_param_t *bps_stbl_ctrl_param, uint32_t *fps_stage, uint32_t *gop_stage);
 
 int video_get_realfps(int ch, int* isp_fps, int* enc_fps);
 
@@ -493,6 +547,12 @@ int video_wait_target_fps(int ch, int target_fps, int timeout);
 int video_set_voe_heap(int heap_addr, int heap_size, int use_malloc);
 
 void video_set_isp_ch_buf(int ch, int slot_num);
+
+int video_insert_jpeg_exif(video_meta_t *m_parm);
+
+int video_create_exif_tags(uint8_t *buf, uint32_t video_len);
+
+void video_fill_exif_tags_from_struct(const ExifParams *params);
 
 //////////////////////
 #define VOE_NAND_FLASH_OFFSET 0x8000000

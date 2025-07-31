@@ -16,6 +16,7 @@
 #include <string.h>
 #include "mmf2_mediatime_8735b.h"
 #include "ai_glass_media.h"
+#include "ai_glass_initialize.h"
 
 #define USE_HTTPS                   1
 #define DELETE_FILE_AFTER_UPLOAD    1
@@ -28,17 +29,24 @@
 // These are the certificate, key provide by TLS
 // User could use their cert since the test cert treaed unsafety for some user
 #if defined(USE_HTTPS) && USE_HTTPS
-#if (HTTPD_USE_TLS == HTTPD_TLS_POLARSSL)
-#include <polarssl/certs.h>
-#define HTTPS_SRC_CRT   test_srv_crt
-#define HTTPS_SRC_KEY   test_srv_key
-#define HTTPS_CA_CRT    test_ca_crt
-#elif (HTTPD_USE_TLS == HTTPD_TLS_MBEDTLS)
-#include <mbedtls/certs.h>
-#define HTTPS_SRC_CRT   mbedtls_test_srv_crt
-#define HTTPS_SRC_KEY   mbedtls_test_srv_key
-#define HTTPS_CA_CRT    mbedtls_test_ca_crt
-#endif
+// #if (HTTPD_USE_TLS == HTTPD_TLS_POLARSSL)
+// #include <polarssl/certs.h>
+// #define HTTPS_SRC_CRT   test_srv_crt
+// #define HTTPS_SRC_KEY   test_srv_key
+// #define HTTPS_CA_CRT    test_ca_crt
+// #elif (HTTPD_USE_TLS == HTTPD_TLS_MBEDTLS)
+// #include <mbedtls/certs.h>
+// #define HTTPS_SRC_CRT   mbedtls_test_srv_crt
+// #define HTTPS_SRC_KEY   mbedtls_test_srv_key
+// #define HTTPS_CA_CRT    mbedtls_test_ca_crt
+// #endif
+
+#include "ai_glass_certs.h"
+
+#define HTTPS_SRC_CRT    ai_glass_src_cert_pem
+#define HTTPS_SRC_KEY    ai_glass_src_key_pem
+#define HTTPS_CA_CRT     ai_glass_ca_cert_pem
+
 #endif
 
 //FOR OTA
@@ -76,7 +84,7 @@ static uint8_t delete_file_after_upload = DELETE_FILE_AFTER_UPLOAD;
 #define TASK_NOTIFY_COMPLETED_MASK  (WRITE_TASK_COMPLETED_BIT | READ_TASK_COMPLETED_BIT)
 
 // For Queue method
-#define QUEUE_LENGTH            3
+#define QUEUE_LENGTH            8
 #define QUEUE_ITEM_SIZE         HTTP_DATA_BUF_SIZE
 
 typedef struct {
@@ -192,6 +200,7 @@ static void ota_multicast_send_thread(void *param)
 	cJSON_Delete(IOTJSObject);
 	if (err == 0) {
 		while (1) {
+			vTaskDelay(5000);
 			if (http_ota_status != OTA_STATE_IDLE) {
 				WLAN_SCEN_MSG("HTTP OTA status is not in the idle status, stop sending multicast packet\r\n");
 			} else {
@@ -211,7 +220,6 @@ static void ota_multicast_send_thread(void *param)
 					WLAN_SCEN_MSG("sendto - %d bytes to %s:%d\r\n", sendLen, multicast_group_ip, multicast_port);
 				}
 			}
-			vTaskDelay(1000);
 		}
 	} else if (socket != -1) {
 		WLAN_SCEN_ERR("ERROR: socket = -1\r\n");
@@ -617,7 +625,9 @@ static void http_file_read_thread(void *pvParameters)
 }
 
 static void media_getfile_cb(struct httpd_conn *conn)
-{
+{ 
+	critical_process_started = 1;
+
 	char *filename = NULL;
 	char *user_agent = NULL;
 	FILE *http_file = NULL;
@@ -688,17 +698,23 @@ static void media_getfile_cb(struct httpd_conn *conn)
 			file_queue = NULL;
 			send_taskhandle = NULL;
 			read_taskhandle = NULL;
+			// extdisk_fseek(http_file, 0, SEEK_END); 
+			// int file_size = extdisk_ftell(http_file);
+			// printf("File_size: %d\r\n", file_size);
 			extdisk_fclose(http_file);
 			http_file = NULL;
 			if ((notifyValue & (WRITE_TASK_SUCCESS_BIT | READ_TASK_SUCCESS_BIT)) == (WRITE_TASK_SUCCESS_BIT | READ_TASK_SUCCESS_BIT)) {
 				WLAN_SCEN_MSG("Http send %s completed successfully\r\n", filename);
-				if (delete_file_after_upload) {
-					extdisk_remove(filename);
-					extdisk_save_file_cntlist();
-					WLAN_SCEN_MSG("Delete file %s\r\n", filename);
-				} else {
-					WLAN_SCEN_MSG("Keep file %s\r\n", filename);
-				}
+
+				// DELETE FILE MECHANISM HAS CHANGED
+				// if (delete_file_after_upload) {
+				// 	// vTaskDelay(2000);
+				// 	extdisk_remove(filename);
+				// 	extdisk_save_file_cntlist();
+				// 	WLAN_SCEN_MSG("Delete file %s\r\n", filename);
+				// } else {
+				// 	WLAN_SCEN_MSG("Keep file %s\r\n", filename);
+				// }
 			} else {
 				WLAN_SCEN_WARN("Http send %s fail, ret = %lx\r\n", filename, notifyValue);
 			}
@@ -733,6 +749,7 @@ http_end:
 	}
 	httpd_conn_close(conn);
 	WLAN_SCEN_MSG("[%s] httpd_conn_end (close files): %lu ms\r\n", __func__, rtw_get_current_time() - start_time_httpd_request_get_header_field);
+	critical_process_started = 0;
 }
 
 static char *extract_value(const char *body, const char *key, int *ptr)
@@ -809,18 +826,18 @@ Content-Length: (total body size)
 ------WebKitFormBoundary7MA4YWxkTrZu0gW
 Content-Disposition: form-data; name="wifi_version"
 
-x.x.x.x
+wifi_ota_v($wifi_version).bin
 ------WebKitFormBoundary7MA4YWxkTrZu0gW
 Content-Disposition: form-data; name="bt_version"
 
 x.x.x.x
 ------WebKitFormBoundary7MA4YWxkTrZu0gW
-Content-Disposition: form-data; name="file"; filename="wifi_ota_v($wifi_version).bin"
+Content-Disposition: form-data; name="wififile"; filename="wifi_ota_v($wifi_version).bin"
 Content-Type: application/octet-stream
 
 (contents of the file)
 ------WebKitFormBoundary7MA4YWxkTrZu0gW
-Content-Disposition: form-data; name="file"; filename="bt_ota_v($bt_version).bin"
+Content-Disposition: form-data; name="btfile"; filename="bt_ota_v($bt_version).bin"
 Content-Type: application/octet-stream
 
 (contents of the file)
@@ -828,8 +845,18 @@ Content-Type: application/octet-stream
 
 */
 
+void hex_dump(const char *data, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        printf("%02X ", (unsigned char)data[i]);
+        if ((i + 1) % 16 == 0) printf("\n");
+    }
+    printf("\n");
+}
+
+
 static void save_ota_files_to_emmc_from_http_cb(struct httpd_conn *conn)
 {
+	critical_process_started = 1;
 	// POST /save-ota-files
 	if (httpd_request_is_method(conn, (char *)"POST")) {
 		char *content_type = NULL;
@@ -885,6 +912,8 @@ static void save_ota_files_to_emmc_from_http_cb(struct httpd_conn *conn)
 		// boundary
 		char *version_ptr = binary_search(read_buf, bytes_read, boundary_marker, strlen(boundary_marker));
 
+		// hex_dump(version_ptr, 8192);
+
 		// Find wifi version
 		int next_ptr = 0;
 		wifi_version = extract_value((char *)version_ptr, "name=\"wifi_version\"", &next_ptr);
@@ -901,7 +930,7 @@ static void save_ota_files_to_emmc_from_http_cb(struct httpd_conn *conn)
 			goto endofparser;
 		}
 
-		snprintf(fwfilename, sizeof(fwfilename), "wifi_ota_v%s.bin", wifi_version);
+		snprintf(fwfilename, sizeof(fwfilename), "%s", wifi_version);
 		// Open the two files first
 		wifi_ota_file = extdisk_fopen(fwfilename, "wb");
 
@@ -1040,6 +1069,533 @@ endofparser:
 		}
 	}
 	httpd_conn_close(conn);
+	critical_process_started = 0;
+}
+
+static void save_wifi_ota_to_emmc_from_http_cb(struct httpd_conn *conn)
+{
+	critical_process_started = 1;
+	if (httpd_request_is_method(conn, (char *)"POST")) {
+		char *content_type = NULL;
+		char *boundary = NULL;
+		FILE *wifi_ota_file = NULL;
+		// FILE *bt_ota_file = NULL;
+		char fwfilename[64];
+		char *wifi_version = NULL;
+		// char *bt_version = NULL;
+
+		// Extract boundary
+		if (httpd_request_get_header_field(conn, (char *)"Content-Type", &content_type) != -1) {
+			char *boundary_start = strstr(content_type, "boundary=");
+			if (boundary_start) {
+				boundary = boundary_start + 9; // Skip "boundary="
+				WLAN_SCEN_MSG("Boundary: %s\n", boundary);
+			} else {
+				WLAN_SCEN_ERR("Failed to find boundary\r\n");
+				httpd_response_bad_request(conn, (char *)"Bad Request: Failed to find boundary\r\n");
+				goto endofparser;
+			}
+		}
+
+		char boundary_marker[128];
+		snprintf(boundary_marker, sizeof(boundary_marker), "--%s", boundary);
+
+		int read_len = 0;
+
+		size_t binary_size = 0;
+		int inside_binary_section = 0;
+		int file_count = 0;
+
+		size_t content_lengt = conn->request.content_len;
+		WLAN_SCEN_MSG("Content-Length: %d\r\n", content_lengt);
+		// Parser version
+		memset(read_buf, 0, SERVER_READ_BUF_SIZE * 2 + 2);
+
+		int chunk_size = (conn->request.content_len - read_len) > SERVER_READ_BUF_SIZE ? SERVER_READ_BUF_SIZE : (conn->request.content_len - read_len);
+
+		read_len = chunk_size;
+
+		// bytes_read remain how many data in readbuffer
+		int bytes_read = httpd_request_read_data(conn, read_buf, chunk_size);
+
+		if (bytes_read <= 0) {
+			WLAN_SCEN_ERR("Read version failed\r\n");
+			httpd_response_bad_request(conn, (char *)"Bad Request: Read version failed\r\n");
+			goto endofparser;
+		}
+
+		read_len = bytes_read;
+
+		// boundary
+		char *version_ptr = binary_search(read_buf, bytes_read, boundary_marker, strlen(boundary_marker));
+
+		// hex_dump(version_ptr, 8192);
+
+		// Find wifi version
+		int next_ptr = 0;
+		wifi_version = extract_value((char *)version_ptr, "name=\"wifi_version\"", &next_ptr);
+		version_ptr = (char *)(uintptr_t)next_ptr;
+		WLAN_SCEN_MSG("wifi pointer: %s\r\n", version_ptr);
+		// bt_version = extract_value((char *)version_ptr, "name=\"bt_version\"", &next_ptr);
+		// version_ptr = (char *)(uintptr_t)next_ptr;
+		// WLAN_SCEN_MSG("bt pointer: %s\r\n", version_ptr);
+
+		// if (wifi_version == NULL || bt_version == NULL) {
+		// 	// HTTP/1.1 400 Bad Request
+		// 	WLAN_SCEN_ERR("[EXTRACT WIFI OR BT VERSION] fail, returning httpd response bad request 400\r\n");
+		// 	httpd_response_bad_request(conn, (char *)"Bad Request: Not able to get wifi / bt version\r\n");
+		// 	goto endofparser;
+		// }
+
+		snprintf(fwfilename, sizeof(fwfilename), "%s", wifi_version);
+		// Open the two files first
+		wifi_ota_file = extdisk_fopen(fwfilename, "wb");
+
+		if (!wifi_ota_file) {
+			WLAN_SCEN_ERR("Failed to open wifi ota file for writing.\n");
+			httpd_response_bad_request(conn, (char *)"Bad Request: Failed to open wifi ota file for writing.\r\n");
+			goto endofparser;
+		}
+
+		// snprintf(fwfilename, sizeof(fwfilename), "bt_ota_v%s.bin", bt_version);
+
+		// bt_ota_file = extdisk_fopen(fwfilename, "wb");
+
+		// if (!bt_ota_file) {
+		// 	WLAN_SCEN_ERR("Failed to open bt ota file for writing.\n");
+		// 	httpd_response_bad_request(conn, (char *)"Bad Request: Failed to open bt ota file for writing.\r\n");
+		// 	goto endofparser;
+		// }
+
+		// Print extracted values
+		WLAN_SCEN_MSG("WiFi Version: %s\n", wifi_version ? wifi_version : "Not Found");
+		// WLAN_SCEN_MSG("BT Version: %s\n", bt_version ? bt_version : "Not Found");
+
+		bytes_read -= (version_ptr - (char *)read_buf);
+		memmove(read_buf, version_ptr, bytes_read);
+
+		// Read request body in chunks
+		while (1) {
+			if (bytes_read < strlen(boundary_marker) && read_len < content_lengt) {
+				chunk_size = (conn->request.content_len - read_len) > SERVER_READ_BUF_SIZE ? SERVER_READ_BUF_SIZE : (conn->request.content_len - read_len);
+				int tmp_read = httpd_request_read_data(conn, read_buf + bytes_read, chunk_size);
+				WLAN_SCEN_INFO("Tmp_read in loop: %d\r\n", tmp_read);
+				if (tmp_read < 0) {
+					break;
+				}
+				if (tmp_read != SERVER_READ_BUF_SIZE) {
+					WLAN_SCEN_INFO("Remain Data is %s\r\n", read_buf);
+				}
+				read_len += tmp_read;
+				bytes_read += tmp_read;
+			} else {
+				WLAN_SCEN_INFO("Remain Data is %s\r\n", read_buf);
+			}
+
+			if (inside_binary_section) {
+				char *boundary_ending_marker = binary_search(read_buf, bytes_read, boundary_marker, strlen(boundary_marker));
+
+				if (boundary_ending_marker) {
+					//Binary size need to minus 2 bytes at the end before writing into file. This corresponds to \r\n .
+					binary_size = boundary_ending_marker - (char *)read_buf - strlen("\r\n");
+					if (binary_size > 0) {
+						extdisk_fwrite(read_buf, binary_size, 1, wifi_ota_file);
+					} else if (binary_size < 0) {
+						WLAN_SCEN_ERR("binary size is negative\r\n");
+						httpd_response_bad_request(conn, (char *)"Bad Request: binary size is negative\r\n");
+						goto endofparser;
+					}
+					inside_binary_section = 0;
+					file_count++;
+					bytes_read -= (boundary_ending_marker - (char *)read_buf);
+					memmove(read_buf, boundary_ending_marker, bytes_read);
+					if (file_count >= TOTOAL_FILE_NUM) {
+						WLAN_SCEN_MSG("Break if file count greater than %d.\r\n", TOTOAL_FILE_NUM);
+						break;
+					}
+					WLAN_SCEN_MSG("End of the file, file count %d\r\n", file_count);
+					continue;
+				} else {
+					if (bytes_read - (strlen(boundary_marker) - 1) > 0) {
+						extdisk_fwrite(read_buf, bytes_read - (strlen(boundary_marker) - 1), 1, wifi_ota_file);
+					} else if (bytes_read - (strlen(boundary_marker) - 1) < 0) {
+						WLAN_SCEN_ERR("ERROR: bytes_read - (strlen(boundary_marker) - 1) is negative\r\n");
+						httpd_response_bad_request(conn, (char *)"Bad Request: remain length less than boundary\r\n");
+						goto endofparser;
+					}
+					memmove(read_buf, read_buf + (bytes_read - (strlen(boundary_marker) - 1)), strlen(boundary_marker) - 1);
+					bytes_read = strlen(boundary_marker) - 1;
+					continue;
+				}
+			} else {
+				char *boundary_ending_marker = binary_search(read_buf, bytes_read, boundary_marker, strlen(boundary_marker));
+
+				if (boundary_ending_marker) {
+					bytes_read -= (boundary_ending_marker - (char *)read_buf) + strlen(boundary_marker);
+					memmove(read_buf, boundary_ending_marker + strlen(boundary_marker), bytes_read);
+					char *binary_start = binary_search((char *)read_buf, bytes_read, "Content-Type: application/octet-stream", strlen("Content-Type: application/octet-stream"));
+
+					if (binary_start) {
+						bytes_read -= (binary_start - (char *)read_buf) + strlen("Content-Type: application/octet-stream");
+						memmove(read_buf, binary_start + strlen("Content-Type: application/octet-stream"), bytes_read);
+						binary_start = binary_search((char *)read_buf, bytes_read, "\r\n\r\n", strlen("\r\n\r\n"));
+
+						if (binary_start) {
+							bytes_read -= (binary_start - (char *)read_buf) + strlen("\r\n\r\n");
+							memmove(read_buf, binary_start + strlen("\r\n\r\n"), bytes_read);
+							inside_binary_section = 1;
+							continue;
+						} else {
+							WLAN_SCEN_ERR("Should not enter here. Entering here means you can find the content type but not the next line.\r\n"); // By right not supposed to enter :recommended to do a while loop
+							httpd_response_bad_request(conn, (char *)"Bad Request: format is invalid\r\n");
+							goto endofparser;
+						}
+					}
+				} else {
+					WLAN_SCEN_ERR("Bad connection and stuck in here\r\n"); // TODO: May need to reset board if entered here.
+					httpd_response_bad_request(conn, (char *)"Bad Request: could not find the boundary\r\n");
+					goto endofparser;
+				}
+			}
+			vTaskDelay(pdMS_TO_TICKS(100));
+			if (read_len >= content_lengt) {
+				break;
+			}
+		}
+		// write HTTP response
+		httpd_response_write_header_start(conn, (char *)"200 OK", (char *)"text/plain", 0);
+		httpd_response_write_header(conn, (char *)"Connection", (char *)"close");
+		httpd_response_write_header_finish(conn);
+
+endofparser:
+		if (content_type) {
+			httpd_free(content_type);
+		}
+		if (wifi_ota_file) {
+			extdisk_fclose(wifi_ota_file);
+		}
+		// Free allocated memory
+		if (wifi_version) {
+			free(wifi_version);
+		}
+	}
+	httpd_conn_close(conn);
+	critical_process_started = 0;
+}
+
+static void save_bt_ota_to_emmc_from_http_cb(struct httpd_conn *conn)
+{
+	critical_process_started = 1;
+	if (httpd_request_is_method(conn, (char *)"POST")) {
+		char *content_type = NULL;
+		char *boundary = NULL;
+		FILE *bt_ota_file = NULL;
+		char fwfilename[64];
+		char *bt_version = NULL;
+
+		// Extract boundary
+		if (httpd_request_get_header_field(conn, (char *)"Content-Type", &content_type) != -1) {
+			char *boundary_start = strstr(content_type, "boundary=");
+			if (boundary_start) {
+				boundary = boundary_start + 9; // Skip "boundary="
+				WLAN_SCEN_MSG("Boundary: %s\n", boundary);
+			} else {
+				WLAN_SCEN_ERR("Failed to find boundary\r\n");
+				httpd_response_bad_request(conn, (char *)"Bad Request: Failed to find boundary\r\n");
+				goto endofparser;
+			}
+		}
+
+		char boundary_marker[128];
+		snprintf(boundary_marker, sizeof(boundary_marker), "--%s", boundary);
+
+		int read_len = 0;
+
+		size_t binary_size = 0;
+		int inside_binary_section = 0;
+		int file_count = 0;
+
+		size_t content_lengt = conn->request.content_len;
+		WLAN_SCEN_MSG("Content-Length: %d\r\n", content_lengt);
+		// Parser version
+		memset(read_buf, 0, SERVER_READ_BUF_SIZE * 2 + 2);
+
+		int chunk_size = (conn->request.content_len - read_len) > SERVER_READ_BUF_SIZE ? SERVER_READ_BUF_SIZE : (conn->request.content_len - read_len);
+
+		read_len = chunk_size;
+
+		// bytes_read remain how many data in readbuffer
+		int bytes_read = httpd_request_read_data(conn, read_buf, chunk_size);
+
+		if (bytes_read <= 0) {
+			WLAN_SCEN_ERR("Read version failed\r\n");
+			httpd_response_bad_request(conn, (char *)"Bad Request: Read version failed\r\n");
+			goto endofparser;
+		}
+
+		read_len = bytes_read;
+
+		// boundary
+		char *version_ptr = binary_search(read_buf, bytes_read, boundary_marker, strlen(boundary_marker));
+
+		// hex_dump(version_ptr, 8192);
+
+		// Find wifi version
+		int next_ptr = 0;
+
+		bt_version = extract_value((char *)version_ptr, "name=\"bt_version\"", &next_ptr);
+		version_ptr = (char *)(uintptr_t)next_ptr;
+		WLAN_SCEN_MSG("bt pointer: %s\r\n", version_ptr);
+
+		// if (wifi_version == NULL || bt_version == NULL) {
+		// 	// HTTP/1.1 400 Bad Request
+		// 	WLAN_SCEN_ERR("[EXTRACT WIFI OR BT VERSION] fail, returning httpd response bad request 400\r\n");
+		// 	httpd_response_bad_request(conn, (char *)"Bad Request: Not able to get wifi / bt version\r\n");
+		// 	goto endofparser;
+		// }
+
+
+		snprintf(fwfilename, sizeof(fwfilename), "bt_ota_v%s.bin", bt_version);
+
+		bt_ota_file = extdisk_fopen(fwfilename, "wb");
+
+		if (!bt_ota_file) {
+			WLAN_SCEN_ERR("Failed to open bt ota file for writing.\n");
+			httpd_response_bad_request(conn, (char *)"Bad Request: Failed to open bt ota file for writing.\r\n");
+			goto endofparser;
+		}
+
+		// Print extracted values
+		// WLAN_SCEN_MSG("WiFi Version: %s\n", wifi_version ? wifi_version : "Not Found");
+		WLAN_SCEN_MSG("BT Version: %s\n", bt_version ? bt_version : "Not Found");
+
+		bytes_read -= (version_ptr - (char *)read_buf);
+		memmove(read_buf, version_ptr, bytes_read);
+
+		// Read request body in chunks
+		while (1) {
+			if (bytes_read < strlen(boundary_marker) && read_len < content_lengt) {
+				chunk_size = (conn->request.content_len - read_len) > SERVER_READ_BUF_SIZE ? SERVER_READ_BUF_SIZE : (conn->request.content_len - read_len);
+				int tmp_read = httpd_request_read_data(conn, read_buf + bytes_read, chunk_size);
+				WLAN_SCEN_INFO("Tmp_read in loop: %d\r\n", tmp_read);
+				if (tmp_read < 0) {
+					break;
+				}
+				if (tmp_read != SERVER_READ_BUF_SIZE) {
+					WLAN_SCEN_INFO("Remain Data is %s\r\n", read_buf);
+				}
+				read_len += tmp_read;
+				bytes_read += tmp_read;
+			} else {
+				WLAN_SCEN_INFO("Remain Data is %s\r\n", read_buf);
+			}
+
+			if (inside_binary_section) {
+				char *boundary_ending_marker = binary_search(read_buf, bytes_read, boundary_marker, strlen(boundary_marker));
+
+				if (boundary_ending_marker) {
+					//Binary size need to minus 2 bytes at the end before writing into file. This corresponds to \r\n .
+					binary_size = boundary_ending_marker - (char *)read_buf - strlen("\r\n");
+					if (binary_size > 0) {
+						extdisk_fwrite(read_buf, binary_size, 1, bt_ota_file);
+					} else if (binary_size < 0) {
+						WLAN_SCEN_ERR("binary size is negative\r\n");
+						httpd_response_bad_request(conn, (char *)"Bad Request: binary size is negative\r\n");
+						goto endofparser;
+					}
+					inside_binary_section = 0;
+					file_count++;
+					bytes_read -= (boundary_ending_marker - (char *)read_buf);
+					memmove(read_buf, boundary_ending_marker, bytes_read);
+					if (file_count >= TOTOAL_FILE_NUM) {
+						WLAN_SCEN_MSG("Break if file count greater than %d.\r\n", TOTOAL_FILE_NUM);
+						break;
+					}
+					WLAN_SCEN_MSG("End of the file, file count %d\r\n", file_count);
+					continue;
+				} else {
+					if (bytes_read - (strlen(boundary_marker) - 1) > 0) {
+						extdisk_fwrite(read_buf, bytes_read - (strlen(boundary_marker) - 1), 1, bt_ota_file);
+					} else if (bytes_read - (strlen(boundary_marker) - 1) < 0) {
+						WLAN_SCEN_ERR("ERROR: bytes_read - (strlen(boundary_marker) - 1) is negative\r\n");
+						httpd_response_bad_request(conn, (char *)"Bad Request: remain length less than boundary\r\n");
+						goto endofparser;
+					}
+					memmove(read_buf, read_buf + (bytes_read - (strlen(boundary_marker) - 1)), strlen(boundary_marker) - 1);
+					bytes_read = strlen(boundary_marker) - 1;
+					continue;
+				}
+			} else {
+				char *boundary_ending_marker = binary_search(read_buf, bytes_read, boundary_marker, strlen(boundary_marker));
+
+				if (boundary_ending_marker) {
+					bytes_read -= (boundary_ending_marker - (char *)read_buf) + strlen(boundary_marker);
+					memmove(read_buf, boundary_ending_marker + strlen(boundary_marker), bytes_read);
+					char *binary_start = binary_search((char *)read_buf, bytes_read, "Content-Type: application/octet-stream", strlen("Content-Type: application/octet-stream"));
+
+					if (binary_start) {
+						bytes_read -= (binary_start - (char *)read_buf) + strlen("Content-Type: application/octet-stream");
+						memmove(read_buf, binary_start + strlen("Content-Type: application/octet-stream"), bytes_read);
+						binary_start = binary_search((char *)read_buf, bytes_read, "\r\n\r\n", strlen("\r\n\r\n"));
+
+						if (binary_start) {
+							bytes_read -= (binary_start - (char *)read_buf) + strlen("\r\n\r\n");
+							memmove(read_buf, binary_start + strlen("\r\n\r\n"), bytes_read);
+							inside_binary_section = 1;
+							continue;
+						} else {
+							WLAN_SCEN_ERR("Should not enter here. Entering here means you can find the content type but not the next line.\r\n"); // By right not supposed to enter :recommended to do a while loop
+							httpd_response_bad_request(conn, (char *)"Bad Request: format is invalid\r\n");
+							goto endofparser;
+						}
+					}
+				} else {
+					WLAN_SCEN_ERR("Bad connection and stuck in here\r\n"); // TODO: May need to reset board if entered here.
+					httpd_response_bad_request(conn, (char *)"Bad Request: could not find the boundary\r\n");
+					goto endofparser;
+				}
+			}
+			vTaskDelay(pdMS_TO_TICKS(100));
+			if (read_len >= content_lengt) {
+				break;
+			}
+		}
+		// write HTTP response
+		httpd_response_write_header_start(conn, (char *)"200 OK", (char *)"text/plain", 0);
+		httpd_response_write_header(conn, (char *)"Connection", (char *)"close");
+		httpd_response_write_header_finish(conn);
+
+endofparser:
+		if (content_type) {
+			httpd_free(content_type);
+		}
+		if (bt_ota_file) {
+			extdisk_fclose(bt_ota_file);
+		}
+		// Free allocated memory
+		if (bt_version) {
+			free(bt_version);
+		}
+	}
+	httpd_conn_close(conn);
+	critical_process_started = 0;
+}
+
+static void delete_file_cb(struct httpd_conn *conn)
+{
+	critical_process_started = 1;
+	// POST /delete-file
+	if (httpd_request_is_method(conn, (char *)"POST")) {
+		char *content_type = NULL;
+		char *boundary = NULL;
+
+		char *delete_file_name = NULL;
+
+		// Extract boundary
+		if (httpd_request_get_header_field(conn, (char *)"Content-Type", &content_type) != -1) {
+			char *boundary_start = strstr(content_type, "boundary=");
+			if (boundary_start) {
+				boundary = boundary_start + 9; // Skip "boundary="
+				WLAN_SCEN_MSG("Boundary: %s\n", boundary);
+			} else {
+				WLAN_SCEN_ERR("Failed to find boundary\r\n");
+				httpd_response_bad_request(conn, (char *)"Bad Request: Failed to find boundary\r\n");
+				goto endofparser;
+			}
+		}
+
+		char boundary_marker[128];
+		snprintf(boundary_marker, sizeof(boundary_marker), "--%s", boundary);
+
+		int read_len = 0;
+
+		size_t binary_size = 0;
+		int inside_binary_section = 0;
+		int file_count = 0;
+
+		size_t content_lengt = conn->request.content_len;
+		WLAN_SCEN_MSG("Content-Length: %d\r\n", content_lengt);
+		// Parser version
+		memset(read_buf, 0, SERVER_READ_BUF_SIZE * 2 + 2);
+
+		int chunk_size = (conn->request.content_len - read_len) > SERVER_READ_BUF_SIZE ? SERVER_READ_BUF_SIZE : (conn->request.content_len - read_len);
+
+		read_len = chunk_size;
+
+		// bytes_read remain how many data in readbuffer
+		int bytes_read = httpd_request_read_data(conn, read_buf, chunk_size);
+
+		if (bytes_read <= 0) {
+			WLAN_SCEN_ERR("Read version failed\r\n");
+			httpd_response_bad_request(conn, (char *)"Bad Request: Read version failed\r\n");
+			goto endofparser;
+		}
+
+		read_len = bytes_read;
+
+		// boundary
+		char *version_ptr = binary_search(read_buf, bytes_read, boundary_marker, strlen(boundary_marker));
+
+		int next_ptr = 0;
+		delete_file_name = extract_value((char *)version_ptr, "name=\"delete_file_name\"", &next_ptr);
+		version_ptr = (char *)(uintptr_t)next_ptr;
+		// WLAN_SCEN_MSG("delete_file_name pointer: %s\r\n", version_ptr);
+
+
+		// Print extracted values
+		WLAN_SCEN_MSG("Extract file name to be deleted: %s\r\n", delete_file_name ? delete_file_name : "Not Found");
+
+		if (delete_file_name != NULL) {
+			extdisk_remove(delete_file_name);
+			extdisk_save_file_cntlist();
+			WLAN_SCEN_MSG("Deleted file %s\r\n", delete_file_name);
+		}
+		else {
+			WLAN_SCEN_ERR("File name is not extracted successfully\r\n");
+			httpd_response_bad_request(conn, (char *)"Bad Request: File name (to be deleted) is not extracted successfully\r\n");
+			goto endofparser;
+		}
+
+		// write HTTP response
+		httpd_response_write_header_start(conn, (char *)"200 OK", (char *)"text/plain", 0);
+		httpd_response_write_header(conn, (char *)"Connection", (char *)"close");
+		httpd_response_write_header_finish(conn);
+
+		endofparser:
+			if (content_type) {
+				httpd_free(content_type);
+			}
+			// Free allocated memory
+			if (delete_file_name) {
+				free(delete_file_name);
+			}
+	}
+	httpd_conn_close(conn);	
+	critical_process_started = 0;
+}
+
+static void delete_all_files_cb(struct httpd_conn *conn)
+{
+	critical_process_started = 1;
+
+    if (httpd_request_is_method(conn, (char *)"POST")) {
+
+        WLAN_SCEN_MSG("Reformatting disk\r\n");
+        ai_glass_disk_reformat();
+
+        httpd_response_write_header_start(conn, (char *)"200 OK", (char *)"text/plain", 0);
+        httpd_response_write_header(conn, (char *)"Connection", (char *)"close");
+        httpd_response_write_header_finish(conn);
+
+    } else {
+        httpd_response_write_header_start(conn, (char *)"405 Method Not Allowed", (char *)"text/plain", 0);
+        httpd_response_write_header(conn, (char *)"Connection", (char *)"close");
+        httpd_response_write_header_finish(conn);
+    }
+
+    httpd_conn_close(conn);
+
+	critical_process_started = 0;
 }
 
 int wifi_get_ap_setting(rtw_softap_info_t *wifi_cfg)
@@ -1064,9 +1620,9 @@ int wifi_enable_sta_mode(rtw_network_info_t *connect_param, int timeout, int ret
 	/* get last time fast connect info from flash */
 	memset(&read_data, 0xff, sizeof(struct wlan_fast_reconnect));
 	sys_read_wlan_data_from_flash((uint8_t *) &read_data,  sizeof(struct wlan_fast_reconnect));
-	WLAN_SCEN_MSG("AI glass deinit dhcps %lu\r\n", mm_read_mediatime_ms());
+	WLAN_SCEN_WARN("AI glass deinit dhcps %lu\r\n", mm_read_mediatime_ms());
 	dhcps_deinit();
-	WLAN_SCEN_MSG("AI glass wifi_enable_station_mode %lu\r\n", mm_read_mediatime_ms());
+	WLAN_SCEN_WARN("AI glass wifi_enable_station_mode %lu\r\n", mm_read_mediatime_ms());
 
 #if CONFIG_INIT_NET
 #if CONFIG_LWIP_LAYER
@@ -1086,22 +1642,22 @@ int wifi_enable_sta_mode(rtw_network_info_t *connect_param, int timeout, int ret
 		return WLAN_SET_FAIL;
 	}
 
-	WLAN_SCEN_MSG("wifi_connect cmd done %lu\r\n", mm_read_mediatime_ms());
+	WLAN_SCEN_WARN("wifi_connect cmd done %lu\r\n", mm_read_mediatime_ms());
 
 	wifi_config_autoreconnect_ms(1, retry, timeout);
 
 	if (strcmp((const char *) read_data.psk_essid, (const char *) connect_param->ssid.val) != 0) {
 		wifi_connect(connect_param, 1);
 
-		WLAN_SCEN_MSG("wifi_connect cmd done %lu\r\n", mm_read_mediatime_ms());
+		WLAN_SCEN_WARN("wifi_connect cmd done %lu\r\n", mm_read_mediatime_ms());
 
-		WLAN_SCEN_MSG("LwIP_DHCP start %lu\r\n", mm_read_mediatime_ms());
+		WLAN_SCEN_WARN("LwIP_DHCP start %lu\r\n", mm_read_mediatime_ms());
 		LwIP_DHCP(0, DHCP_START);
-		WLAN_SCEN_MSG("LwIP_DHCP start done %lu\r\n", mm_read_mediatime_ms());
+		WLAN_SCEN_WARN("LwIP_DHCP start done %lu\r\n", mm_read_mediatime_ms());
 
-		WLAN_SCEN_MSG("Connecting to station... %lu\r\n", mm_read_mediatime_ms());
+		WLAN_SCEN_WARN("Connecting to station... %lu\r\n", mm_read_mediatime_ms());
 	}
-	WLAN_SCEN_MSG("STA mode start done\r\n");
+	WLAN_SCEN_WARN("STA mode start done\r\n");
 	//ensure terminate signal is 0
 	terminate_signal = 0;
 
@@ -1112,13 +1668,17 @@ int wifi_enable_sta_mode(rtw_network_info_t *connect_param, int timeout, int ret
 	}
 #endif
 
-	WLAN_SCEN_MSG("STA mode start dhcp server %lu\r\n", mm_read_mediatime_ms());
+	WLAN_SCEN_WARN("STA mode start dhcp server %lu\r\n", mm_read_mediatime_ms());
 	// Setup httpd server
 	if (!httpd_is_running()) {
 		httpd_reg_page_callback((char *)"/media/*", media_getfile_cb);
 		httpd_reg_page_callback((char *)"/pingpong", pingpong_cb);
 		httpd_reg_page_callback((char *)"/media-list", media_list_cb);
 		httpd_reg_page_callback((char *)"/save-ota-files", save_ota_files_to_emmc_from_http_cb);
+		httpd_reg_page_callback((char *)"/save-wifi-ota", save_wifi_ota_to_emmc_from_http_cb);
+		httpd_reg_page_callback((char *)"/save-bt-ota", save_bt_ota_to_emmc_from_http_cb);
+		httpd_reg_page_callback((char *)"/delete-file", delete_file_cb);
+		httpd_reg_page_callback((char *)"/delete-all-files", delete_all_files_cb);
 #if defined(HTTP_OTA_TEST) && HTTP_OTA_TEST
 		httpd_reg_page_callback((char *)"/ota-start", ota_start_cb);
 #endif
@@ -1143,7 +1703,7 @@ int wifi_enable_sta_mode(rtw_network_info_t *connect_param, int timeout, int ret
 		}
 
 	}
-	WLAN_SCEN_MSG("STA mode start dhcp server done %lu\r\n", mm_read_mediatime_ms());
+	WLAN_SCEN_WARN("STA mode start dhcp server done %lu\r\n", mm_read_mediatime_ms());
 	return WLAN_SET_OK;
 }
 
@@ -1163,7 +1723,7 @@ static void deinit_dhcp(void)
 
 int wifi_enable_ap_mode(const char *ssid, const char *password, int channel, int timeout)
 {
-	WLAN_SCEN_MSG("AI glass wifi_enable_ap_mode\r\n");
+	WLAN_SCEN_WARN("AI glass wifi_enable_ap_mode\r\n");
 #if CONFIG_INIT_NET
 #if CONFIG_LWIP_LAYER
 	// Initilaize the LwIP stack, if the LwIP is not initalized yet
@@ -1174,7 +1734,7 @@ int wifi_enable_ap_mode(const char *ssid, const char *password, int channel, int
 #endif
 #endif
 	terminate_signal = 0;
-	WLAN_SCEN_MSG("AI glass Enable Wi-Fi with AP mode\r\n");
+	WLAN_SCEN_WARN("AI glass Enable Wi-Fi with AP mode\r\n");
 	extern rtw_mode_t wifi_mode;
 	if (wifi_mode == RTW_MODE_AP && wifi_is_running(WLAN0_IDX)) {
 		if (strncmp((const char *)softAP_config.ssid.val, (const char *)ssid, softAP_config.ssid.len) == 0 &&
@@ -1200,7 +1760,7 @@ int wifi_enable_ap_mode(const char *ssid, const char *password, int channel, int
 	}
 
 	// Start AP
-	WLAN_SCEN_MSG("AI glass Start AP\r\n");
+	WLAN_SCEN_WARN("AI glass Start AP\r\n");
 	softAP_config.ssid.len = strlen(ssid);
 	memcpy(softAP_config.ssid.val, (char *)ssid, softAP_config.ssid.len);
 
@@ -1217,13 +1777,13 @@ int wifi_enable_ap_mode(const char *ssid, const char *password, int channel, int
 	}
 
 	// Check AP running
-	WLAN_SCEN_MSG("AI glass Check AP running\r\n");
+	WLAN_SCEN_WARN("AI glass Check AP running\r\n");
 	while (1) {
 		rtw_wifi_setting_t setting;
 		wifi_get_setting(WLAN0_IDX, &setting);
 		if (strlen((char *)setting.ssid) > 0) {
 			if (strcmp((const char *)setting.ssid, (const char *)ssid) == 0) {
-				WLAN_SCEN_MSG("AI glass %s started\r\n", ssid);
+				WLAN_SCEN_WARN("AI glass %s started\r\n", ssid);
 				break;
 			}
 		}
@@ -1236,7 +1796,8 @@ int wifi_enable_ap_mode(const char *ssid, const char *password, int channel, int
 	}
 
 	// Start DHCP server
-	WLAN_SCEN_MSG("AI glass Start DHCP server\r\n");
+	WLAN_SCEN_WARN("AI glass Start DHCP server\r\n");
+	dhcps_set_compatibilty_enable(1);
 
 #if CONFIG_LWIP_LAYER
 	dhcps_init(&xnetif[0]);
@@ -1254,6 +1815,10 @@ set_http:
 		httpd_reg_page_callback((char *)"/pingpong", pingpong_cb);
 		httpd_reg_page_callback((char *)"/media-list", media_list_cb);
 		httpd_reg_page_callback((char *)"/save-ota-files", save_ota_files_to_emmc_from_http_cb);
+		httpd_reg_page_callback((char *)"/save-wifi-ota", save_wifi_ota_to_emmc_from_http_cb);
+		httpd_reg_page_callback((char *)"/save-bt-ota", save_bt_ota_to_emmc_from_http_cb);
+		httpd_reg_page_callback((char *)"/delete-file", delete_file_cb);
+		httpd_reg_page_callback((char *)"/delete-all-files", delete_all_files_cb);
 #if defined(HTTP_OTA_TEST) && HTTP_OTA_TEST
 		httpd_reg_page_callback((char *)"/ota-start", ota_start_cb);
 #endif
@@ -1281,7 +1846,7 @@ set_http:
 
 int wifi_disable_ap_mode(void)
 {
-	WLAN_SCEN_MSG("AI glass wifi_disable_ap_mode= %lu\r\n", mm_read_mediatime_ms());
+	WLAN_SCEN_WARN("AI glass wifi_disable_ap_mode= %lu\r\n", mm_read_mediatime_ms());
 	//WLAN_SCEN_MSG("dhcp stop start= %lu\r\n", mm_read_mediatime_ms());
 	//httpd_stop();
 	//while (httpd_is_running()) {
@@ -1289,17 +1854,17 @@ int wifi_disable_ap_mode(void)
 	//}
 	terminate_signal = 1;
 
-	WLAN_SCEN_MSG("http service disable= %lu\r\n", mm_read_mediatime_ms());
+	WLAN_SCEN_WARN("http service disable= %lu\r\n", mm_read_mediatime_ms());
 	if (!wifi_off()) {
 		return WLAN_SET_OK;
 	}
-	WLAN_SCEN_MSG("wlan off done= %lu\r\n", mm_read_mediatime_ms());
+	WLAN_SCEN_WARN("wlan off done= %lu\r\n", mm_read_mediatime_ms());
 	return WLAN_SET_FAIL;
 }
 
 int wifi_disable_sta_mode(void)
 {
-	WLAN_SCEN_MSG("AI glass wifi_disable_sta_mode= %lu\r\n", mm_read_mediatime_ms());
+	WLAN_SCEN_WARN("AI glass wifi_disable_sta_mode= %lu\r\n", mm_read_mediatime_ms());
 	// WLAN_SCEN_MSG("dhcp stop start= %lu\r\n", mm_read_mediatime_ms());
 	// httpd_stop();
 	// while (httpd_is_running()) {
@@ -1308,11 +1873,11 @@ int wifi_disable_sta_mode(void)
 
 	terminate_signal = 1;
 
-	WLAN_SCEN_MSG("http service disable= %lu\r\n", mm_read_mediatime_ms());
+	WLAN_SCEN_WARN("http service disable= %lu\r\n", mm_read_mediatime_ms());
 	if (!wifi_off()) {
 		return WLAN_SET_OK;
 	}
-	WLAN_SCEN_MSG("wlan off done= %lu\r\n", mm_read_mediatime_ms());
+	WLAN_SCEN_WARN("wlan off done= %lu\r\n", mm_read_mediatime_ms());
 	return WLAN_SET_FAIL;
 }
 

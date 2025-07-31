@@ -29,7 +29,7 @@
 #define GYRO_SAVE_SET_STOP      0x20
 
 // Configuration
-#define ENABLE_GET_GSENSOR_INFO 1
+#define ENABLE_GET_GSENSOR_INFO 0
 #define AUDIO_SAMPLE_RATE       16000 // 48000
 #define AUDIO_SRC               I2S_INTERFACE //AUDIO_INTERFACE
 #define AUDIO_I2S_ROLE          I2S_SLAVE //I2S_MASTER

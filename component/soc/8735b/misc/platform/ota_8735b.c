@@ -9,7 +9,9 @@
 #include "hal_crypto.h"
 #include "hal_eddsa.h"
 #include "fwfs.h"
-
+#if UPDATE_UPGRADE_PROGRESS_TO_8773
+#include "ai_glass_initialize.h"
+#endif
 sys_thread_t TaskOTA = NULL;
 #define STACK_SIZE		1024
 #define TASK_PRIORITY	tskIDLE_PRIORITY + 1
@@ -18,6 +20,19 @@ sys_thread_t TaskOTA = NULL;
 // Please make sure target OTA firmware did contains 4 bytes checksum value, or the checksum check would always fail
 // User can check target firmware postbuild routine.
 #define USE_CHECKSUM 1
+
+#if UPDATE_UPGRADE_PROGRESS_TO_8773
+// For OTA progress status
+volatile uint8_t progress;
+// static TimerHandle_t ota_progress_timer = NULL;
+
+// void ota_progress_timer_callback(TimerHandle_t xTimer)
+// {
+//     uart_resp_get_sys_upgrade((uint8_t) 1, progress);
+// 	   printf("Send wifi ota progress: %u\r\n", progress);
+// }
+
+#endif
 
 
 /**
@@ -1381,6 +1396,7 @@ int parse_http_response(uint8_t *response, uint32_t response_len, http_response_
 	if (1 == result->parse_status) { //didn't get the content length
 		const uint8_t *content_length_buf1 = (uint8_t *)"CONTENT-LENGTH";
 		const uint8_t *content_length_buf2 = (uint8_t *)"Content-Length";
+		const uint8_t *content_length_buf3 = (uint8_t *)"content-length";
 		const uint32_t content_length_buf_len = strlen((char const *)content_length_buf1);
 		p = q = 0;
 
@@ -1388,7 +1404,8 @@ int parse_http_response(uint8_t *response, uint32_t response_len, http_response_
 			if (response[i] == '\r' && response[i + 1] == '\n') {
 				q = i;//the end of the line
 				if (!memcmp(response + p, content_length_buf1, content_length_buf_len) ||
-					!memcmp(response + p, content_length_buf2, content_length_buf_len)) { //get the content length
+					!memcmp(response + p, content_length_buf2, content_length_buf_len) ||
+				    !memcmp(response + p, content_length_buf3, content_length_buf_len)) { //get the content length
 					int j1 = p + content_length_buf_len, j2 = q - 1;
 					while (j1 < q && (*(response + j1) == ':' || *(response + j1) == ' ')) {
 						++j1;
@@ -1667,6 +1684,7 @@ int ext_storage_update_ota(char *filename)
 	uint8_t target_fw_idx = 0;
 	_file_checksum file_checksum;
 	file_checksum.u = 0;
+	
 
 	// Determine boot selection
 	boot_sel = sys_get_boot_sel();
@@ -1719,7 +1737,30 @@ int ext_storage_update_ota(char *filename)
 
 	// Start reading and updating firmware
 	printf("\n\r[%s] Start OTA update\n\r", __FUNCTION__);
+	#if UPDATE_UPGRADE_PROGRESS_TO_8773
+	    uart_resp_get_sys_upgrade((uint8_t) 1, (uint8_t) 0);
+		// ota_progress_timer = xTimerCreate("OtaProgressTimer",
+        //                            pdMS_TO_TICKS(2000),  // Period: 2 seconds
+        //                            pdTRUE,               // Auto-reload
+        //                            NULL,                 // No ID needed
+        //                            ota_progress_timer_callback);
+
+		// if (ota_progress_timer != NULL) {
+		// 	xTimerStart(ota_progress_timer, 0);
+		// }
+		int loop_counter = 0;
+	#endif
 	while (idx < file_size) {
+		#if UPDATE_UPGRADE_PROGRESS_TO_8773
+		loop_counter++;
+		if (cancel_wifi_upgrade) {
+			printf("\n\r[%s] OTA upgrade canceled by user\n\r", __FUNCTION__);
+			progress = 0;
+			loop_counter = 0;
+			ret = -2;
+			goto update_ota_exit;
+		}
+		#endif
 		uint32_t rest_len = file_size - idx;
 		uint32_t data_len = rest_len > buf_size ? buf_size : rest_len;
 
@@ -1733,10 +1774,31 @@ int ext_storage_update_ota(char *filename)
 		// check when file size and read size is equal, and current bytes_read is 0, -4 checksum
 		if ((idx == (file_size - 4)) && (bytes_read == 0)) {
 			printf("\n\r[%s] OTA update completed successfully\n\r", __FUNCTION__);
+			#if UPDATE_UPGRADE_PROGRESS_TO_8773
+				uart_resp_get_sys_upgrade((uint8_t) 1, (uint8_t) 100);
+			#endif
 			ret = 0;
 			goto update_ota_exit;
 		}
-		printf("[Firmware updating] ==============================  updating: %d / %llu Bytes\n", idx, file_size);
+		#if UPDATE_UPGRADE_PROGRESS_TO_8773
+		if (file_size > 0) {
+			progress = (uint8_t)(((uint64_t)idx * 100) / file_size);
+			if (progress > 99) {
+				progress = 99;
+			}
+		}
+
+		if (loop_counter % 10 == 0) {
+			uart_resp_get_sys_upgrade((uint8_t) 1, progress);
+			printf("[OTA Progress] Sent progress update: %u%% after %d loops\n", progress, loop_counter);
+		}
+		#endif
+
+		#if UPDATE_UPGRADE_PROGRESS_TO_8773	
+		printf("[Firmware updating] ==============================  updating: %u / %llu Bytes (%u%%)\n",idx, file_size, progress);
+		#else
+		printf("[Firmware updating] ==============================  updating: %u / %llu Bytes \n",idx, file_size);
+		#endif
 
 #if USE_CHECKSUM
 		if ((idx + data_len) > (file_size - 4)) {
@@ -1774,6 +1836,18 @@ update_ota_exit:
 	if (my_file) {
 		fclose(my_file);
 	}
+	#if UPDATE_UPGRADE_PROGRESS_TO_8773
+	loop_counter = 0;
+	progress = 0;
+	#endif
+	// #if UPDATE_UPGRADE_PROGRESS_TO_8773
+	// 	if (ota_progress_timer != NULL) {
+	// 		xTimerStop(ota_progress_timer, 0);
+	// 		xTimerDelete(ota_progress_timer, 0);
+	// 		ota_progress_timer = NULL;
+	// 		printf("Delete timer done\r\n");
+	// 	}
+	// #endif
 
 	return ret;
 }

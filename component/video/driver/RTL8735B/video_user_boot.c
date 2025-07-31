@@ -23,7 +23,7 @@
 //#define SCALE_UP_TEST
 //#define PRIVATE_TEST
 //#define META_DATA_TEST
-//#define ISP_CONTROL_TEST
+#define ISP_CONTROL_TEST
 //#define USE_FCS_LOOKUPTABLE_SAMPLE
 video_boot_stream_t video_boot_stream = {
 	//video channel 0
@@ -34,21 +34,21 @@ video_boot_stream_t video_boot_stream = {
 		.stream_id = STREAM_ID_V1,
 		.type = CODEC_H264,
 		.resolution = 0,
-		.width  = sensor_params[USE_SENSOR].sensor_width,
-		.height = sensor_params[USE_SENSOR].sensor_height,
-		.bps = 2 * 1024 * 1024,
-		.fps = sensor_params[USE_SENSOR].sensor_fps,
-		.gop = sensor_params[USE_SENSOR].sensor_fps << 1,
-				.rc_mode = 2,
-				.minQp = 25,
-				.maxQp = 48,
-				.jpeg_qlevel = 0,
-				.rotation = 0,
-				.out_buf_size = V1_ENC_BUF_SIZE,
-				.out_rsvd_size = 0,
-				.direct_output = 0,
-				.use_static_addr = 0,
-				.fcs = 1 //Enable the fcs for channel 0
+		.width  = 176,
+		.height = 144,
+		.bps = 1024 * 1024,
+		.fps = 15,
+		.gop = 15,
+		.rc_mode = 2,
+		.minQp = 25,
+		.maxQp = 48,
+		.jpeg_qlevel = 0,
+		.rotation = 0,
+		.out_buf_size = V1_ENC_BUF_SIZE,
+		.out_rsvd_size = 0,
+		.direct_output = 0,
+		.use_static_addr = 0,
+		.fcs = 1 //Enable the fcs for channel 0
 	},
 	.bps_stbl_ctrl_params[STREAM_V1] = {
 		.sampling_time = 2000,
@@ -58,27 +58,27 @@ video_boot_stream_t video_boot_stream = {
 	},
 	//video channel 1
 	.video_enable[STREAM_V2] = 1,
-	.video_snapshot[STREAM_V2] = 0,
+	.video_snapshot[STREAM_V2] = 1,
 	.video_drop_frame[STREAM_V2] = 0,
 	.video_params[STREAM_V2] = {
 		.stream_id = STREAM_ID_V2,
 		.type = CODEC_H264,
 		.resolution = 0,
-		.width = 1280,
-		.height = 720,
-		.bps = 1 * 1024 * 1024,
+		.width = sensor_params[USE_SENSOR].sensor_width,
+		.height = sensor_params[USE_SENSOR].sensor_height,
+		.bps = 20 * 1024 * 1024,
 		.fps = sensor_params[USE_SENSOR].sensor_fps,
-		.gop = sensor_params[USE_SENSOR].sensor_fps << 1,
-				.rc_mode = 0,
-				.minQp = 25,
-				.maxQp = 48,
-				.jpeg_qlevel = 0,
-				.rotation = 0,
-				.out_buf_size = V2_ENC_BUF_SIZE,
-				.out_rsvd_size = 0,
-				.direct_output = 0,
-				.use_static_addr = 0,
-				.fcs = 0,
+		.gop = sensor_params[USE_SENSOR].sensor_fps,
+		.rc_mode = 2,
+		.minQp = 25,
+		.maxQp = 48,
+		.jpeg_qlevel = 0,
+		.rotation = 0,
+		.out_buf_size = V2_ENC_BUF_SIZE,
+		.out_rsvd_size = 0,
+		.direct_output = 0,
+		.use_static_addr = 0,
+		.fcs = 0,
 	},
 	.bps_stbl_ctrl_params[STREAM_V2] = {
 		.sampling_time = 0,
@@ -111,7 +111,7 @@ video_boot_stream_t video_boot_stream = {
 		.fcs = 0,
 	},
 	//video channel 4
-	.video_enable[STREAM_V4] = 1,
+	.video_enable[STREAM_V4] = 0,
 	.video_drop_frame[STREAM_V4] = 0, //support after VOE1.5.3.0
 	.video_params[STREAM_V4] = {
 		.stream_id = STREAM_ID_V4,
@@ -521,14 +521,14 @@ void user_boot_config_init(void *parm)
 #ifdef ISP_CONTROL_TEST
 	//If you don't want to setup the parameters, you can setup the 0xffff to skip the procedure.For example video_boot_stream.init_isp_items.init_brightness = 0xffff;
 	video_boot_stream.init_isp_items.enable = 1;
-	video_boot_stream.init_isp_items.init_brightness = 10;    //Default:0
-	video_boot_stream.init_isp_items.init_contrast = 100;     //Default:50
-	video_boot_stream.init_isp_items.init_flicker = 2;        //Default:1
+	video_boot_stream.init_isp_items.init_brightness = 0;    //Default:0
+	video_boot_stream.init_isp_items.init_contrast = 50;     //Default:50
+	video_boot_stream.init_isp_items.init_flicker = 1;        //Default:1
 	video_boot_stream.init_isp_items.init_hdr_mode = 0;       //Default:0
-	video_boot_stream.init_isp_items.init_mirrorflip = 0xf3;  //Default:0xf0
-	video_boot_stream.init_isp_items.init_saturation = 75;    //Default:50
-	video_boot_stream.init_isp_items.init_wdr_level = 80;     //Default:50
-	video_boot_stream.init_isp_items.init_wdr_mode = 1;       //Default:0
+	video_boot_stream.init_isp_items.init_mirrorflip = 0xf0;  //Mirror and flip
+	video_boot_stream.init_isp_items.init_saturation = 50;    //Default:50
+	video_boot_stream.init_isp_items.init_wdr_level = 50;     //Default:50
+	video_boot_stream.init_isp_items.init_wdr_mode = 2;       //Default:0
 	video_boot_stream.init_isp_items.init_mipi_mode = 0;	  //Default:0
 #endif
 }

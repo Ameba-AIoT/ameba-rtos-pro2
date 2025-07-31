@@ -145,11 +145,13 @@ void set_initial_tick_count(void)
   * @retval None
   */
 #include "time.h"
+
 void main(void)
 {
 	/* for debug, protect rodata*/
 	//mpu_rodata_protect_init();
 	console_init();
+
 	voe_t2ff_prealloc();
 
 	setup();
