@@ -37,7 +37,7 @@
 
 // Configure for ai glass
 #define ENABLE_TEST_CMD             1   // For the tester to test some hardware
-#define EXTDISK_PLATFORM            VFS_INF_SD //VFS_INF_SD
+#define EXTDISK_PLATFORM            VFS_INF_EMMC //VFS_INF_SD
 #define UART_TX                     PA_2
 #define UART_RX                     PA_3
 #define UART_BAUDRATE               2000000 //115200 //2000000 //3750000 //4000000
