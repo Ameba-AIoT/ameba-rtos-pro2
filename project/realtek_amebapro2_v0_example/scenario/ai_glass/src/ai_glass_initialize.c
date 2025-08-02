@@ -84,6 +84,9 @@ static void ai_glass_init_ram_disk(void);
 void ai_glass_log_init(void);
 
 static char version_str[16] = {0};
+static UpgradeInfo info;
+
+static uint8_t g_current_wifi_mode = 0; 
 
 // These functions are for testing ai glass with mass storage
 #include "usb.h"
@@ -345,8 +348,8 @@ static int ota_file_exists(char *version_str, char ota_versions[2][16])
 	}
 }
 
-// Get OTA filename from EMMC
-static int ota_filenames_exists(char ota_filenames[2][32], char *version_str)
+// Check OTA files exists and get OTA filename from EMMC
+static int ota_filenames_exists(char ota_filenames[2][32], char *version_str, uint8_t mode)
 {
 #define OTA_FILE_WIFI_PREFIX "wifi_ota_v"
 #define OTA_FILE_BT_PREFIX   "bt_ota_v"
@@ -359,6 +362,11 @@ static int ota_filenames_exists(char ota_filenames[2][32], char *version_str)
 		return 0;
 	}
 
+	if (mode != 0x00 && mode != 0x02 && mode != 0x04) {
+        AI_GLASS_ERR("OTA get filename: Unsupported mode 0x%02X\n", mode);
+        return 0;
+    }
+
 	uint16_t file_count = 0;
 	const char *extensions[] = {OTA_FILE_EXTENSION};
 
@@ -369,7 +377,7 @@ static int ota_filenames_exists(char ota_filenames[2][32], char *version_str)
 		AI_GLASS_ERR("OTA get filename: Unable to retrieve file list.\r\n");
 		return 0;
 	}
-
+	
 	AI_GLASS_MSG("Raw JSON response: %s\n", cJSON_Print(file_list)); // Debugging
 
 	int found_wifi = 0, found_bt = 0;
@@ -393,7 +401,7 @@ static int ota_filenames_exists(char ota_filenames[2][32], char *version_str)
 		char *filename = name_obj->valuestring;
 		AI_GLASS_MSG("Found file: %s\r\n", filename); // Debugging
 
-		if (!found_wifi && strncmp(filename, OTA_FILE_WIFI_PREFIX, strlen(OTA_FILE_WIFI_PREFIX)) == 0) {
+		if (mode == 0x02 && !found_wifi && strncmp(filename, OTA_FILE_WIFI_PREFIX, strlen(OTA_FILE_WIFI_PREFIX)) == 0) {
             char *start = filename + strlen(OTA_FILE_WIFI_PREFIX);
             char *end = strstr(start, ".bin");
             if (end) {
@@ -406,10 +414,13 @@ static int ota_filenames_exists(char ota_filenames[2][32], char *version_str)
                     if (strcmp(ver_buf, version_str) == 0) {
                         found_wifi = 1;
                         strncpy(ota_filenames[0], filename, 32);
+						AI_GLASS_MSG("Found WiFi OTA filename: %s\n", ota_filenames[0]);
                     }
                 }
             }
-        } else if (!found_bt && strncmp(filename, OTA_FILE_BT_PREFIX, strlen(OTA_FILE_BT_PREFIX)) == 0) {
+        } 
+		
+		if (mode == 0x04 && !found_bt && strncmp(filename, OTA_FILE_BT_PREFIX, strlen(OTA_FILE_BT_PREFIX)) == 0) {
             char *start = filename + strlen(OTA_FILE_BT_PREFIX);
             char *end = strstr(start, ".bin");
             if (end) {
@@ -422,23 +433,26 @@ static int ota_filenames_exists(char ota_filenames[2][32], char *version_str)
                     if (strcmp(ver_buf, version_str) == 0) {
                         found_bt = 1;
                         strncpy(ota_filenames[1], filename, 32);
+						AI_GLASS_MSG("Found BT OTA filename: %s\n", ota_filenames[1]);
                     }
                 }
             }
         }
 
         if (found_wifi || found_bt) {
-            break;  // Exit only when both found
+            break;  // Break when expected file is found based on mode
         }
 	}
 
 	cJSON_Delete(file_list);
 
-	if (!found_wifi && !found_bt) {
-		AI_GLASS_ERR("OTA get filename: Missing OTA file (WiFi: %d, BT: %d)\r\n", found_wifi, found_bt);
-		return 0;
+	if ((mode == 0x02 && found_wifi) || (mode == 0x04 && found_bt)) {
+    	return 1; // found
+	} else {
+		AI_GLASS_ERR("OTA get filename: Required OTA file missing (mode=0x%02X, WiFi: %d, BT: %d)\r\n", mode, found_wifi, found_bt);
+		return 0; // not found
 	}
-	return 1;
+
 }
 
 static int clear_ota_signature(void)
@@ -634,7 +648,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 
 	critical_process_started = 1;
 
-	UpgradeInfo info = uart_parser_version_and_upgradetype(param);
+	info = uart_parser_version_and_upgradetype(param);
 
 	AI_GLASS_INFO("Upgrade type: %u, Version: %u.%u.%u.%u\n",
        info.upgradetype,
@@ -643,7 +657,6 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 	uint8_t status = AI_GLASS_CMD_COMPLETE;
 	uart_resp_request_sys_upgrade(status);
 	AI_GLASS_INFO("After 8430 CMD acknowledgement\r\n");
-	char ota_versions[2][16] = {"", ""};
 
 	if(info.upgradetype == 0x02) {
 		AI_GLASS_INFO("Start WiFI OTA\r\n");
@@ -655,36 +668,26 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 		
 		AI_GLASS_INFO("WIFI version to be upgrade to: %s\r\n", version_str);
 
-		if (ota_file_exists(version_str, ota_versions)) {
-		
-			char ota_filenames[2][32] = {0};
+		char ota_filenames[2][32] = {0};
 
-			// uart_resp_sys_upgrade(status);
+		if (ota_filenames_exists(ota_filenames, version_str, info.upgradetype)) {
 
-			if (ota_filenames_exists(ota_filenames, version_str)) {
+			char full_wifi_path[64];
 
-				char full_wifi_path[64];
+			sprintf(full_wifi_path, "%s:/%s", ai_glass_disk_name, ota_filenames[0]);
 
-				sprintf(full_wifi_path, "%s:/%s", ai_glass_disk_name, ota_filenames[0]);
-
-				int ret = -1;
-				ret = ext_storage_update_ota(full_wifi_path);
-				if (!ret) {
-					AI_GLASS_MSG("\n\r Ready to reboot\n");
-					// uart_resp_request_sys_upgrade(status);
-					ota_platform_reset();
-				} else {
-					AI_GLASS_ERR("\n\r OTA Process Failed\n");
-					status = AI_GLASS_OTA_PROCESS_FAILED;
-					uart_resp_request_sys_upgrade(status);
-				}
-			}
-			else {
+			int ret = -1;
+			ret = ext_storage_update_ota(full_wifi_path);
+			if (!ret) {
+				AI_GLASS_MSG("\n\r Ready to reboot\n");
+				// uart_resp_request_sys_upgrade(status);
+				ota_platform_reset();
+			} else {
 				AI_GLASS_ERR("\n\r OTA Process Failed\n");
 				status = AI_GLASS_OTA_PROCESS_FAILED;
 				uart_resp_request_sys_upgrade(status);
 			}
-
+			
 		} else {
 			AI_GLASS_ERR("OTA file name not found.\n");
 			status = AI_GLASS_OTA_FILE_NOT_EXISTED;
@@ -732,14 +735,15 @@ static void ai_glass_resp_bt_fw_upgrade(uartcmdpacket_t *param)
 			return;
 		}
 
-		wifi_disable_sta_mode();
+		wifi_off();
+		vTaskDelay(20);
 
-		AI_GLASS_INFO("Disabled STA mode\r\n");
+		AI_GLASS_INFO("Disabled WIFI\r\n");
 
 		AI_GLASS_INFO("Sending bluetooth binary via UART...\r\n");
 
 		char ota_filenames[2][32] = {0};
-		if (ota_filenames_exists(ota_filenames, version_str)) {
+		if (ota_filenames_exists(ota_filenames, version_str, info.upgradetype)) {
 
 			char full_bt_path[64];
 			sprintf(full_bt_path, "/%s", ota_filenames[1]);
@@ -826,6 +830,7 @@ static void ai_glass_resp_bt_fw_upgrade(uartcmdpacket_t *param)
 				AI_GLASS_MSG("[8735(2) Sending] Data Length: %d bytes, Data[0-2]: %02X %02X %02X\n", data_length, data_buffer[0], data_buffer[1], data_buffer[2]);
 
 				uart_resp_transfer_upgrade_data(data_buffer, data_length);
+				vTaskDelay(pdMS_TO_TICKS(10));
 				// Prevent packet loss by adding delay between UART transmissions.
 				if (extdisk_feof(ota_file)) {
 					uart_resp_get_sys_upgrade((uint8_t) 2, (uint8_t) 100);
@@ -1476,14 +1481,6 @@ static void ai_glass_set_sta_mode(uartcmdpacket_t *param)
 {
 	AI_GLASS_MSG("get UART_RX_OPC_CMD_SET_STA_MODE %lu\r\n", mm_read_mediatime_ms());
 
-	// Step 1: Disable AP mode
-	if (wifi_disable_ap_mode() == WLAN_SET_OK) {
-		AI_GLASS_INFO("AP mode disabled successfully.\r\n");
-	} else {
-		AI_GLASS_INFO("Fail to disable AP mode.\r\n");
-	}
-
-	// Step 2: Get params and set variables
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 
 	for (int i = 0; i < 128; i++) {
@@ -1494,7 +1491,7 @@ static void ai_glass_set_sta_mode(uartcmdpacket_t *param)
 	}
 	AI_GLASS_INFO("\r\n");
 
-	uint8_t mode = query_pkt->data_buf[0];
+	uint8_t new_mode = query_pkt->data_buf[0];
 	uint8_t ssid_length = query_pkt->data_buf[1];
 	uint8_t channel = query_pkt->data_buf[40];
 	uint8_t password_length = query_pkt->data_buf[41];
@@ -1507,7 +1504,7 @@ static void ai_glass_set_sta_mode(uartcmdpacket_t *param)
 		password_length = MAX_PASSWORD_LEN;
 	}
 
-	AI_GLASS_INFO("Mode: %d\r\n", mode);
+	AI_GLASS_INFO("Mode: %d\r\n", new_mode);
 	AI_GLASS_INFO("SSID Length: %d\r\n", ssid_length);
 	AI_GLASS_INFO("Channel: %d\r\n", channel);
 	AI_GLASS_INFO("Password Length: %d\r\n", password_length);
@@ -1551,49 +1548,70 @@ static void ai_glass_set_sta_mode(uartcmdpacket_t *param)
 		connect_param.pscan_option = (unsigned char)PSCAN_FAST_SURVEY;
 	}
 
-	if (mode == 1) {
-		//Init emmc
-		ai_glass_init_external_disk();
-		AI_GLASS_MSG("wifi_enable_sta_mode %lu\r\n", mm_read_mediatime_ms());
+	if (new_mode == 1 || new_mode == 2) {
+		// Only proceed if current mode is 0 (AP -> STA transition)
+		if (g_current_wifi_mode == 0) {
+			// Init emmc and try to connect to STA
+			ai_glass_init_external_disk();
+			AI_GLASS_MSG("wifi_enable_sta_mode %lu\r\n", mm_read_mediatime_ms());
 
-		if (wifi_enable_sta_mode(&connect_param, 100, 20) == WLAN_SET_OK) {
-			result = AI_GLASS_CMD_COMPLETE;
+			if (wifi_enable_sta_mode(&connect_param, 100, 20) == WLAN_SET_OK) {
+				result = AI_GLASS_CMD_COMPLETE;
+				g_current_wifi_mode = new_mode;
+				AI_GLASS_MSG("Current mode is %u\r\n", g_current_wifi_mode);
+
+			} else {
+				result = AI_GLASS_PROC_FAIL;
+			}
+			
+			u32 ip;
+			uint8_t ip0,ip1,ip2,ip3;
+			while (1) {
+				ip = *(u32 *)LwIP_GetIP(0);
+
+				ip0 = (ip) & 0xFF;
+				ip1 = (ip >> 8) & 0xFF;
+				ip2 = (ip >> 16) & 0xFF;
+				ip3 = (ip >> 24) & 0xFF;
+
+				if (ip0 != 0 && ip1 != 0 && ip2 !=0 && ip3 !=0) {
+					break;
+				}
+				AI_GLASS_INFO("Waiting for IP...\r\n");
+				vTaskDelay(100);
+			}
+
+			AI_GLASS_INFO("ip_idx0: %d\r\n", ip0);
+			AI_GLASS_INFO("ip_idx1: %d\r\n", ip1);
+			AI_GLASS_INFO("ip_idx2: %d\r\n", ip2);
+			AI_GLASS_INFO("ip_idx3: %d\r\n", ip3);
+			
+			uart_resp_set_sta_mode(param, result,
+				ip0,
+				ip1,
+				ip2,
+				ip3);
 		} else {
-			result = AI_GLASS_PROC_FAIL;
+			AI_GLASS_INFO("Already in STA mode. Skipping re-init.\r\n");
 		}
-		u32 ip = *(u32 *)LwIP_GetIP(0);
-		// Send response
-		uint8_t sta_status = result;
-		// Get the IP address here:
-		uint8_t ip0 = (ip) & 0xFF; // Highest byte (first)
-		uint8_t ip1 = (ip >> 8) & 0xFF;
-		uint8_t ip2 = (ip >> 16) & 0xFF;
-		uint8_t ip3 = (ip >> 24) & 0xFF; // Lowest byte (last)
-
-		AI_GLASS_INFO("ip_idx0: %d\r\n", ip0);
-		AI_GLASS_INFO("ip_idx1: %d\r\n", ip1);
-		AI_GLASS_INFO("ip_idx2: %d\r\n", ip2);
-		AI_GLASS_INFO("ip_idx3: %d\r\n", ip3);
-		uart_resp_set_sta_mode(param, sta_status, ip0, ip1, ip2, ip3);
-
-	} else if (mode == 0) {
-		// Disable AP mode
+	}
+	else if (new_mode == 0) {
 		if (wifi_disable_sta_mode() == WLAN_SET_OK) {
 			AI_GLASS_INFO("STA mode disabled successfully.\r\n");
+			g_current_wifi_mode = new_mode;
+			AI_GLASS_MSG("Current mode is %u\r\n", g_current_wifi_mode);
+			result = AI_GLASS_CMD_COMPLETE;
 		} else {
 			AI_GLASS_INFO("Fail to disable STA mode.\r\n");
+			result = AI_GLASS_PROC_FAIL;
 		}
-	} else {
-		result = AI_GLASS_PARAMS_ERR;
-		AI_GLASS_INFO("ERROR: Mode received for STA Mode is not 0 or 1.\r\n");
 		uart_resp_set_sta_mode(param, result, 0, 0, 0, 0);
 	}
-
-	AI_GLASS_MSG("UART_RX_OPC_CMD_SET_STA_MODE set mode %d done %lu\r\n", mode, mm_read_mediatime_ms());
-	if (mode == 1 && result == AI_GLASS_CMD_COMPLETE) {
-		deinitial_media(); // To save power
+	else {
+		result = AI_GLASS_PARAMS_ERR;
+		AI_GLASS_INFO("Invalid mode value: %d\r\n", new_mode);
+		uart_resp_set_sta_mode(param, result, 0, 0, 0, 0);
 	}
-	AI_GLASS_MSG("end of UART_RX_OPC_CMD_SET_STA_MODE %lu\r\n", mm_read_mediatime_ms());
 }
 
 static void ai_glass_get_pic_data_sliding_window(uartcmdpacket_t *param)
