@@ -201,6 +201,7 @@ int ai_glass_disk_reformat(void) {
 }
 
 typedef struct snapshot_pkt_s {
+	uint8_t     status;
 	uint8_t     version;
 	uint8_t     q_vlaue;
 	float       ROIX_TL;
@@ -216,19 +217,24 @@ static void parser_snapshot_pkt2param(ai_glass_snapshot_param_t *snap_buf, uint8
 	snapshot_pkt_t aisnap_buf = {0};
 	uint32_t temp_data = 0;
 	if (snap_buf) {
-		aisnap_buf.version = raw_buf[0];
-		aisnap_buf.q_vlaue = raw_buf[1];
-		temp_data = raw_buf[2] | (raw_buf[3] << 8) | (raw_buf[4] << 16) | (raw_buf[5] << 24);
+		aisnap_buf.status = raw_buf[0];
+		aisnap_buf.version = raw_buf[1];
+		aisnap_buf.q_vlaue = raw_buf[2];
+		temp_data = raw_buf[3] | (raw_buf[4] << 8) | (raw_buf[5] << 16) | (raw_buf[6] << 24);
 		memcpy(&(aisnap_buf.ROIX_TL), &temp_data, sizeof(uint32_t));
-		temp_data = raw_buf[6] | (raw_buf[7] << 8) | (raw_buf[8] << 16) | (raw_buf[9] << 24);
+		temp_data = raw_buf[7] | (raw_buf[8] << 8) | (raw_buf[9] << 16) | (raw_buf[10] << 24);
 		memcpy(&(aisnap_buf.ROIY_TL), &temp_data, sizeof(uint32_t));
-		temp_data = raw_buf[10] | (raw_buf[11] << 8) | (raw_buf[12] << 16) | (raw_buf[13] << 24);
+		temp_data = raw_buf[11] | (raw_buf[12] << 8) | (raw_buf[13] << 16) | (raw_buf[14] << 24);
 		memcpy(&(aisnap_buf.ROIX_BR), &temp_data, sizeof(uint32_t));
-		temp_data = raw_buf[14] | (raw_buf[15] << 8) | (raw_buf[16] << 16) | (raw_buf[17] << 24);
+		temp_data = raw_buf[15] | (raw_buf[16] << 8) | (raw_buf[17] << 16) | (raw_buf[18] << 24);
 		memcpy(&(aisnap_buf.ROIY_BR), &temp_data, sizeof(uint32_t));
-		aisnap_buf.RESIZE_W = raw_buf[18] | (raw_buf[19] << 8);
-		aisnap_buf.RESIZE_H = raw_buf[20] | (raw_buf[21] << 8);
+		aisnap_buf.RESIZE_W = raw_buf[19] | (raw_buf[20] << 8);
+		aisnap_buf.RESIZE_H = raw_buf[21] | (raw_buf[22] << 8);
 
+		AI_GLASS_MSG("AI_snapshot_parameter\r\n");
+
+		//1 additional status parameter Main changes
+		AI_GLASS_MSG("status = %u\r\n", aisnap_buf.status);
 		AI_GLASS_MSG("version = %u\r\n", aisnap_buf.version);
 		AI_GLASS_MSG("q vlaue = %u\r\n", aisnap_buf.q_vlaue);
 		AI_GLASS_MSG("ROIX_TL = %f\r\n", aisnap_buf.ROIX_TL);
@@ -245,6 +251,7 @@ static void parser_snapshot_pkt2param(ai_glass_snapshot_param_t *snap_buf, uint8
 		snap_buf->roi.ymin = (uint32_t)(aisnap_buf.ROIY_TL * sensor_params[USE_SENSOR].sensor_height);
 		snap_buf->roi.xmax = (uint32_t)(aisnap_buf.ROIX_BR * sensor_params[USE_SENSOR].sensor_width);
 		snap_buf->roi.ymax = (uint32_t)(aisnap_buf.ROIY_BR * sensor_params[USE_SENSOR].sensor_height);
+		snap_buf->status = aisnap_buf.status;
 	}
 }
 
@@ -349,10 +356,11 @@ static int ota_file_exists(char *version_str, char ota_versions[2][16])
 }
 
 // Check OTA files exists and get OTA filename from EMMC
-static int ota_filenames_exists(char ota_filenames[2][32], char *version_str, uint8_t mode)
+static int ota_filenames_exists(char ota_filenames[3][32], char *version_str, uint8_t mode)
 {
 #define OTA_FILE_WIFI_PREFIX "wifi_ota_v"
 #define OTA_FILE_BT_PREFIX   "bt_ota_v"
+#define OTA_FILE_BOOT_PREFIX "boot_ota_v"
 #define OTA_FILE_EXTENSION   ".bin"
 
 	ai_glass_init_external_disk();
@@ -362,7 +370,7 @@ static int ota_filenames_exists(char ota_filenames[2][32], char *version_str, ui
 		return 0;
 	}
 
-	if (mode != 0x00 && mode != 0x02 && mode != 0x04) {
+	if (mode != 0x02 && mode != 0x03 && mode != 0x04) {
         AI_GLASS_ERR("OTA get filename: Unsupported mode 0x%02X\n", mode);
         return 0;
     }
@@ -380,7 +388,7 @@ static int ota_filenames_exists(char ota_filenames[2][32], char *version_str, ui
 	
 	AI_GLASS_MSG("Raw JSON response: %s\n", cJSON_Print(file_list)); // Debugging
 
-	int found_wifi = 0, found_bt = 0;
+	int found_wifi = 0, found_bt = 0, found_boot = 0;
 
 	// Extract "contents" array from JSON
 	cJSON *contents = cJSON_GetObjectItem(file_list, "contents");
@@ -401,7 +409,7 @@ static int ota_filenames_exists(char ota_filenames[2][32], char *version_str, ui
 		char *filename = name_obj->valuestring;
 		AI_GLASS_MSG("Found file: %s\r\n", filename); // Debugging
 
-		if (mode == 0x02 && !found_wifi && strncmp(filename, OTA_FILE_WIFI_PREFIX, strlen(OTA_FILE_WIFI_PREFIX)) == 0) {
+		if ((mode == 0x02 || mode == 0x03) && !found_wifi && strncmp(filename, OTA_FILE_WIFI_PREFIX, strlen(OTA_FILE_WIFI_PREFIX)) == 0) {
             char *start = filename + strlen(OTA_FILE_WIFI_PREFIX);
             char *end = strstr(start, ".bin");
             if (end) {
@@ -420,7 +428,7 @@ static int ota_filenames_exists(char ota_filenames[2][32], char *version_str, ui
             }
         } 
 		
-		if (mode == 0x04 && !found_bt && strncmp(filename, OTA_FILE_BT_PREFIX, strlen(OTA_FILE_BT_PREFIX)) == 0) {
+		if ((mode == 0x04) && !found_bt && strncmp(filename, OTA_FILE_BT_PREFIX, strlen(OTA_FILE_BT_PREFIX)) == 0) {
             char *start = filename + strlen(OTA_FILE_BT_PREFIX);
             char *end = strstr(start, ".bin");
             if (end) {
@@ -439,14 +447,45 @@ static int ota_filenames_exists(char ota_filenames[2][32], char *version_str, ui
             }
         }
 
-        if (found_wifi || found_bt) {
-            break;  // Break when expected file is found based on mode
+		if ((mode == 0x03) && !found_boot && strncmp(filename, OTA_FILE_BOOT_PREFIX, strlen(OTA_FILE_BOOT_PREFIX)) == 0) {
+            char *start = filename + strlen(OTA_FILE_BOOT_PREFIX);
+            char *end = strstr(start, ".bin");
+            if (end) {
+                size_t len = end - start;
+                if (len < 16) {
+                    char ver_buf[16] = {0};
+                    strncpy(ver_buf, start, len);
+                    ver_buf[len] = '\0';
+
+                    if (strcmp(ver_buf, version_str) == 0) {
+                        found_boot = 1;
+                        strncpy(ota_filenames[3], filename, 32);
+						AI_GLASS_MSG("Found Bootloader OTA filename: %s\n", ota_filenames[3]);
+                    }
+                }
+            }
         }
+
+		if (mode == 0x02) {
+			if (found_wifi) {
+				break;  // Break when expected file is found based on mode
+			}
+		}
+		else if (mode == 0x03) {
+			if ((found_wifi && found_boot)) {
+				break;  // Break when expected file is found based on mode
+			}
+		}
+		else if (mode == 0x04) {
+			if (found_bt) {
+				break;  // Break when expected file is found based on mode
+			}
+		}
 	}
 
 	cJSON_Delete(file_list);
 
-	if ((mode == 0x02 && found_wifi) || (mode == 0x04 && found_bt)) {
+	if ((mode == 0x02 && found_wifi) || (mode == 0x04 && found_bt) || (mode == 0x03 && found_wifi && found_boot)) {
     	return 1; // found
 	} else {
 		AI_GLASS_ERR("OTA get filename: Required OTA file missing (mode=0x%02X, WiFi: %d, BT: %d)\r\n", mode, found_wifi, found_bt);
@@ -668,7 +707,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 		
 		AI_GLASS_INFO("WIFI version to be upgrade to: %s\r\n", version_str);
 
-		char ota_filenames[2][32] = {0};
+		char ota_filenames[3][32] = {0};
 
 		if (ota_filenames_exists(ota_filenames, version_str, info.upgradetype)) {
 
@@ -695,7 +734,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 		}
 	}
 
-	else if (info.upgradetype = 0x04) {
+	else if (info.upgradetype == 0x04) {
 		AI_GLASS_INFO("Start BT OTA\r\n");
 
 		// Convert received version to a string
@@ -710,9 +749,53 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 		AI_GLASS_INFO("Send 631 CMD, waiting BT response of 631.\r\n");
 	}
 
-	else if (info.upgradetype = 0x00) {
-		AI_GLASS_INFO("Start WIFI Bootloader OTA\r\n");
+	else if (info.upgradetype == 0x03) {
+		AI_GLASS_INFO("Start WIFI Bootloader and WIFI OTA\r\n");
 
+		// Convert received version to a string
+		snprintf(version_str, sizeof(version_str), "%u.%u.%u.%u",
+			 info.version[0], info.version[1],
+			 info.version[2], info.version[3]);
+		
+		AI_GLASS_INFO("Bootloader and WIFI version to be upgrade to: %s\r\n", version_str);
+
+		char ota_filenames[3][32] = {0};
+
+		if (ota_filenames_exists(ota_filenames, version_str, info.upgradetype)) {
+
+			char boot_wifi_path[64];
+
+			sprintf(boot_wifi_path, "%s:/%s", ai_glass_disk_name, ota_filenames[3]);
+
+			int ret = -1;
+			ret = ext_storage_update_boot_ota(boot_wifi_path);
+			if (!ret) {
+				AI_GLASS_MSG("\n\r Bootloader OTA done. Continue to upgrade wifi firmware...\r\n");
+				char full_wifi_path[64];
+
+				sprintf(full_wifi_path, "%s:/%s", ai_glass_disk_name, ota_filenames[0]);
+
+				int ret = -1;
+				ret = ext_storage_update_ota(full_wifi_path);
+				if (!ret) {
+					AI_GLASS_MSG("\n\r Ready to reboot\n");
+					// uart_resp_request_sys_upgrade(status);
+					ota_platform_reset();
+				} else {
+					AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
+					status = AI_GLASS_OTA_PROCESS_FAILED;
+					uart_resp_request_sys_upgrade(status);
+				}
+			} else {
+				AI_GLASS_ERR("\n\r OTA Bootloader Process Failed\n");
+				status = AI_GLASS_OTA_PROCESS_FAILED;
+				uart_resp_request_sys_upgrade(status);
+			}
+		} else {
+			AI_GLASS_ERR("OTA file name not found.\n");
+			status = AI_GLASS_OTA_FILE_NOT_EXISTED;
+			uart_resp_request_sys_upgrade(status);
+		}
 	}
 
 	AI_GLASS_INFO("end of UART_TX_OPC_CMD_TRANSFER_UPGRADE_DATA\r\n");
@@ -742,7 +825,7 @@ static void ai_glass_resp_bt_fw_upgrade(uartcmdpacket_t *param)
 
 		AI_GLASS_INFO("Sending bluetooth binary via UART...\r\n");
 
-		char ota_filenames[2][32] = {0};
+		char ota_filenames[3][32] = {0};
 		if (ota_filenames_exists(ota_filenames, version_str, info.upgradetype)) {
 
 			char full_bt_path[64];
@@ -1107,7 +1190,12 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 				}
 				AI_GLASS_MSG("wait for ai snapshot deinit done = %lu\r\n", mm_read_mediatime_ms());
 			}
+			if (ai_snap_params.status == 1) {
+				AI_GLASS_MSG("AI+Lifetime Snapshot\r\n");
+				goto lifetimesnapshot;
+			}
 		} else if (mode == 0) {
+lifetimesnapshot:
 			ai_glass_init_external_disk();
 			AI_GLASS_MSG("Process LIFETIME SNAPSHOT\r\n");
 

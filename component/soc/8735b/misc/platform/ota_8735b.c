@@ -1562,6 +1562,7 @@ restart_http_ota:
 	} else {
 		goto update_ota_exit;
 	}
+	
 
 	// read http response body
 	read_bytes = idx - rsp_result.header_len;
@@ -1739,15 +1740,6 @@ int ext_storage_update_ota(char *filename)
 	printf("\n\r[%s] Start OTA update\n\r", __FUNCTION__);
 	#if UPDATE_UPGRADE_PROGRESS_TO_8773
 	    uart_resp_get_sys_upgrade((uint8_t) 1, (uint8_t) 0);
-		// ota_progress_timer = xTimerCreate("OtaProgressTimer",
-        //                            pdMS_TO_TICKS(2000),  // Period: 2 seconds
-        //                            pdTRUE,               // Auto-reload
-        //                            NULL,                 // No ID needed
-        //                            ota_progress_timer_callback);
-
-		// if (ota_progress_timer != NULL) {
-		// 	xTimerStart(ota_progress_timer, 0);
-		// }
 		int loop_counter = 0;
 	#endif
 	while (idx < file_size) {
@@ -1840,14 +1832,164 @@ update_ota_exit:
 	loop_counter = 0;
 	progress = 0;
 	#endif
-	// #if UPDATE_UPGRADE_PROGRESS_TO_8773
-	// 	if (ota_progress_timer != NULL) {
-	// 		xTimerStop(ota_progress_timer, 0);
-	// 		xTimerDelete(ota_progress_timer, 0);
-	// 		ota_progress_timer = NULL;
-	// 		printf("Delete timer done\r\n");
-	// 	}
-	// #endif
+
+	return ret;
+}
+
+int ext_storage_update_boot_ota(char *filename)
+{
+	printf("\n\r[%s] Starting SD Card Bootloader OTA update\n\r", __FUNCTION__);
+
+	int ret = -1;
+	FILE *my_file = NULL;
+	uint8_t *buf = NULL;
+	uint64_t file_size = 0;
+	uint32_t buf_size = 0;
+	uint32_t idx = 0;
+	uint32_t total_blocks = 0;
+	uint32_t cur_block = 0;
+	int boot_sel = 0;
+	uint8_t cur_fw_idx = 0;
+	uint8_t target_fw_idx = 0;
+	_file_checksum file_checksum;
+	file_checksum.u = 0;
+	
+
+	// Determine boot selection
+	boot_sel = sys_get_boot_sel();
+	if (boot_sel == 0) {
+		buf_size = NOR_BLOCK_SIZE;
+	} else if (boot_sel == 1) {
+		buf_size = NAND_BLOCK_SIZE;
+	}
+
+	buf = update_malloc(buf_size);
+	if (!buf) {
+		printf("\n\r[%s] Failed to allocate buffer\n\r", __FUNCTION__);
+		goto update_ota_exit;
+	}
+
+	// Open the file using fopen
+	printf("\n\r[%s] Opening file: %s\n\r", __FUNCTION__, filename);
+	my_file = fopen(filename, "rb");
+	if (!my_file) {
+		printf("\n\r[%s] Failed to open file: %s\n\r", __FUNCTION__, filename);
+		goto update_ota_exit;
+	}
+
+	printf("\n\r[%s] File opened successfully\n\r", __FUNCTION__);
+
+	// Get file size
+	fseek(my_file, 0, SEEK_END);
+	file_size = ftell(my_file);
+	if (file_size == -1) {
+		printf("[%s] Error getting file size\n", __FUNCTION__);
+	} else {
+		printf("[%s] Detected file size: %llu bytes\n", __FUNCTION__, file_size);
+	}
+	fseek(my_file, 0, SEEK_SET);
+	printf("\n\r[%s] File size: %llu\n\r", __FUNCTION__, file_size);
+
+	target_fw_idx = OTA_BL_PRI;
+
+	total_blocks = (file_size + buf_size - 1) / buf_size;
+
+	// Start reading and updating firmware
+	printf("\n\r[%s] Start OTA update\n\r", __FUNCTION__);
+	#if UPDATE_UPGRADE_PROGRESS_TO_8773
+	    uart_resp_get_sys_upgrade((uint8_t) 1, (uint8_t) 0);
+		int loop_counter = 0;
+	#endif
+	while (idx < file_size) {
+		#if UPDATE_UPGRADE_PROGRESS_TO_8773
+		loop_counter++;
+		if (cancel_wifi_upgrade) {
+			printf("\n\r[%s] OTA upgrade canceled by user\n\r", __FUNCTION__);
+			progress = 0;
+			loop_counter = 0;
+			ret = -2;
+			goto update_ota_exit;
+		}
+		#endif
+		uint32_t rest_len = file_size - idx;
+		uint32_t data_len = rest_len > buf_size ? buf_size : rest_len;
+
+		memset(buf, 0, buf_size);
+		size_t bytes_read = fread(buf, 1, data_len, my_file);
+		if (bytes_read != data_len && bytes_read != 0) {
+			printf("\n\r[%s] Insufficient data or read error\n\r", __FUNCTION__);
+			goto update_ota_exit;
+		}
+
+		// check when file size and read size is equal, and current bytes_read is 0, -4 checksum
+		if ((idx == (file_size - 4)) && (bytes_read == 0)) {
+			printf("\n\r[%s] OTA update completed successfully\n\r", __FUNCTION__);
+			#if UPDATE_UPGRADE_PROGRESS_TO_8773
+				uart_resp_get_sys_upgrade((uint8_t) 1, (uint8_t) 100);
+			#endif
+			ret = 0;
+			goto update_ota_exit;
+		}
+		#if UPDATE_UPGRADE_PROGRESS_TO_8773
+		if (file_size > 0) {
+			progress = (uint8_t)(((uint64_t)idx * 100) / file_size);
+			if (progress > 99) {
+				progress = 99;
+			}
+		}
+
+		if (loop_counter % 10 == 0) {
+			uart_resp_get_sys_upgrade((uint8_t) 1, progress);
+			printf("[OTA Progress] Sent progress update: %u%% after %d loops\n", progress, loop_counter);
+		}
+		#endif
+
+		#if UPDATE_UPGRADE_PROGRESS_TO_8773	
+		printf("[Bootloader updating] ==============================  updating: %u / %llu Bytes (%u%%)\n",idx, file_size, progress);
+		#else
+		printf("[Bootloader updating] ==============================  updating: %u / %llu Bytes \n",idx, file_size);
+		#endif
+
+#if USE_CHECKSUM
+		if ((idx + data_len) > (file_size - 4)) {
+			file_checksum.c[0] = buf[data_len - 4];
+			file_checksum.c[1] = buf[data_len - 3];
+			file_checksum.c[2] = buf[data_len - 2];
+			file_checksum.c[3] = buf[data_len - 1];
+		}
+#endif
+
+		cur_block = idx / buf_size;
+		if (cur_block == (total_blocks - 1)) {
+			data_len -= 4; // Remove checksum bytes
+			memset(buf + data_len, 0xFF, buf_size - data_len);
+		}
+
+		if (boot_sel == 0) {
+			ret = ota_flash_NOR(target_fw_idx, total_blocks, cur_block, buf, data_len, file_checksum);
+		} else if (boot_sel == 1) {
+			ret = ota_flash_NAND(target_fw_idx, total_blocks, cur_block, buf, data_len, file_checksum);
+		}
+
+		if (ret < 0) {
+			printf("\n\r[%s] OTA flash failed\n\r", __FUNCTION__);
+			goto update_ota_exit;
+		}
+
+		idx += data_len;
+	}
+
+update_ota_exit:
+	if (buf) {
+		update_free(buf);
+	}
+	if (my_file) {
+		fclose(my_file);
+	}
+	#if UPDATE_UPGRADE_PROGRESS_TO_8773
+	loop_counter = 0;
+	progress = 0;
+	#endif
 
 	return ret;
 }
