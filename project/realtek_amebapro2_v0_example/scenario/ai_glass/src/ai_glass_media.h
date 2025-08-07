@@ -77,6 +77,7 @@ typedef struct ai_glass_record_param_s {
 #define SNAP_PARAM_SIZE  31
 
 typedef struct ai_glass_snapshot_param_s {
+	uint8_t     status;
 	uint8_t     type; // JPEG for sure
 	uint32_t    width;
 	uint32_t    height;

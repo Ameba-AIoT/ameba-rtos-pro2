@@ -101,6 +101,7 @@ int http_update_ota(char *host, int port, char *resource);
 ** Return         : 0: OTA success
 **************************************************************************************************/
 int ext_storage_update_ota(char *filename);
+int ext_storage_update_boot_ota(char *filename);
 #endif
 
 #endif
