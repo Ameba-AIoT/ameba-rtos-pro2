@@ -8,6 +8,7 @@
 #include <platform_opts_bt.h>
 #include "sys_api.h"
 
+#include "wowlan_driver_api.h"
 #include "wifi_conf.h"
 #include <lwip_netconf.h>
 #include <lwip/sockets.h>
@@ -33,20 +34,6 @@
 #define TEST_DISCONNECT_PNO 0
 #define TEST_DUAL_BAND_PNO	1
 
-
-extern uint8_t rtl8735b_wowlan_wake_reason(void);
-extern uint8_t rtl8735b_wowlan_wake_pattern(void);
-extern uint8_t *rtl8735b_read_wakeup_packet(uint32_t *size, uint8_t wowlan_reason);
-extern int rtl8735b_suspend(int mode);
-extern void rtl8735b_set_lps_pg(void);
-extern void rtl8735b_set_lps_dtim(uint8_t dtim);
-extern void wifi_wowlan_bcntrack_stage1(uint8_t rx_bcn_window, uint8_t bcn_limit);
-extern void wifi_wowlan_set_dtimtimeout(uint8_t set_dtimtimeout);
-extern void wifi_wowlan_set_rxbcnlimit(uint8_t set_rxbcnlimit);
-extern void wifi_wowlan_set_pstimeout(uint8_t set_pstimeout);
-extern void wifi_wowlan_set_psretry(uint8_t set_psretry);
-extern void rtw_hal_set_arpreq_period(u8 period);
-extern void rtl8735b_select_keepalive(u8 ka);
 
 static uint8_t wowlan_wake_reason = 0;
 static uint32_t pm_reason = 0;
@@ -402,7 +389,6 @@ void tcp_app_task(void *param)
 	}
 
 	//dynamic dtim
-	extern uint8_t rtl8735b_get_dynamic_dtim_level(void);
 	uint8_t level = rtl8735b_get_dynamic_dtim_level();
 	uint8_t dtim_max =  10 - (10 % level);
 	uint8_t weight = get_dtim_weight(sleep_duration);
@@ -413,11 +399,13 @@ void tcp_app_task(void *param)
 	wowlan_dtim2 = pre_dtim;
 	if (pm_reason & BIT(3)) {
 		if (wowlan_wake_reason) { //wlan wake
-			if (wowlan_wake_reason == 0x69 || wowlan_wake_reason == 0x74 || wowlan_wake_reason == 0x7C || wowlan_wake_reason == 0x7D || wowlan_wake_reason == 0x08 ||
-				wowlan_wake_reason == 0x04) {
+			if (wowlan_wake_reason == TX_TCP_SEND_LIMIT || wowlan_wake_reason == FW_BCN_TO_WAKEUP || wowlan_wake_reason == RX_TCP_FIN_PKT ||
+				wowlan_wake_reason == RX_TCP_RST_PKT || wowlan_wake_reason == RX_DEAUTH ||
+				wowlan_wake_reason == RX_DISASSOC) {
 				if (sleep_duration < SLEEPTIME_THRESHOLD_L) {
 					uint32_t keep_alive_fail_time = keepalive_idle * 3;
-					if ((wowlan_wake_reason == 0x7C || wowlan_wake_reason == 0x7D || wowlan_wake_reason == 0x69) && (sleep_duration < keep_alive_fail_time)) {
+					if ((wowlan_wake_reason == RX_TCP_FIN_PKT || wowlan_wake_reason == RX_TCP_RST_PKT || wowlan_wake_reason == TX_TCP_SEND_LIMIT) &&
+						(sleep_duration < keep_alive_fail_time)) {
 						printf("\r\ntcp layer issue, do not adjust dtim\r\n");
 					} else {
 						if (wowlan_dtim2 == 1) {
@@ -439,7 +427,7 @@ void tcp_app_task(void *param)
 						}
 					}
 				}
-			} else if (wowlan_wake_reason == 0x77 || wowlan_wake_reason == 0x22) {
+			} else if (wowlan_wake_reason == RX_TCP_WITH_PAYLOAD || wowlan_wake_reason == RX_UNICAST_PKT) {
 				if (bcn_cnt > RECV_BCN_THRESHOLD) {
 					if (wowlan_dtim2 == 1) {
 						wowlan_dtim2 = level + (level * (weight - 1));
@@ -606,7 +594,6 @@ pno_suspend:
 		extern int dhcp_retain(void);
 		printf("retain DHCP %s \n\r", dhcp_retain() == 0 ? "OK" : "FAIL");
 		// for wlan resume
-		extern int rtw_hal_wlan_resume_backup(void);
 		rtw_hal_wlan_resume_backup();
 	}
 
@@ -692,7 +679,6 @@ exit1:
 
 int wlan_do_resume(void)
 {
-	extern int rtw_hal_wlan_resume_restore(void);
 	rtw_hal_wlan_resume_restore();
 
 	wifi_fast_connect_enable(1);
@@ -877,7 +863,7 @@ void main(void)
 				sleep_duration = rtl8735b_wowlan_get_sleep_duration();
 				extern uint8_t rtl8735b_wowlan_get_pre_dtim(void);
 				pre_dtim = rtl8735b_wowlan_get_pre_dtim();
-				if (wowlan_wake_reason == 0x77) {
+				if (wowlan_wake_reason == RX_TCP_WITH_PAYLOAD) {
 					wlan_mcu_ok = 1;
 
 					uint32_t packet_len = 0;
@@ -928,7 +914,6 @@ void main(void)
 
 #if defined(TCP_RESUME_MAX_PACKETS) && (TCP_RESUME_MAX_PACKETS > 1)
 					for (int j = 1; j < TCP_RESUME_MAX_PACKETS; j ++) {
-						extern uint8_t *rtl8735b_read_packet_with_index(uint32_t *size, uint8_t index);
 						wakeup_packet = rtl8735b_read_packet_with_index(&packet_len, j);
 						if (wakeup_packet == NULL) {
 							break;
@@ -968,17 +953,17 @@ void main(void)
 					//	extern uint8_t rtw_hal_read_ch_pno_scan_from_txfifo(uint8_t reason);
 					//	channel = rtw_hal_read_ch_pno_scan_from_txfifo(wowlan_wake_reason);
 					//	printf("\r\nwake up from pno and camp on ch %d\r\n", channel);
-				} else if (wowlan_wake_reason == 0x71) {
+				} else if (wowlan_wake_reason == FW_PNO_TIMEOUT) {
 					printf("\r\nwake up from pno and no channel can't be scan\r\n");
-				} else if (wowlan_wake_reason == 0x72) {
+				} else if (wowlan_wake_reason == FW_PNO_RECV_BCN_WAKEUP) {
 					extern uint8_t rtw_hal_read_ch_pno_scan_from_txfifo(uint8_t reason);
 					channel = rtw_hal_read_ch_pno_scan_from_txfifo(wowlan_wake_reason);
 					printf("\r\nwake up from pno and camp on ch %d\r\n", channel);
-				}  else if (wowlan_wake_reason == 0x73) {
+				}  else if (wowlan_wake_reason == FW_PNO_RECV_PROBE_RESP_WAKEUP) {
 					extern uint8_t rtw_hal_read_ch_pno_scan_from_txfifo(uint8_t reason);
 					channel = rtw_hal_read_ch_pno_scan_from_txfifo(wowlan_wake_reason);
 					printf("\r\nwake up from pno by receiving probe response and camp on ch %d\r\n", channel);
-				} else if ((wowlan_wake_reason == 0x80) || (wowlan_wake_reason == 0x81)) {
+				} else if ((wowlan_wake_reason == RX_ICMP_REPLY) || (wowlan_wake_reason == ICMP_MAX_SEND)) {
 					wlan_mcu_ok = 1;
 				}
 
@@ -992,13 +977,9 @@ void main(void)
 
 			extern int rtw_hal_wowlan_check_wlan_mcu_wakeup(void);
 			if (rtw_hal_wowlan_check_wlan_mcu_wakeup() == 1) {
-				extern uint8_t *read_rf_conuter_report(uint8_t log_en);
 				read_rf_conuter_report(0);
-				extern uint32_t rtl8735b_get_wakeup_bcn_cnt(void);
 				bcn_cnt = rtl8735b_get_wakeup_bcn_cnt();
-				extern uint64_t rtl8735b_wowlan_get_sleep_duration(void);
 				sleep_duration = rtl8735b_wowlan_get_sleep_duration();
-				extern uint8_t rtl8735b_wowlan_get_pre_dtim(void);
 				pre_dtim = rtl8735b_wowlan_get_pre_dtim();
 				wlan_mcu_ok = 1;
 #if TCP_RESUME
@@ -1013,25 +994,18 @@ void main(void)
 			}
 		} else if (pm_reason & BIT(6)) {
 			//wakeup by suspend fail
-			extern uint8_t rtw_hal_wowlan_get_suspend_wakeup_reason(void);
-			extern uint8_t rtw_hal_wowlan_get_suspend_fail(void);
 			suspend_fail = rtw_hal_wowlan_get_suspend_fail();
 
-			extern int rtw_hal_wowlan_check_wlan_mcu_wakeup(void);
 //#if LONG_RUN_TEST
 //			while(!rtw_hal_wowlan_check_wlan_mcu_wakeup());
 //#endif
 
 			if (rtw_hal_wowlan_check_wlan_mcu_wakeup() == 1) {
-				extern uint8_t *read_rf_conuter_report(uint8_t log_en);
 				read_rf_conuter_report(0);
 				if (!suspend_fail) {
-					extern uint32_t rtl8735b_get_wakeup_bcn_cnt(void);
 					bcn_cnt = rtl8735b_get_wakeup_bcn_cnt();
-					extern uint64_t rtl8735b_wowlan_get_sleep_duration(void);
 					sleep_duration = rtl8735b_wowlan_get_sleep_duration();
 				}
-				extern uint8_t rtl8735b_wowlan_get_pre_dtim(void);
 				pre_dtim = rtl8735b_wowlan_get_pre_dtim();
 			} else {
 				printf("\n\rERROR: rtw_hal_wowlan_check_wlan_mcu_wakeup \n\r");
@@ -1046,7 +1020,6 @@ void main(void)
 
 					if (suspend_wakeup == 0x77) {
 						uint32_t packet_len = 0;
-						extern u8 *rtw_hal_wowlan_get_suspend_wakeup_pattern(u32 * packet_len);
 						uint8_t *wakeup_packet = rtw_hal_wowlan_get_suspend_wakeup_pattern(&packet_len);
 
 						// parse wakeup packet
@@ -1094,7 +1067,6 @@ void main(void)
 
 #if defined(TCP_RESUME_MAX_PACKETS) && (TCP_RESUME_MAX_PACKETS > 1)
 						for (int j = 1; j < TCP_RESUME_MAX_PACKETS; j ++) {
-							extern u8 *rtw_hal_wowlan_get_suspend_wakeup_pattern_with_index(u32 * packet_len, u8 index);
 							uint8_t *wakeup_packet = rtw_hal_wowlan_get_suspend_wakeup_pattern_with_index(&packet_len, j);
 							if (wakeup_packet == NULL) {
 								break;
@@ -1170,14 +1142,11 @@ void main(void)
 #endif
 		}
 
-		extern int rtw_hal_wlan_resume_check(void);
 		if (wlan_mcu_ok && (rtw_hal_wlan_resume_check() == 1)) {
 			wlan_resume = 1;
 
-			extern int rtw_hal_read_aoac_rpt_from_txfifo(u8 * buf, u16 addr, u16 len);
 			rtw_hal_read_aoac_rpt_from_txfifo(NULL, 0, 0);
 
-			extern uint16_t rtw_hal_read_wowlan_t1_time(void);
 			uint16_t dhcp_t1_time = rtw_hal_read_wowlan_t1_time();
 			extern uint8_t lwip_set_dhcp_resume_t1(uint16_t t1_time);
 			lwip_set_dhcp_resume_t1(dhcp_t1_time);

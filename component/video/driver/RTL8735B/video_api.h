@@ -554,6 +554,7 @@ int video_create_exif_tags(uint8_t *buf, uint32_t video_len);
 
 void video_fill_exif_tags_from_struct(const ExifParams *params);
 
+int video_get_error_group(int error_id);
 //////////////////////
 #define VOE_NAND_FLASH_OFFSET 0x8000000
 #define FW_1 0x01

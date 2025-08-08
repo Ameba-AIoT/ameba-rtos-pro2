@@ -33,7 +33,6 @@
  *                    Constants
  ******************************************************/
 #define RTW_JOIN_TIMEOUT 20000
-
 /******************************************************
  *                 Type Definitions
  ******************************************************/
@@ -69,6 +68,9 @@ rtw_join_status_t rtw_join_status;
 rtw_joinstatus_callback_t p_wifi_joinstatus_user_callback = NULL;
 rtw_joinstatus_callback_t p_wifi_joinstatus_internal_callback = NULL;
 
+rtw_detail_join_status_t rtw_detail_join_status;
+rtw_detail_joinstatus_callback_t p_wifi_detail_joinstatus_internal_callback = NULL;
+
 wifi_do_fast_connect_ptr p_wifi_do_fast_connect = NULL;
 write_fast_connect_info_ptr p_store_fast_connect_info = NULL;
 
@@ -91,6 +93,7 @@ extern int rtw_check_wifi_user_config_size(void);
 int g_conn_time = -1;
 int g_conn_record[20][6] = {{0}};
 static rtw_join_status_t g_wifi_last_status = RTW_JOINSTATUS_UNKNOWN;
+static rtw_detail_join_status_t g_wifi_last_detail_status = RTW_DETAIL_JOINSTATUS_UNKNOWN;
 unsigned long conn_tick;
 unsigned long conn_starting_tick;
 unsigned long conn_auth_tick;
@@ -286,6 +289,97 @@ void wifi_join_status_debug(rtw_join_status_t join_status)
 
 }
 
+int is_detail_filter_security = 0;
+int is_detail_unsupport_security = 0;
+void _wifi_detail_join_status_indicate(rtw_detail_join_status_t detail_join_status)
+{
+	rtw_detail_join_status = detail_join_status;
+
+	printf("[%s] detail_join_status: %d, g_wifi_last_detail_status: %d\n\r", __FUNCTION__, detail_join_status, g_wifi_last_detail_status);
+
+	if (detail_join_status == RTW_DETAIL_JOINSTATUS_REJECT_CONNECTION_SECURITY) {
+		is_detail_filter_security = 1;
+	} else if (detail_join_status == RTW_DETAIL_JOINSTATUS_REJECT_UNSUPPORT_SECURITY) {
+		is_detail_unsupport_security = 1;
+	} else if (detail_join_status == RTW_DETAIL_JOINSTATUS_SUCCESS) {
+		is_detail_filter_security = 0;
+		is_detail_unsupport_security = 0;
+	} else if (detail_join_status == RTW_DETAIL_JOINSTATUS_DISCONNECT) {
+		int reason_code = 0;
+		wifi_get_disconn_reason_code((unsigned short *)&reason_code);
+		if (65535 == reason_code) {
+			//printf("[wifi_join_status_debug] no beacon for a long time\n\r");
+		} else if (65534 == reason_code) {
+			//printf("[wifi_join_status_debug] ap has changed, disconnect now\n\r");
+		} else if (65533 == reason_code) {
+			//printf("[wifi_join_status_debug] Disconnection from driver\n\r");
+		} else {
+			// deauth reason code from the router
+		}
+	}
+
+	if (detail_join_status == RTW_DETAIL_JOINSTATUS_FAIL) {
+		if (g_wifi_last_detail_status == RTW_DETAIL_JOINSTATUS_SCANN_DONE) {
+			//scan
+			if (is_detail_filter_security) {
+				printf("\n\r[%s] last state RTW_DETAIL_JOINSTATUS_REJECT_CONNECTION_SECURITY\n\r", __FUNCTION__);
+			} else if (is_detail_unsupport_security) {
+				printf("\n\r[%s] last state RTW_DETAIL_JOINSTATUS_REJECT_UNSUPPORT_SECURITY\n\r", __FUNCTION__);
+			} else {
+				//printf("\n\r[%s] last state RTW_JOINSTATUS_SCANN_DONE\n\r",__FUNCTION__);
+			}
+		} if (g_wifi_last_detail_status == RTW_DETAIL_JOINSTATUS_TIMEOUT) {
+			printf("\n\r[%s] last state RTW_DETAIL_JOINSTATUS_TIMEOUT\n\r", __FUNCTION__);
+		} else if (g_wifi_last_detail_status == RTW_DETAIL_JOINSTATUS_STATUS_CODE_FAIL) {
+			int reason_code = 0;
+			wifi_get_status_code((unsigned short *)&reason_code);
+			printf("\n\r[%s] last state RTW_DETAIL_JOINSTATUS_STATUS_CODE_FAIL, reason_code: %d\n\r", __FUNCTION__, reason_code);
+		}
+
+		if (g_wifi_last_detail_status > RTW_DETAIL_JOINSTATUS_STARTING && g_wifi_last_detail_status < RTW_DETAIL_JOINSTATUS_4WAY_HANDSHAKE_DONE) {
+			int reason_code = 0;
+			wifi_get_status_code((unsigned short *)&reason_code);
+			if (reason_code == 0) {
+				wifi_get_disconn_reason_code((unsigned short *)&reason_code);
+			}
+		}
+
+
+		is_detail_filter_security = 0;
+		is_detail_unsupport_security = 0;
+	}
+#if 1
+	//Check the wrong password method
+	if ((detail_join_status == RTW_DETAIL_JOINSTATUS_FAIL)) {
+		extern int rltk_get_connecting_security_type(unsigned int *connecting_security_type);
+		unsigned int connecting_security_type = 0;
+		rltk_get_connecting_security_type(&connecting_security_type);
+		if (connecting_security_type == WPA3_SECURITY) {
+			if ((g_wifi_last_detail_status > RTW_DETAIL_JOINSTATUS_SCANN_DONE && g_wifi_last_detail_status < RTW_DETAIL_JOINSTATUS_ASSOCIATING)
+				|| (g_wifi_last_detail_status > RTW_DETAIL_JOINSTATUS_ASSOCIATED && g_wifi_last_detail_status < RTW_DETAIL_JOINSTATUS_4WAY_HANDSHAKE_DONE)) {
+				int reason_code = 0;
+				wifi_get_disconn_reason_code((unsigned short *)&reason_code);
+				if (reason_code == 0) {
+					wifi_get_status_code((unsigned short *)&reason_code);
+				}
+				printf("\n\r[%s] reason: %d, password wrong(WPA3)(Status: %d)!!!!!!!!!!!\n\r\n\r", __FUNCTION__, reason_code, g_wifi_last_detail_status);
+			}
+		} else {
+			if (g_wifi_last_detail_status > RTW_DETAIL_JOINSTATUS_ASSOCIATED && g_wifi_last_detail_status < RTW_DETAIL_JOINSTATUS_4WAY_HANDSHAKE_DONE) {
+				int reason_code = 0;
+				wifi_get_disconn_reason_code((unsigned short *)&reason_code);
+				if (reason_code == 0) {
+					wifi_get_status_code((unsigned short *)&reason_code);
+				}
+				printf("\n\r[%s] reason: %d, password wrong(WPA2)(Status: %d)!!!!!!!!!!!\n\r\n\r", __FUNCTION__, reason_code, g_wifi_last_detail_status);
+			}
+		}
+	}
+#endif
+
+	g_wifi_last_detail_status = detail_join_status;
+}
+
 void _wifi_join_status_indicate(rtw_join_status_t join_status)
 {
 	/* step 1: internal process for different status*/
@@ -359,6 +453,7 @@ int wifi_connect(rtw_network_info_t *connect_param, unsigned char block)
 	if ((strlen((const char *)connect_param->ssid.val) < 0) || (strlen((const char *)connect_param->ssid.val) > 32)) {
 		RTW_API_INFO("\nwifi connect param ssid is wrong!");
 		rtw_join_status = RTW_JOINSTATUS_FAIL;
+		rtw_detail_join_status = RTW_DETAIL_JOINSTATUS_FAIL;
 		return RTW_ERROR;
 	}
 
@@ -381,11 +476,13 @@ int wifi_connect(rtw_network_info_t *connect_param, unsigned char block)
 		 ))) {
 		RTW_API_INFO("\nwifi connect param password is wrong!");
 		rtw_join_status = RTW_JOINSTATUS_FAIL;
+		rtw_detail_join_status = RTW_DETAIL_JOINSTATUS_FAIL;
 		return RTW_INVALID_KEY;
 	}
 
 	p_wifi_joinstatus_user_callback = connect_param->joinstatus_user_callback;
 	p_wifi_joinstatus_internal_callback = _wifi_join_status_indicate;
+	p_wifi_detail_joinstatus_internal_callback = connect_param->detail_joinstatus_user_callback;
 
 	/*clear for last connect status */
 	rtw_join_status = RTW_JOINSTATUS_STARTING;
@@ -397,6 +494,7 @@ int wifi_connect(rtw_network_info_t *connect_param, unsigned char block)
 		if (!block_param) {
 			result = (rtw_result_t) RTW_NOMEM;
 			rtw_join_status = RTW_JOINSTATUS_FAIL;
+			rtw_detail_join_status = RTW_DETAIL_JOINSTATUS_FAIL;
 			goto error;
 		}
 		block_param->block = block;
@@ -404,6 +502,7 @@ int wifi_connect(rtw_network_info_t *connect_param, unsigned char block)
 		if (!block_param->join_sema) {
 			result = (rtw_result_t) RTW_NOMEM;
 			rtw_join_status = RTW_JOINSTATUS_FAIL;
+			rtw_detail_join_status = RTW_DETAIL_JOINSTATUS_FAIL;
 			goto error;
 		}
 	}
@@ -412,6 +511,7 @@ int wifi_connect(rtw_network_info_t *connect_param, unsigned char block)
 	result = rtw_wx_connect_local(connect_param);
 	if (result != RTW_SUCCESS) {
 		rtw_join_status = RTW_JOINSTATUS_FAIL;
+		rtw_detail_join_status = RTW_DETAIL_JOINSTATUS_FAIL;
 		goto error;
 	}
 
@@ -430,12 +530,14 @@ int wifi_connect(rtw_network_info_t *connect_param, unsigned char block)
 		if (rtw_down_timeout_sema(&block_param->join_sema, block_param->join_timeout) == RTW_FALSE) {
 			RTW_API_INFO("RTW API: Join bss timeout\r\n");
 			rtw_join_status = RTW_JOINSTATUS_FAIL;
+			rtw_detail_join_status = RTW_DETAIL_JOINSTATUS_FAIL;
 			result = RTW_TIMEOUT;
 			goto error;
 		} else {
 			if (wifi_is_connected_to_ap() != RTW_SUCCESS) {
 				result = RTW_ERROR;
 				rtw_join_status = RTW_JOINSTATUS_FAIL;
+				rtw_detail_join_status = RTW_DETAIL_JOINSTATUS_FAIL;
 				goto error;
 			}
 		}
@@ -475,6 +577,10 @@ error:
 
 	if (rtw_join_status == RTW_JOINSTATUS_FAIL) {
 		_wifi_join_status_indicate(RTW_JOINSTATUS_FAIL);
+	}
+
+	if ((rtw_detail_join_status == RTW_DETAIL_JOINSTATUS_FAIL) && p_wifi_detail_joinstatus_internal_callback) {
+		p_wifi_detail_joinstatus_internal_callback(RTW_DETAIL_JOINSTATUS_FAIL);
 	}
 
 	return result;
