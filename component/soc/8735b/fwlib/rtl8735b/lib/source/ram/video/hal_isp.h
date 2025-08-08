@@ -1,7 +1,7 @@
 /*
  * hal_isp.h
  *
- *  Created on: 2021¦~3¤ë17¤é
+ *  Created on: 2021Å ~3â‚¬Ã«17â‚¬Ã©
  *      Author: martinhuang
  */
 
@@ -424,7 +424,7 @@ struct verify_ctrl_config {
 #define ISP_ZOOM_FILTER_COEF_NUM  20
 #define ISP_ZOOM_COEF_ALIGNMENT_DUMMY 12
 
-void *isp_soc_start(hal_isp_adapter_t *isp_adpt);
+void *isp_soc_start(hal_isp_adapter_t *isp_adpt, int *ret);
 int isp_open_stream(hal_isp_adapter_t *isp_adpt, uint8_t stream_id, uint32_t init_raw);
 int isp_close_stream(hal_isp_adapter_t *isp_adpt, uint8_t stream_id);
 int isp_get_stream_cnt(uint8_t stream_id);

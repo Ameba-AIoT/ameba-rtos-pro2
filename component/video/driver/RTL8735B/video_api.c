@@ -444,7 +444,7 @@ int video_encbuf_release(int ch, int codec, int mode)
 	int ret = 0;
 	//printf("hevc/h264/jpeg release = %d\r\n",mode);
 	ret = hal_video_release(ch, codec, 0);
-	if (ret == NOK) {
+	if (ret != OK) {
 		//retry release again
 		ret = hal_video_release(ch, codec, 0);
 	}
@@ -456,7 +456,7 @@ int video_ispbuf_release(int ch, int addr)
 	int ret = 0;
 	//printf("nv12/nv16/rgb release = 0x%X\r\n",addr);
 	ret = hal_video_isp_buf_release(ch, addr);
-	if (ret == NOK) {
+	if (ret != OK) {
 		//retry release again
 		ret = hal_video_isp_buf_release(ch, addr);
 	}
@@ -636,7 +636,7 @@ int video_bps_stbl_ctrl_en(int ch, int enable)
 int video_set_bps_stbl_ctrl_params(int ch, bps_stbl_ctrl_param_t *bps_stbl_ctrl_param, uint32_t *fps_stage, uint32_t *gop_stage)
 {
 	if (voe_info.ch_info[ch].bps_stbl_ctrl == NULL) {
-		if (video_bps_stbl_ctrl_init(ch) == NOK) {
+		if (video_bps_stbl_ctrl_init(ch) != OK) {
 			video_dprintf(VIDEO_LOG_ERR, "ch%d failed to create bps_stbl_ctrl\r\n", ch);
 			return NOK;
 		}
@@ -2131,7 +2131,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 
 	video_dprintf(VIDEO_LOG_INF, "hal_video_str2cmd\r\n");
 	//string to command
-	if (hal_video_str2cmd(cmd1, cmd2, cmd3) == NOK) {
+	if (hal_video_str2cmd(cmd1, cmd2, cmd3) != OK) {
 		video_dprintf(VIDEO_LOG_ERR, "hal_video_str2cmd fail\n");
 		//return -1;
 		status = NOK;
@@ -2347,10 +2347,9 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 		}
 	}
 	video_dprintf(VIDEO_LOG_INF, "hal_video_open\r\n");
-	if (hal_video_open(ch) != OK) {
-		video_dprintf(VIDEO_LOG_ERR, "hal_video_open fail\n");
-		//return -1;
-		status = NOK;
+	status = hal_video_open(ch);
+	if (status != OK) {
+		video_dprintf(VIDEO_LOG_ERR, "hal_video_open fail ret=%x, group=%d\r\n", status, video_get_error_group(status));
 		goto EXIT;
 	}
 
@@ -2363,7 +2362,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 #endif
 EXIT:
 
-	if (status == NOK) {
+	if (status != OK) {
 		video_rc_deinit(ch);
 	}
 
@@ -2384,11 +2383,10 @@ int video_close(int ch)
 	voe_info.ch_info[ch].param = NULL;
 	hal_video_set_fps(0, ch);
 	video_dprintf(VIDEO_LOG_INF, "hal_video_close\r\n");
-	if (hal_video_close(ch) != OK) {
-		video_dprintf(VIDEO_LOG_ERR, "hal_video_close fail\n");
-		status = NOK;
+	status = hal_video_close(ch);
+	if (status != OK) {
+		video_dprintf(VIDEO_LOG_ERR, "hal_video_close fail ret=%x, group=%d\r\n", status, video_get_error_group(status));
 		goto EXIT;
-		//return -1;
 	}
 
 	osDelay(10); // To idle task clean task usage memory
@@ -4502,4 +4500,10 @@ int video_get_encoder_nalu_payload_info(unsigned char *frame_buf, unsigned int f
 	}
 EXIT:
 	return ret;
+}
+
+int video_get_error_group(int error_id)
+{
+	//1:VOE, 2:ISP flow, 3: Driver, 4: Mod, 5: OSD
+	return error_id >> 27 & 0xF;
 }

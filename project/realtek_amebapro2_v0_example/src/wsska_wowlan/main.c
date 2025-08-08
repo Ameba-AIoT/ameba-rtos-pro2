@@ -13,6 +13,7 @@
 extern void wlan_network(void);
 #endif
 
+#include "wowlan_driver_api.h"
 #include "wifi_conf.h"
 #include <lwip_netconf.h>
 #include <lwip/sockets.h>
@@ -43,29 +44,6 @@ extern void console_init(void);
 
 extern struct netif xnetif[NET_IF_NUM];
 
-extern void wifi_wowlan_set_pstune_param(uint8_t set_pstimeout,
-		uint8_t set_pstimeout_retry,
-		uint8_t set_rx_bcn_limit,
-		uint8_t set_dtimtimeout,
-		uint8_t set_bcn_to_limit);
-
-extern int wifi_wowlan_set_fwdecision_param(u8  fwdis_period,
-		u8  fwdis_trypktnum,
-		u8  pno_enable,
-		u8  pno_timeout,
-		u8  l2_keepalive_period);
-
-extern int rtl8735b_suspend(int mode);
-
-extern void rtl8735b_set_lps_pg(void);
-
-extern void wifi_set_publish_wakeup(void);
-
-extern void wifi_set_tcpssl_keepalive(void);
-
-extern int wifi_set_dhcp_offload(void);
-extern int wifi_set_ssl_offload(uint8_t *ctr, uint8_t *iv, uint8_t *enc_key, uint8_t *dec_key, uint8_t *hmac_key, uint8_t *content, size_t len, uint8_t is_etm);
-extern void wifi_set_ssl_counter_report(void);
 /**
  * Lunch a thread to send AT command automatically for a long run test
  */
@@ -594,7 +572,6 @@ void wowlan_thread(void *param)
 		dbg_printf("media power off end\r\n");
 #endif
 		//select fw
-		extern void rtl8735b_select_keepalive(u8 ka);
 		rtl8735b_select_keepalive(WOWLAN_NORMAL_BCNV1);
 
 		rtl8735b_set_lps_pg();
@@ -673,7 +650,7 @@ void fPS(void *arg)
 				server_port = strtoul(argv[3], NULL, 10);
 			}
 			enable_tcp_keep_alive = 1;
-			printf("setup websocket tsl keep alive to %s:%d\r\n", server_ip, server_port);
+			printf("setup websocket tls keep alive to %s:%d\r\n", server_ip, server_port);
 		} else if (strcmp(argv[1], "arp") == 0) {
 			if (argc >= 3) {
 				char cp[16] = "192.168.1.100";
@@ -835,10 +812,6 @@ log_item_t at_power_save_items[ ] = {
 };
 
 //char wakeup_packet[1024];
-extern uint8_t rtl8735b_wowlan_wake_reason(void);
-extern uint8_t rtl8735b_wowlan_wake_pattern(void);
-extern uint8_t *rtl8735b_read_wakeup_packet(uint32_t *size, uint8_t wowlan_reason);
-extern uint8_t *rtl8735b_read_ssl_conuter_report(void);
 #if defined(VIDEO_EXAMPLE_ON)
 /* entry for the example*/
 __weak void app_example(void) {}

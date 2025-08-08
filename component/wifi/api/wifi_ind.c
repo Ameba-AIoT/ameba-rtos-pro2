@@ -10,6 +10,7 @@
  *                    Globals
  ******************************************************/
 extern rtw_joinstatus_callback_t p_wifi_joinstatus_internal_callback;
+extern rtw_joinstatus_callback_t p_wifi_detail_joinstatus_internal_callback;
 
 static event_list_elem_t     event_callback_list[WIFI_EVENT_MAX][WIFI_EVENT_MAX_ROW];
 
@@ -50,6 +51,10 @@ void wifi_indication(rtw_event_indicate_t event, char *buf, int buf_len, int fla
 	if (event == WIFI_EVENT_JOIN_STATUS) {
 		if (p_wifi_joinstatus_internal_callback) {
 			p_wifi_joinstatus_internal_callback((rtw_join_status_t)flags);
+		}
+	} else if (event == WIFI_EVENT_DETAIL_JOIN_STATUS) {
+		if (p_wifi_detail_joinstatus_internal_callback) {
+			p_wifi_detail_joinstatus_internal_callback((rtw_detail_join_status_t)flags);
 		}
 	} else {
 		rtw_indicate_event_handle(event, buf, buf_len, flags);

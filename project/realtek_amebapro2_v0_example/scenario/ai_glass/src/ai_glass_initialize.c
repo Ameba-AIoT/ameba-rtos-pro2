@@ -1809,14 +1809,6 @@ void ai_glass_service_thread(void *param)
     // Assign chip id for 12M enable
     aon->AON_REG_AON_FAST_RESUME = chip_id;
 
-	// ai_glass_init_external_disk();
-	// AI_GLASS_MSG("Format disk to FAT32\r\n");
-	// int ret = vfs_user_format(ai_glass_disk_name, VFS_FATFS, EXTDISK_PLATFORM);
-	// if (ret == FR_OK) {
-	// 	AI_GLASS_MSG("format successfully\r\n");
-	// } else {
-	// 	AI_GLASS_ERR("format failed %d\r\n", ret);
-	// }
 exit:
 	vTaskDelete(NULL);
 }
