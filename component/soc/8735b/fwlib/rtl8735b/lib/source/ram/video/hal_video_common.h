@@ -575,7 +575,9 @@ typedef struct {
 
 	u32 isp_raw_mode_tnr_dis;
 
-	u32 rsvd[26];   //When add new element, please reduce same rsvd size
+	u32 init_dyn_iq_mode;
+
+	u32 rsvd[25];   //When add new element, please reduce same rsvd size
 
 } __attribute__((aligned(32))) commandLine_s;
 

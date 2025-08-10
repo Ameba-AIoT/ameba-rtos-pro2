@@ -204,6 +204,7 @@ typedef struct video_pre_init_params_s {
 	uint32_t isp_raw_mode_tnr_dis; //disable isp tnr function
 	struct verify_ctrl_config *v_cfg; //verify seqeunce dirver config
 	uint8_t *zoom_coef; //work around.
+	uint32_t dyn_iq_mode;
 #endif
 } video_pre_init_params_t;
 
@@ -540,7 +541,7 @@ int video_bps_stbl_ctrl_en(int ch, int enable);
 
 int video_set_bps_stbl_ctrl_params(int ch, bps_stbl_ctrl_param_t *bps_stbl_ctrl_param, uint32_t *fps_stage, uint32_t *gop_stage);
 
-int video_get_realfps(int ch, int* isp_fps, int* enc_fps);
+int video_get_realfps(int ch, int *isp_fps, int *enc_fps);
 
 int video_wait_target_fps(int ch, int target_fps, int timeout);
 
