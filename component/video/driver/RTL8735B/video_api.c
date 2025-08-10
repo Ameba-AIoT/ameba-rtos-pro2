@@ -1819,6 +1819,9 @@ void video_pre_init_procedure(int ch, video_pre_init_params_t *parm)
 					  parm->zoom_coef[ISP_ZOOM_FILTER_COEF_NUM - 3], parm->zoom_coef[ISP_ZOOM_FILTER_COEF_NUM - 4]);
 		hal_video_isp_zoom_filter_coef_init(ch, &(parm->zoom_coef[0]));
 	}
+
+	hal_video_isp_init_dyn_iq_mode(ch, parm->dyn_iq_mode);
+
 #endif
 }
 

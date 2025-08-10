@@ -109,13 +109,19 @@ static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t dat
 {
 	if (lfsnap_status == LIFESNAP_GET) {
 		int ret = 0;
+		init_params.isp_init_raw = 0;
+		init_params.isp_raw_mode_tnr_dis = 0;
+		init_params.dyn_iq_mode = 0;
+		init_params.dn_init_enable = 0;
+		init_params.dn_init_mode = 0;
+		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
 		AI_GLASS_MSG("get liftime snapshot frame time %lu\r\n", mm_read_mediatime_ms());
 		AI_GLASS_MSG("file_path:%s  data_addr:%ld  data_size:%ld \r\n", file_path, data_addr, data_size);
 		AI_GLASS_MSG("get liftime snapshot frame encode done time %lu\r\n", mm_read_mediatime_ms());
 		ls_video_params.params.width = sensor_params[SENSOR_IMX681_12M].sensor_width;
 		ls_video_params.params.height = sensor_params[SENSOR_IMX681_12M].sensor_height;
 		ls_video_params.params.fps = sensor_params[SENSOR_IMX681_12M].sensor_fps;
-		ls_video_params.params.jpeg_qlevel = 9;
+		ls_video_params.params.jpeg_qlevel = 10;
 		ls_video_params.params.type = VIDEO_JPEG;
 		ls_video_params.params.out_mode = MODE_EXT;
 		ls_video_params.params.ext_fmt = 1; //NV12
@@ -288,7 +294,7 @@ static void free_dma(rtscam_dma_item_t *dma_item)
 	dma_item->virt_addr = 0;
 }
 static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint32_t img_buf_addr0, uint32_t img_buf_addr1, uint32_t w, uint32_t h,
-		uint32_t x_overlap)
+		uint32_t x_overlap, bool is_right)
 {
 	uint32_t y_len, uv_len;
 	y_len = (w / 2 + x_overlap) * h;
@@ -301,13 +307,21 @@ static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint3
 	v_cfg->verify_addr1 = img_buf_addr1;
 	v_cfg->verify_ylen = y_len;
 	v_cfg->verify_uvlen = uv_len;
-	//setup right image nlsc center
-	v_cfg->verify_r_center.x = x_overlap / 2;
-	v_cfg->verify_r_center.y = h / 2;
-	v_cfg->verify_g_center.x = x_overlap / 2;
-	v_cfg->verify_g_center.y = h / 2;
-	v_cfg->verify_b_center.x = x_overlap / 2;
-	v_cfg->verify_b_center.y = h / 2;
+	// Setup NLSC center of second image of verification path. Not working for first frame.
+	uint32_t center_x, center_y;
+	if (is_right) {
+		center_x = x_overlap;
+	} else {
+		center_x = w / 2;
+	}
+	center_y = h / 2;
+
+	v_cfg->verify_r_center.x = center_x;
+	v_cfg->verify_r_center.y = center_y;
+	v_cfg->verify_g_center.x = center_x;
+	v_cfg->verify_g_center.y = center_y;
+	v_cfg->verify_b_center.x = center_x;
+	v_cfg->verify_b_center.y = center_y;
 	dcache_clean_by_addr((uint32_t *)img_buf_addr0, y_len + uv_len);
 	dcache_clean_by_addr((uint32_t *)img_buf_addr1, y_len + uv_len);
 }
@@ -340,12 +354,32 @@ high_resolution_fail:
 	free_dma(&dma_right);
 	return;
 }
+enum save_yuv_option { 
+	FILE_PROCESS_DONE = 0,
+	MERGE_LEFT_NV12_SKIP_FIRST,
+	MERGE_LEFT_NV12,
+	MERGE_RIGHT_NV12_SKIP_FIRST,
+	MERGE_RIGHT_NV12,
+	FILE_PROCESS_FAILED
+};
+static enum save_yuv_option save_yuv_option = FILE_PROCESS_DONE;
 static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
 	printf("[%s] 0x%lx, data len = %lu\r\n", __FUNCTION__, data_addr, data_size);
 	uint8_t *img_buf = (uint8_t *)data_addr;
 	uint32_t out_size;
-	if (image_count == 0) {
+	if(save_yuv_option == MERGE_LEFT_NV12_SKIP_FIRST) {
+		save_yuv_option = MERGE_LEFT_NV12;
+		return;
+	}
+	if(save_yuv_option == MERGE_RIGHT_NV12_SKIP_FIRST) {
+		save_yuv_option = MERGE_RIGHT_NV12;
+		return;
+	}
+
+	if (save_yuv_option == MERGE_LEFT_NV12) {
+		//deal with left 6M NV12 
+		//merge 2 * 6M to 12M NV12 image
 		if (hr_nv12_image == NULL) {
 			printf("hr_nv12_image malloc fail\r\n");
 			image_count = -1;
@@ -355,7 +389,9 @@ static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32
 		yuv420stitch_step(img_buf, hr_nv12_image, ls_video_params.jpg_width, ls_video_params.jpg_height, x_overlap, &out_size, 0);
 		printf("dma_left raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
 		image_count++;
-	} else if (image_count == 1) {
+	} else if (save_yuv_option == MERGE_RIGHT_NV12) {
+		//deal with right 6M NV12
+		//merge 2 * 6M to 12M NV12 image
 		if (hr_nv12_image == NULL) {
 			printf("hr_nv12_image malloc fail\r\n");
 			image_count = -1;
@@ -366,8 +402,9 @@ static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32
 		printf("dma_right raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
 		image_count++;
 	} else {
-		image_count = -1;
+		save_yuv_option = FILE_PROCESS_FAILED;
 	}
+	save_yuv_option = FILE_PROCESS_DONE;
 }
 
 static void high_resolution_snapshot_save(char *file_path)
@@ -395,45 +432,73 @@ static void high_resolution_snapshot_save(char *file_path)
 	};
 	init_params.zoom_coef = zoom_coef;
 #endif
-	//sent 2 * 6M raw to voe
-	config_verification_path_buf(init_params.v_cfg, (uint32_t) dma_left.phy_addr, (uint32_t) dma_right.phy_addr, ls_video_params.jpg_width,
-								 ls_video_params.jpg_height, x_overlap);
-	init_params.isp_init_raw = 0;
-	init_params.isp_raw_mode_tnr_dis = 0;
-	init_params.init_isp_items.init_mirrorflip = 0xf0; // not flip when use sequence
-	image_count = 0;
 	hr_nv12_image = malloc(ls_video_params.jpg_width * ls_video_params.jpg_height * 3 / 2);
 	if (!hr_nv12_image) {
 		goto snashot_fail;
 	}
+	//sent 2 * 6M raw to voe
+	config_verification_path_buf(init_params.v_cfg, (uint32_t) dma_left.phy_addr, (uint32_t) dma_left.phy_addr, ls_video_params.jpg_width,
+								 ls_video_params.jpg_height, x_overlap, false);
+	init_params.isp_init_raw = 0;
+	init_params.isp_raw_mode_tnr_dis = 0;
+	init_params.dyn_iq_mode = 1;
+	init_params.init_isp_items.init_mirrorflip = 0xf0; // not flip when use sequence
+	image_count = 0;
+
 	//switch to verify sequece driver
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
+	ls_video_params.params.direct_output = 0;
+	ls_video_params.params.out_mode = 2; //set to continuous mode
 	ls_video_params.params.width = sensor_params[sen_id[sensor_id]].sensor_width;
 	ls_video_params.params.height = sensor_params[sen_id[sensor_id]].sensor_height;
 	ls_video_params.params.fps = sensor_params[sen_id[sensor_id]].sensor_fps;
 	ls_video_params.params.type = VIDEO_NV12;
+	ls_video_params.params.ext_fmt = 0;
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
 	mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_TYPE_HANDLER, (int)save_high_resolution_yuv);
+	
+	// merge output 2 * 6M nv12 to 12M nv12 image
+	save_yuv_option = MERGE_LEFT_NV12_SKIP_FIRST;
 	timeout_count = 0;
 	video_set_isp_ch_buf(JPEG_CHANNEL, 2);
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL);
-	while (image_count == 0 || image_count == 1) {
+	while (save_yuv_option != FILE_PROCESS_DONE) {
 		vTaskDelay(1);
 		timeout_count++;
 		if (timeout_count > 100000) {
-			printf("snapshot timeout\r\n");
+			printf("hr nv12 convert timeout\r\n");
+			goto snashot_fail;
+		}
+	}	
+	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
+	//right
+	config_verification_path_buf(init_params.v_cfg, (uint32_t) dma_right.phy_addr, (uint32_t) dma_right.phy_addr, ls_video_params.jpg_width,
+								 ls_video_params.jpg_height, x_overlap, true);
+	init_params.isp_init_raw = 0;
+	init_params.isp_raw_mode_tnr_dis = 0;
+	init_params.dyn_iq_mode = 1;
+	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
+	save_yuv_option = MERGE_RIGHT_NV12_SKIP_FIRST;
+	timeout_count = 0;
+	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL);
+	while(save_yuv_option != FILE_PROCESS_DONE) {
+		vTaskDelay(1);
+		timeout_count++;
+		if(timeout_count > 100000) {
+			printf("hr nv12 convert timeout\r\n");
 			goto snashot_fail;
 		}
 	}
-	if (image_count != 2) {
+	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
+	if (save_yuv_option == FILE_PROCESS_FAILED) {
 		printf("snapshot failed \r\n");
 		goto snashot_fail;
 	}
-	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
 	if (init_params.v_cfg) {
 		free(init_params.v_cfg);
 		init_params.v_cfg = NULL;
 	}
+	init_params.zoom_coef = NULL;
 	free_dma(&dma_left);
 	free_dma(&dma_right);
 	AI_GLASS_MSG("yuv genaerate done %lu\r\n", mm_read_mediatime_ms());
@@ -601,7 +666,22 @@ int lifetime_snapshot_initialize(void)
 #if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_IMX471)
 	// Deinitialize fake media channel
 	memset(&init_params, 0x00, sizeof(video_pre_init_params_t));
+	init_params.isp_init_enable = 1;
+	init_params.init_isp_items.init_brightness = 0;
+	init_params.init_isp_items.init_contrast = 50;
+	init_params.init_isp_items.init_flicker = 2;
+	init_params.init_isp_items.init_hdr_mode = 0;
+	init_params.init_isp_items.init_mirrorflip = 0xf0;
+	init_params.init_isp_items.init_saturation = 50;
+	init_params.init_isp_items.init_wdr_mode = 0; //disable WDR
+	init_params.init_isp_items.init_mipi_mode = 0;
+	init_params.voe_dbg_disable = 1;
 	deinitial_media();
+	//remalloc voe heap to 45M
+	int voe_heap_size = 45 * 1024 * 1024;
+	video_set_voe_heap((int)NULL, voe_heap_size, 1);
+	printf("\r\n voe heap size = %d\r\n", voe_heap_size);
+	printf("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
 	// Load the AE and AWB data
 	media_get_preinit_isp_data(&init_params);
 	init_params.isp_ae_enable = 1;
@@ -612,6 +692,7 @@ int lifetime_snapshot_initialize(void)
 	init_params.isp_init_raw = 1;
 	init_params.isp_raw_mode_tnr_dis = 1;
 	init_params.video_drop_enable = 0;
+	init_params.dyn_iq_mode = 0;
 	ls_video_params.params.stream_id = JPEG_CHANNEL;
 	ls_video_params.params.type = VIDEO_NV16;
 	ls_video_params.params.width = sensor_params[sen_id[sensor_id]].sensor_width;
@@ -623,6 +704,8 @@ int lifetime_snapshot_initialize(void)
 	ls_video_params.jpg_height = sensor_params[sen_id[sensor_id]].sensor_height;
 	ls_video_params.jpg_qlevel = SNAPSHOT_12M_QLEVEL;  //life_snap_param.jpeg_qlevel * 10
 	ls_video_params.is_high_res = 1;
+	ls_video_params.params.direct_output = 0;
+	ls_video_params.params.ext_fmt = 0;
 #if USE_SENSOR == SENSOR_IMX681
 	x_overlap = (sensor_params[SENSOR_IMX681_12M_SEQ].sensor_width * 2 - sensor_params[SENSOR_IMX681_12M].sensor_width) / 2;
 #elif USE_SENSOR == SENSOR_IMX471

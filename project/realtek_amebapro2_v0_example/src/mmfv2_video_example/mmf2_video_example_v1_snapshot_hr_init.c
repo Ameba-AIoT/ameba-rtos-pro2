@@ -270,7 +270,8 @@ static void free_dma(rtscam_dma_item_t *dma_item)
 	dma_item->virt_addr = 0;
 }
 
-static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint32_t img_buf_addr0, uint32_t img_buf_addr1, uint32_t w, uint32_t h, uint32_t x_overlap)
+static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint32_t img_buf_addr0, uint32_t img_buf_addr1,
+	uint32_t w, uint32_t h, uint32_t x_overlap, bool is_right)
 {
 	uint32_t buf_size = (w / 2 + x_overlap) * h * 2;
 	uint32_t y_len, uv_len;
@@ -286,13 +287,23 @@ static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint3
 	v_cfg->verify_addr1 = img_buf_addr1;
 	v_cfg->verify_ylen = y_len;
 	v_cfg->verify_uvlen = uv_len;
-	//setup right half image nlsc center
-	v_cfg->verify_r_center.x = x_overlap / 2;
-	v_cfg->verify_r_center.y = h / 2;
-	v_cfg->verify_g_center.x = x_overlap / 2;
-	v_cfg->verify_g_center.y = h / 2;
-	v_cfg->verify_b_center.x = x_overlap / 2;
-	v_cfg->verify_b_center.y = h / 2;
+
+	// Setup NLSC center of second image of verification path. Not working for first frame.
+	uint32_t center_x, center_y;
+	if (is_right) {
+		center_x = x_overlap;
+	} else {
+		center_x = w / 2;
+	}
+	center_y = h / 2;
+
+	v_cfg->verify_r_center.x = center_x;
+	v_cfg->verify_r_center.y = center_y;
+	v_cfg->verify_g_center.x = center_x;
+	v_cfg->verify_g_center.y = center_y;
+	v_cfg->verify_b_center.x = center_x;
+	v_cfg->verify_b_center.y = center_y;
+
 	SCB_CleanDCache_by_Addr((uint32_t *)img_buf_addr0, y_len + uv_len);
 	SCB_CleanDCache_by_Addr((uint32_t *)img_buf_addr1, y_len + uv_len);
 }
@@ -337,7 +348,9 @@ static void raw_reform(uint8_t *pData, uint8_t *pTmp, int dataLen)
 enum file_process_option { //1: 12M raw, 2: left 6M nv12, 3: right: right 6M nv12
 	FILE_PROCESS_DONE = 0,
 	SPLIT_RAW_IMAGE,
+	MERGE_LEFT_NV12_SKIP_FIRST,
 	MERGE_LEFT_NV12,
+	MERGE_RIGHT_NV12_SKIP_FIRST,
 	MERGE_RIGHT_NV12
 };
 static enum file_process_option file_process_option = FILE_PROCESS_DONE;
@@ -350,11 +363,22 @@ static void file_process(char *file_path, uint32_t data_addr, uint32_t data_size
 	img_buf_size = OUT_IMG_WIDTH * OUT_IMG_HEIGHT * 2;
 	uint32_t out_size;
 
+	if(file_process_option == MERGE_LEFT_NV12_SKIP_FIRST) {
+		file_process_option = MERGE_LEFT_NV12;
+		return;
+	}
+	if(file_process_option == MERGE_RIGHT_NV12_SKIP_FIRST) {
+		file_process_option = MERGE_RIGHT_NV12;
+		return;
+	}
+
 	if(file_process_option == SPLIT_RAW_IMAGE) {
 		//get 12M raw.
 		printf("12M raw 0x%x, data len = %lu\r\n", data_addr, data_size);
 #if SAVE_DBG_IMG
-		raw_image = malloc(data_size);
+		if(raw_image == NULL) {
+			raw_image = malloc(data_size);
+		}
 		raw_image_size = data_size;
 		if(raw_image) {
 			memcpy(raw_image, (uint8_t*)data_addr, data_size);
@@ -375,18 +399,13 @@ static void file_process(char *file_path, uint32_t data_addr, uint32_t data_size
 #endif
 		printf("img_left: %x\n\r", splited_raw_image[raw_index][0].phy_addr);
 		printf("img_right: %x\n\r", splited_raw_image[raw_index][1].phy_addr);
-	} else if(file_process_option == MERGE_LEFT_NV12) {	
+	} else if(file_process_option == MERGE_LEFT_NV12) {
 		//deal with left 6M NV12 
 		//merge 2 * 6M to 12M NV12 image
 		uint8_t *img_pos = (uint8_t *)img_buf;
 		uint8_t *output_pos = (uint8_t *)hr_nv12_image;
 		yuv420stitch_step(img_pos, hr_nv12_image, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_X_OVERLAP, &out_size, 0);
-		file_process_option = MERGE_RIGHT_NV12;
-		return;
 	} else if(file_process_option == MERGE_RIGHT_NV12) {
-		if(hr_nv12_image == NULL) {
-			return;
-		}
 		//deal with right 6M NV12
 		//merge 2 * 6M to 12M NV12 image
 		uint8_t *img_pos = (uint8_t *)img_buf;
@@ -398,6 +417,8 @@ static void file_process(char *file_path, uint32_t data_addr, uint32_t data_size
 
 static int hr_init_ae_awb(video_pre_init_params_t *init_params, int wait_ae_timeout)
 {
+	video_v1_params.direct_output = 1;
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_PARAMS, (int)&video_v1_params);
 	//video open in normal resolution, and wait ae converge. (FCS mode can save time.)
 	if(mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL) != OK) {
 		return NOK;
@@ -445,6 +466,7 @@ static int hr_raw_capture(video_pre_init_params_t *init_params, int proc_raw_idx
 	init_params->isp_init_raw = 1;
 	init_params->isp_raw_mode_tnr_dis = 1;
 	init_params->video_drop_enable = 0;
+	init_params->dyn_iq_mode = 0;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)init_params);
 	video_v1_params.direct_output = 0;
 	video_v1_params.out_mode = 2; //set to contiuous mode
@@ -508,9 +530,10 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 		init_params->v_cfg = malloc(sizeof(struct verify_ctrl_config));
 	}
 	//sent 2 * 6M raw to voe
-	config_verification_path_buf(init_params->v_cfg, (uint32_t) splited_raw_image[proc_raw_idx][0].phy_addr, (uint32_t) splited_raw_image[proc_raw_idx][1].phy_addr, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_X_OVERLAP);
+	config_verification_path_buf(init_params->v_cfg, (uint32_t) splited_raw_image[proc_raw_idx][0].phy_addr, (uint32_t) splited_raw_image[proc_raw_idx][0].phy_addr, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_X_OVERLAP, false);
 	init_params->isp_init_raw = 0;
 	init_params->isp_raw_mode_tnr_dis = 0;
+	init_params->dyn_iq_mode = 1;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)init_params);
 	video_v1_params.direct_output = 0;
 	video_v1_params.out_mode = 2; //set to contiuous mode
@@ -522,7 +545,7 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_PARAMS, (int)&video_v1_params);
 
 	//merge output 2 * 6M nv12 to 12M nv12 image
-	file_process_option = MERGE_LEFT_NV12;
+	file_process_option = MERGE_LEFT_NV12_SKIP_FIRST;
 	video_set_isp_ch_buf(JPEG_CHANNEL, 2);
 	int timeout_count = 0;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL);
@@ -537,6 +560,27 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 	}
 
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
+
+	//right
+	config_verification_path_buf(init_params->v_cfg, (uint32_t) splited_raw_image[proc_raw_idx][1].phy_addr, (uint32_t) splited_raw_image[proc_raw_idx][1].phy_addr, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_X_OVERLAP, true);
+	init_params->isp_init_raw = 0;
+	init_params->isp_raw_mode_tnr_dis = 0;
+	init_params->dyn_iq_mode = 1;
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)init_params);
+	file_process_option = MERGE_RIGHT_NV12_SKIP_FIRST;
+	timeout_count = 0;
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL);
+	while(file_process_option != FILE_PROCESS_DONE) {
+		vTaskDelay(1);
+		timeout_count++;
+		if(timeout_count > 100000) {
+			printf("hr nv12 convert timeout\r\n");
+			ret = NOK;
+			break;
+		}
+	}
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
+
 	if(init_params->v_cfg) {
 		free(init_params->v_cfg);
 		init_params->v_cfg = NULL;
@@ -555,13 +599,19 @@ static void hr_jpg_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 	printf("save %s\r\n", jpgfilename);	
 	jpg_save_done = 1;
 }
-static int hr_nv12_to_jpeg(video_pre_init_params_t *init_params, int jpg_save_timeout, int proc_raw_idx)
+static int hr_nv12_to_jpeg(video_pre_init_params_t *init_params, int jpg_save_timeout, int jpg_idx)
 {
 	int ret = OK;
+	init_params->isp_init_raw = 0;
+	init_params->isp_raw_mode_tnr_dis = 0;
+	init_params->dyn_iq_mode = 0;
+	init_params->dn_init_enable = 0;
+	init_params->dn_init_mode = 0;
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)init_params);
 	video_v1_params.direct_output = 0;
 	video_v1_params.width = OUT_IMG_WIDTH;
 	video_v1_params.height = OUT_IMG_HEIGHT;
-	video_v1_params.jpeg_qlevel = 9;
+	video_v1_params.jpeg_qlevel = 10;
 	video_v1_params.type = VIDEO_JPEG;
 	video_v1_params.out_mode = MODE_EXT;
 	video_v1_params.ext_fmt = 1; //NV12
@@ -570,7 +620,7 @@ static int hr_nv12_to_jpeg(video_pre_init_params_t *init_params, int jpg_save_ti
 	video_set_isp_ch_buf(JPEG_CHANNEL, 1);
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL);
 	dcache_clean_by_addr((uint32_t *)hr_nv12_image, hr_nv12_size);
-	snprintf(jpgfilename, sizeof(jpgfilename), "sd:/12M_%d.jpg", proc_raw_idx);
+	snprintf(jpgfilename, sizeof(jpgfilename), "sd:/12M_%d.jpg", jpg_idx);
 	jpg_save_done = 0;
 	if (mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_EXT_INPUT, (int)hr_nv12_image) == OK) {
 		int jpeg_wait_time = 0;
@@ -637,6 +687,16 @@ void mmf2_video_example_v1_snapshot_hr_init(void)
 	int sensor_id = 0, timeout_count = 0;
 	video_pre_init_params_t init_params;
 	memset(&init_params, 0x00, sizeof(video_pre_init_params_t));
+	init_params.isp_init_enable = 1;
+	init_params.init_isp_items.init_brightness = 0;
+	init_params.init_isp_items.init_contrast = 50;
+	init_params.init_isp_items.init_flicker = 2;
+	init_params.init_isp_items.init_hdr_mode = 0;
+	init_params.init_isp_items.init_mirrorflip = 0xf0;
+	init_params.init_isp_items.init_saturation = 50;
+	init_params.init_isp_items.init_wdr_mode = 0; //disable WDR
+	init_params.init_isp_items.init_mipi_mode = 0;
+	init_params.voe_dbg_disable = 1;
 	video_v1_ctx = mm_module_open(&video_module);
 	if (video_v1_ctx) {
 		video_v1_params.direct_output = 1;
