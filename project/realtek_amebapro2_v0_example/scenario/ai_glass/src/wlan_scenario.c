@@ -24,6 +24,7 @@
 #define HTTPS_PORT                  8080 //443
 
 #define HTTP_OTA_TEST               1
+#define MULTI_THREAD_WIFI_SEND_PIC_DATA 1
 
 // CONFIG_USE_POLARSSL in platform_opts.h, default CONFIG_USE_POLARSSL = 0
 // These are the certificate, key provide by TLS
@@ -92,6 +93,13 @@ typedef struct {
 	uint8_t fileread;
 	uint8_t message[QUEUE_ITEM_SIZE];
 } file_msg_t;
+
+typedef struct {
+	struct httpd_conn *conn;
+    uint8_t *data;
+    uint32_t length;
+	TaskHandle_t caller_task_handle;
+} heap_send_param_t;
 
 static QueueHandle_t file_queue = NULL;
 static TaskHandle_t core_taskhandle = NULL;
@@ -624,6 +632,53 @@ static void http_file_read_thread(void *pvParameters)
 	vTaskDelete(NULL);
 }
 
+static void http_heap_send_thread(void *pvParameters) {
+    heap_send_param_t *param = (heap_send_param_t *)pvParameters;
+    
+    uint8_t *data = param->data;
+    uint32_t length = param->length;
+    uint32_t  sent = 0;
+    int ret;
+	
+	
+    while (sent < length) {
+		uint32_t  chunk_size = length - sent;
+		if (chunk_size > HTTP_DATA_BUF_SIZE) {
+			chunk_size = HTTP_DATA_BUF_SIZE;  // cap to 4KB per send
+			WLAN_SCEN_MSG("Sending chunk size: %lu bytes\n", chunk_size);
+		}
+		int send_timeout = 3000;
+
+		if (param->conn->sock != -1) {
+			setsockopt(param->conn->sock, SOL_SOCKET, SO_SNDTIMEO, &send_timeout, sizeof(send_timeout));
+		}
+        ret = httpd_response_write_data(param->conn, data + sent, chunk_size);
+        if (ret <= 0) {
+            // Error sending data
+            WLAN_SCEN_WARN("Failed to send data: %d\n", ret);
+            break;
+        }
+        sent += ret;
+    }
+
+    if (sent == length) {
+        WLAN_SCEN_MSG("Send complete: %lu bytes sent\n", sent);
+    } else {
+        WLAN_SCEN_MSG("Send incomplete: %lu/%lu bytes sent\n", sent, length);
+    }
+
+    // Cleanup
+    free(data);
+    free(param);
+
+	// Notify caller task that sending is done
+    if (param->caller_task_handle) {
+        xTaskNotifyGive(param->caller_task_handle);
+    }
+
+    vTaskDelete(NULL); // Delete this task when done
+}
+
 static void media_getfile_cb(struct httpd_conn *conn)
 { 
 	critical_process_started = 1;
@@ -631,7 +686,8 @@ static void media_getfile_cb(struct httpd_conn *conn)
 	char *filename = NULL;
 	char *user_agent = NULL;
 	FILE *http_file = NULL;
-
+	char *buffer = NULL; 
+	
 	// test log to show brief header parsing
 	httpd_conn_dump_header(conn);
 
@@ -660,7 +716,8 @@ static void media_getfile_cb(struct httpd_conn *conn)
 			//httpd_response_write_header(conn, (char *)"Access-Control-Allow-Credentials", (char *)"true");
 			httpd_response_write_header(conn, (char *)"Connection", (char *)"close");
 			httpd_response_write_header_finish(conn);
-
+			
+#if defined(MULTI_THREAD_WIFI_SEND_PIC_DATA) && MULTI_THREAD_WIFI_SEND_PIC_DATA
 			file_queue = xQueueCreate(QUEUE_LENGTH, sizeof(file_msg_t));
 			if (file_queue == NULL) {
 				WLAN_SCEN_WARN("Failed to create queue.\r\n");
@@ -718,6 +775,54 @@ static void media_getfile_cb(struct httpd_conn *conn)
 			} else {
 				WLAN_SCEN_WARN("Http send %s fail, ret = %lx\r\n", filename, notifyValue);
 			}
+#else
+			buffer = (char *)malloc(4 * 1024 * 1024);
+			if (!buffer) {
+				WLAN_SCEN_ERR("Failed to allocate buffer!\n");
+				httpd_response_bad_request(conn, (char *)"Memory allocation failed");
+				goto http_end;  // buffer is NULL here, safe to free in http_end
+			}
+
+			uint32_t  total_read = 0;
+			while (1) {
+				uint32_t  bytes_read = extdisk_fread(buffer + total_read, 1, (4 * 1024 * 1024) - total_read, http_file);
+				if (bytes_read == 0) {
+					break;
+				}
+				total_read += bytes_read;
+
+				if (total_read >= (4 * 1024 * 1024)) {
+					WLAN_SCEN_ERR("Warning: file too large for 4MB buffer!\n");
+					break;
+				}
+			}
+			WLAN_SCEN_MSG("Image size read into buffer: %lu bytes\n", total_read);
+
+			// Prepare the parameter for the send thread
+			heap_send_param_t *param = (heap_send_param_t *)malloc(sizeof(heap_send_param_t));
+			if (!param) {
+				WLAN_SCEN_ERR("Failed to allocate send param!\n");
+				goto http_end;
+			}
+
+			param->data = buffer;
+			param->length = total_read;
+			param->conn = conn;  
+			param->caller_task_handle = xTaskGetCurrentTaskHandle();
+			extdisk_fclose(http_file);
+			http_file = NULL;
+			// Create the sending task
+			if (xTaskCreate(http_heap_send_thread, "Sender", 8192, (void *)param, 5, NULL) != pdPASS) {
+				WLAN_SCEN_ERR("Failed to create send thread\n");
+				free(param->data);  // you malloc-ed this earlier
+				free(param);
+				buffer = NULL;      // prevent double free in http_end
+				goto http_end;
+			}
+			ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+			// Thread owns buffer now, don’t free it again
+			buffer = NULL;
+#endif
 		} else {
 			// HTTP/1.1 400 Bad Request
 			httpd_response_bad_request(conn, (char *)"Bad Request: Not able to get the resource from the endpoint\r\n");
@@ -746,6 +851,10 @@ http_end:
 	if (http_file) {
 		extdisk_fclose(http_file);
 		http_file = NULL;
+	}
+	if (buffer) {
+		free(buffer);
+		buffer = NULL;
 	}
 	httpd_conn_close(conn);
 	WLAN_SCEN_MSG("[%s] httpd_conn_end (close files): %lu ms\r\n", __func__, rtw_get_current_time() - start_time_httpd_request_get_header_field);
