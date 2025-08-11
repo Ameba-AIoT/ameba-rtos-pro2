@@ -18,6 +18,7 @@
 #include "ai_glass_dbg.h"
 #include "ai_glass_media.h"
 #include "isp_ctrl_api.h"
+#include "avcodec.h"
 
 // Definition of LIFE SNAPSHOT STATUS
 #define LIFESNAP_IDLE   0x00
