@@ -174,4 +174,8 @@ int media_update_record_time(uint16_t record_length);
 
 #define MAIN_STREAM_ID  1
 
+#define ENABLE_META_INFO 1
+
+#define ENABLE_JPEG_EXIF 1
+
 #endif

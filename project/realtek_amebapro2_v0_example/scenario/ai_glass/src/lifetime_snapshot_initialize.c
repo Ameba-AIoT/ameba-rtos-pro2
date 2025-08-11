@@ -81,6 +81,45 @@ static uint8_t *jpeg_nv12_addr = NULL;
 static uint32_t jpeg_nv12_len = 0;
 static char *file_save_path = NULL;
 static SemaphoreHandle_t jpeg_get_sema = NULL;
+#if defined(ENABLE_META_INFO)
+static ExifParams param = {
+	.make = "Realtek",                        // Manufacturer (e.g., "Realtek")
+	.model = "Rtl8735b",                     // Camera model (e.g., "Rtl8735b")
+	.datetime = "2025:07:22 15:16:17",      // Date and time of capture (EXIF format: "YYYY:MM:DD HH:MM:SS")
+	.exposure_time = 1.0 / 500.0,           // Exposure time (e.g., 1/500 second ?? 0.002)
+	.fnumber = 2.8,                         // Aperture (e.g., f/2.8)
+	.focal_length = 35.0,                   // Focal length in mm (e.g., 35mm)
+	.white_balance = 0,                     // White balance (0 = Auto, 1 = Manual; here it??s Auto)
+	.iso = 200,                             // ISO value (e.g., ISO 200)
+	.gps_latitude = 25.0701,                // Latitude (e.g., 25.0701 for 25?X 4' 12" North)
+	.gps_longitude = 121.568,               // Longitude (e.g., 121.568 for 121?X 34' 5" East)
+	.gps_altitude = 43.2,                  // Altitude in meters (e.g., 43.2 meters above sea level)
+	.has_gps = 1                             // GPS information present (1 = true, 0 = false)
+};
+
+static void video_jpeg_exif(video_meta_t *m_parm)
+{
+	param.exposure_time = ((float)m_parm->isp_statis_meta->exposure_h / 1000000.f);
+	param.iso = m_parm->isp_statis_meta->gain_h * 100 / 256;
+	video_fill_exif_tags_from_struct(&param);
+	video_insert_jpeg_exif(m_parm);
+}
+
+static void video_meta_cb(void *parm)
+{
+	video_meta_t *m_parm = (video_meta_t *)parm;
+	m_parm->user_buf = NULL;
+	if (m_parm->type == AV_CODEC_ID_MJPEG) {
+#ifdef ENABLE_JPEG_EXIF
+		video_jpeg_exif(m_parm);
+#else
+		video_sei_write(m_parm);
+#endif
+	} else {
+		video_sei_write(m_parm);
+	}
+}
+#endif
 static int jpeg_encode_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 {
 	jpeg_nv12_addr = (uint8_t *) jpeg_addr;
@@ -125,8 +164,14 @@ static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t dat
 		ls_video_params.params.type = VIDEO_JPEG;
 		ls_video_params.params.out_mode = MODE_EXT;
 		ls_video_params.params.ext_fmt = 1; //NV12
+	#if defined(ENABLE_META_INFO)
+		ls_video_params.params.meta_enable = 1; // enable exif meta data
+	#endif
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SNAPSHOT_CB, (int)jpeg_encode_done_cb);
+	#if defined(ENABLE_META_INFO)
+		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_META_CB, (int)video_meta_cb);
+	#endif
 		video_set_isp_ch_buf(JPEG_CHANNEL, 1);
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL);
 		dcache_clean_by_addr((uint32_t *)data_addr, data_size);
