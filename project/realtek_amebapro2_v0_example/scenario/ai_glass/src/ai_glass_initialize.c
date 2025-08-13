@@ -87,7 +87,7 @@ static char version_str[16] = {0};
 static UpgradeInfo info;
 
 static uint8_t g_current_wifi_mode = 0; 
-
+static int dual_snapshot = 0;
 // These functions are for testing ai glass with mass storage
 #include "usb.h"
 #include "msc/inc/usbd_msc_config.h"
@@ -1182,7 +1182,9 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 				status = AI_GLASS_PROC_FAIL;
 			}
 			AI_GLASS_MSG("snapshot send pkt time = %lu\r\n", mm_read_mediatime_ms());
-			uart_resp_snapshot(param, status);
+			if (ai_snap_params.status == 0) {
+				uart_resp_snapshot(param, status);
+			}
 			if (ret == 0) {
 				AI_GLASS_MSG("wait for ai snapshot deinit\r\n");
 				while (ai_snapshot_deinitialize()) {
@@ -1191,6 +1193,8 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 				AI_GLASS_MSG("wait for ai snapshot deinit done = %lu\r\n", mm_read_mediatime_ms());
 			}
 			if (ai_snap_params.status == 1) {
+				critical_process_started = 1;
+				dual_snapshot = 1;
 				AI_GLASS_MSG("AI+Lifetime Snapshot\r\n");
 				goto lifetimesnapshot;
 			}
@@ -1206,7 +1210,7 @@ lifetimesnapshot:
 				uint8_t file_name_length = snapshot_param[0];
 				char temp_record_filename_buffer[160] = {0};
 				uint8_t lifetime_snap_name[160] = {0};
-				if (file_name_length > 0 && file_name_length <= 125) {
+				if (file_name_length > 0 && file_name_length <= 125 && dual_snapshot != 1) {
 					char uart_filename_str[160] = {0};
 					memset(uart_filename_str, 0, file_name_length + 1);
 					memcpy(uart_filename_str, snapshot_param + 1, file_name_length);
@@ -1234,6 +1238,7 @@ lifetimesnapshot:
 					extdisk_save_file_cntlist();
 					AI_GLASS_MSG("Extdisk save file countlist done = %lu\r\n", mm_read_mediatime_ms());
 					status = AI_GLASS_CMD_COMPLETE;
+					critical_process_started = 0;
 					uart_resp_snapshot(param, status);
 				} else {
 					status = AI_GLASS_PROC_FAIL;
