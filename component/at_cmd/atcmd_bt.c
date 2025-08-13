@@ -875,9 +875,9 @@ void fATBe(void *arg)
 exit:
 	AT_PRINTK("[ATBe] server send indication or notification");
 	AT_PRINTK("[ATBe] ATBe=conn_id,service_id,attribute_index,type,length,p_value");
-	AT_PRINTK("[ATBe] simple ble service send indication:ATBe=0,1,0xa,2,0x1,0x1");
-	AT_PRINTK("[ATBe] simple ble service send notification:ATBe=0,1,0x7,1,0x2,0x1,0x2");
-	AT_PRINTK("[ATBe] bas service send notification:ATBe=0,2,0x2,1,0x1,0x1");
+	AT_PRINTK("[ATBe] simple ble service send indication:ATBe=0,2,0xa,2,0x1,0x1");
+	AT_PRINTK("[ATBe] simple ble service send notification:ATBe=0,2,0x7,1,0x2,0x1,0x2");
+	AT_PRINTK("[ATBe] bas service send notification:ATBe=0,3,0x2,1,0x1,0x1");
 }
 
 void fATBP(void *arg)
