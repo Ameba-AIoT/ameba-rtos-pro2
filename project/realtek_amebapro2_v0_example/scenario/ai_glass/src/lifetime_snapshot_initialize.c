@@ -83,6 +83,9 @@ static uint32_t jpeg_nv12_len = 0;
 static char *file_save_path = NULL;
 static SemaphoreHandle_t jpeg_get_sema = NULL;
 #if defined(ENABLE_META_INFO)
+static int capture_exposure_time = 0;
+static float capture_iso = 0;
+static video_meta_t metadata;
 static ExifParams param = {
 	.make = "Realtek",                        // Manufacturer (e.g., "Realtek")
 	.model = "Rtl8735b",                     // Camera model (e.g., "Rtl8735b")
@@ -100,8 +103,11 @@ static ExifParams param = {
 
 static void video_jpeg_exif(video_meta_t *m_parm)
 {
-	param.exposure_time = ((float)m_parm->isp_statis_meta->exposure_h / 1000000.f);
-	param.iso = m_parm->isp_statis_meta->gain_h * 100 / 256;
+	int ret = 0;
+	param.exposure_time = capture_exposure_time;
+	param.iso = capture_iso;
+	isp_get_awb_ctrl(&ret);
+	param.white_balance = ret;
 	video_fill_exif_tags_from_struct(&param);
 	video_insert_jpeg_exif(m_parm);
 }
@@ -148,7 +154,7 @@ static int jpeg_encode_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
 	if (lfsnap_status == LIFESNAP_GET) {
-		int ret = 0;
+		// int ret = 0;
 		init_params.isp_init_raw = 0;
 		init_params.isp_raw_mode_tnr_dis = 0;
 		init_params.dyn_iq_mode = 0;
@@ -188,7 +194,7 @@ static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t dat
 			AI_GLASS_ERR("High resolution jpeg get timeout\r\n");
 			lfsnap_status = LIFESNAP_FAIL;
 		}
-		printf("nv16_take_time = %d, nv12_gen_time = %d, jpeg_enc_time = %d, emmc_save_time = %d\r\n", nv16_take_time, nv12_gen_time, jpeg_enc_time, emmc_save_time);
+		AI_GLASS_MSG("nv16_take_time = %d, nv12_gen_time = %d, jpeg_enc_time = %d, emmc_save_time = %d\r\n", nv16_take_time, nv12_gen_time, jpeg_enc_time, emmc_save_time);
 		AI_GLASS_MSG("get liftime snapshot frame all done time %lu\r\n", mm_read_mediatime_ms());
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
 		return;
@@ -320,7 +326,7 @@ static void *alloc_dma(rtscam_dma_item_t *dma_item, uint32_t buf_size)
 	align_size = 1 << align_bit;
 	dma_item->virt_addr = malloc(buf_size + align_size);
 	if (!dma_item->virt_addr) {
-		printf("[%s] malloc fail\r\n", __FUNCTION__);
+		AI_GLASS_ERR("[%s] malloc fail\r\n", __FUNCTION__);
 		return NULL;
 	}
 	if ((int)dma_item->virt_addr & (align_size - 1)) {
@@ -346,7 +352,7 @@ static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint3
 	y_len = (w / 2 + x_overlap) * h;
 	uv_len = y_len;
 	if (v_cfg == NULL) {
-		printf("[%s] fail\r\n", __FUNCTION__);
+		AI_GLASS_ERR("[%s] fail\r\n", __FUNCTION__);
 		return;
 	}
 	v_cfg->verify_addr0 = img_buf_addr0;
@@ -381,7 +387,7 @@ static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32
 	tiled_raws[0] = alloc_dma(&dma_left, tiled_img_size);
 	tiled_raws[1] = alloc_dma(&dma_right, tiled_img_size);
 	if (!tiled_raws[0] || !tiled_raws[1]) {
-		printf("malloc failed %p %p\n", tiled_raws, tiled_raws);
+		AI_GLASS_ERR("malloc failed %p %p\n", tiled_raws, tiled_raws);
 		goto high_resolution_fail;
 	}
 #if USE_SENSOR == SENSOR_IMX681
@@ -389,13 +395,13 @@ static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32
 #else
 	cap_raw_tiling_with_remosaic((uint8_t *)data_addr, tiled_raws, ls_video_params.jpg_width, ls_video_params.jpg_height, x_overlap, 1);
 #endif
-	printf("img_left: %p\n\r", dma_left.phy_addr);
-	printf("img_right: %p\n\r", dma_right.phy_addr);
+	AI_GLASS_INFO("img_left: %p\n\r", dma_left.phy_addr);
+	AI_GLASS_INFO("img_right: %p\n\r", dma_right.phy_addr);
 	get_raw_data = 1;
 	return;
 high_resolution_fail:
 	get_raw_data = -1;
-	printf("high resolution failed\n\r");
+	AI_GLASS_ERR("high resolution failed\n\r");
 	free_dma(&dma_left);
 	free_dma(&dma_right);
 	return;
@@ -411,7 +417,7 @@ enum save_yuv_option {
 static enum save_yuv_option save_yuv_option = FILE_PROCESS_DONE;
 static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
-	printf("[%s] 0x%lx, data len = %lu\r\n", __FUNCTION__, data_addr, data_size);
+	AI_GLASS_INFO("[%s] 0x%lx, data len = %lu\r\n", __FUNCTION__, data_addr, data_size);
 	uint8_t *img_buf = (uint8_t *)data_addr;
 	uint32_t out_size;
 	if(save_yuv_option == MERGE_LEFT_NV12_SKIP_FIRST) {
@@ -427,25 +433,25 @@ static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32
 		//deal with left 6M NV12 
 		//merge 2 * 6M to 12M NV12 image
 		if (hr_nv12_image == NULL) {
-			printf("hr_nv12_image malloc fail\r\n");
+			AI_GLASS_ERR("hr_nv12_image malloc fail\r\n");
 			image_count = -1;
 			return;
 		}
-		printf("dma_left raw 0x%lx, data len = %lu\r\n", data_addr, data_size);
+		AI_GLASS_INFO("dma_left raw 0x%lx, data len = %lu\r\n", data_addr, data_size);
 		yuv420stitch_step(img_buf, hr_nv12_image, ls_video_params.jpg_width, ls_video_params.jpg_height, x_overlap, &out_size, 0);
-		printf("dma_left raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
+		AI_GLASS_INFO("dma_left raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
 		image_count++;
 	} else if (save_yuv_option == MERGE_RIGHT_NV12) {
 		//deal with right 6M NV12
 		//merge 2 * 6M to 12M NV12 image
 		if (hr_nv12_image == NULL) {
-			printf("hr_nv12_image malloc fail\r\n");
+			AI_GLASS_ERR("hr_nv12_image malloc fail\r\n");
 			image_count = -1;
 			return;
 		}
-		printf("dma_right raw 0x%lx, data len = %lu\r\n", data_addr, data_size);
+		AI_GLASS_INFO("dma_right raw 0x%lx, data len = %lu\r\n", data_addr, data_size);
 		yuv420stitch_step(img_buf, hr_nv12_image, ls_video_params.jpg_width, ls_video_params.jpg_height, x_overlap, &out_size, 1);
-		printf("dma_right raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
+		AI_GLASS_INFO("dma_right raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
 		image_count++;
 	} else {
 		save_yuv_option = FILE_PROCESS_FAILED;
@@ -512,7 +518,7 @@ static void high_resolution_snapshot_save(char *file_path)
 		vTaskDelay(1);
 		timeout_count++;
 		if (timeout_count > 100000) {
-			printf("hr nv12 convert timeout\r\n");
+			AI_GLASS_ERR("hr nv12 convert timeout\r\n");
 			goto snashot_fail;
 		}
 	}	
@@ -531,13 +537,13 @@ static void high_resolution_snapshot_save(char *file_path)
 		vTaskDelay(1);
 		timeout_count++;
 		if(timeout_count > 100000) {
-			printf("hr nv12 convert timeout\r\n");
+			AI_GLASS_ERR("hr nv12 convert timeout\r\n");
 			goto snashot_fail;
 		}
 	}
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
 	if (save_yuv_option == FILE_PROCESS_FAILED) {
-		printf("snapshot failed \r\n");
+		AI_GLASS_ERR("snapshot failed \r\n");
 		goto snashot_fail;
 	}
 	if (init_params.v_cfg) {
@@ -590,15 +596,22 @@ static void high_resolution_snapshot_take(char *file_path)
 		vTaskDelay(1);
 		timeout_count++;
 		if (timeout_count > 10000) {
-			printf("wait image timeout\r\n");
+			AI_GLASS_MSG("wait image timeout\r\n");
 			goto snashot_fail;
 		}
 	}
 	if (get_raw_data == -1) {
-		printf("Err: allocate buffer to process 12M snapshot\r\n");
+		AI_GLASS_ERR("Err: allocate buffer to process 12M snapshot\r\n");
 		goto snashot_fail;
 	}
 	AI_GLASS_MSG("get 12M NV16 done time %lu\r\n", mm_read_mediatime_ms());
+	#if defined(ENABLE_META_INFO)
+	if (mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_GET_META_DATA, (int)&metadata) != OK) {
+		AI_GLASS_ERR("get metadata failed\r\n");
+	}
+	capture_exposure_time = ((float)metadata.isp_statis_meta->exposure_h / 1000000.f);
+	capture_iso = metadata.isp_statis_meta->gain_h * 100 / 256;
+	#endif
 	lfsnap_status = LIFESNAP_GET;
 	nv16_take_time = mm_read_mediatime_ms() - nv16_take_time;
 	return;
@@ -726,8 +739,8 @@ int lifetime_snapshot_initialize(void)
 	//remalloc voe heap to 45M
 	int voe_heap_size = 45 * 1024 * 1024;
 	video_set_voe_heap((int)NULL, voe_heap_size, 1);
-	printf("\r\n voe heap size = %d\r\n", voe_heap_size);
-	printf("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
+	AI_GLASS_INFO("\r\n voe heap size = %d\r\n", voe_heap_size);
+	AI_GLASS_INFO("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
 	// Load the AE and AWB data
 	media_get_preinit_isp_data(&init_params);
 	init_params.isp_ae_enable = 1;
@@ -752,6 +765,9 @@ int lifetime_snapshot_initialize(void)
 	ls_video_params.is_high_res = 1;
 	ls_video_params.params.direct_output = 0;
 	ls_video_params.params.ext_fmt = 0;
+#if defined(ENABLE_META_INFO)
+	ls_video_params.params.meta_enable = 1; // enable exif meta data
+#endif
 #if USE_SENSOR == SENSOR_IMX681
 	x_overlap = (sensor_params[SENSOR_IMX681_12M_SEQ].sensor_width * 2 - sensor_params[SENSOR_IMX681_12M].sensor_width) / 2;
 #elif USE_SENSOR == SENSOR_IMX471
