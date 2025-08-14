@@ -34,6 +34,7 @@
 #include "hal_crypto.h"
 #include "uart_dbg.h"
 #include "ai_glass_version.h"
+#include "wifi_conf.h"
 
 // Configure for ai glass
 #define ENABLE_TEST_CMD             1   // For the tester to test some hardware
