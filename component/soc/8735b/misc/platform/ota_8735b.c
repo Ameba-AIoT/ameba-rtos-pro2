@@ -1896,17 +1896,10 @@ int ext_storage_update_boot_ota(char *filename)
 
 	// Start reading and updating firmware
 	printf("\n\r[%s] Start OTA update\n\r", __FUNCTION__);
-	#if UPDATE_UPGRADE_PROGRESS_TO_8773
-	    uart_resp_get_sys_upgrade((uint8_t) 1, (uint8_t) 0);
-		int loop_counter = 0;
-	#endif
 	while (idx < file_size) {
 		#if UPDATE_UPGRADE_PROGRESS_TO_8773
-		loop_counter++;
 		if (cancel_wifi_upgrade) {
 			printf("\n\r[%s] OTA upgrade canceled by user\n\r", __FUNCTION__);
-			progress = 0;
-			loop_counter = 0;
 			ret = -2;
 			goto update_ota_exit;
 		}
@@ -1924,31 +1917,11 @@ int ext_storage_update_boot_ota(char *filename)
 		// check when file size and read size is equal, and current bytes_read is 0, -4 checksum
 		if ((idx == (file_size - 4)) && (bytes_read == 0)) {
 			printf("\n\r[%s] OTA update completed successfully\n\r", __FUNCTION__);
-			#if UPDATE_UPGRADE_PROGRESS_TO_8773
-				uart_resp_get_sys_upgrade((uint8_t) 1, (uint8_t) 100);
-			#endif
 			ret = 0;
 			goto update_ota_exit;
 		}
-		#if UPDATE_UPGRADE_PROGRESS_TO_8773
-		if (file_size > 0) {
-			progress = (uint8_t)(((uint64_t)idx * 100) / file_size);
-			if (progress > 99) {
-				progress = 99;
-			}
-		}
 
-		if (loop_counter % 10 == 0) {
-			uart_resp_get_sys_upgrade((uint8_t) 1, progress);
-			printf("[OTA Progress] Sent progress update: %u%% after %d loops\n", progress, loop_counter);
-		}
-		#endif
-
-		#if UPDATE_UPGRADE_PROGRESS_TO_8773	
-		printf("[Bootloader updating] ==============================  updating: %u / %llu Bytes (%u%%)\n",idx, file_size, progress);
-		#else
 		printf("[Bootloader updating] ==============================  updating: %u / %llu Bytes \n",idx, file_size);
-		#endif
 
 #if USE_CHECKSUM
 		if ((idx + data_len) > (file_size - 4)) {
@@ -1986,10 +1959,6 @@ update_ota_exit:
 	if (my_file) {
 		fclose(my_file);
 	}
-	#if UPDATE_UPGRADE_PROGRESS_TO_8773
-	loop_counter = 0;
-	progress = 0;
-	#endif
 
 	return ret;
 }
