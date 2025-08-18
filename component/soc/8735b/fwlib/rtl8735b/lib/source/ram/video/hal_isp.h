@@ -419,12 +419,14 @@ struct verify_ctrl_config {
 #define RTSV_SENSOR_MIRROR_FLIP   0xF020   // bit 0: MIRROR, bit 1: Flip
 #define RTSV_AE_MIN_FPS           0xF021
 #define RTSV_AE_MAX_FPS           0xF022
+#define RTSV_SENSOR_SHORT_EXP_THD 0xF023
+#define RTSV_DYNAMIC_IQ_MODE	  0xF024
 
 // ISP_ZOOM_FILTER_COEF_NUM+ISP_ZOOM_FILTER_COEF_ALIGNMENT_DUMMY=32
 #define ISP_ZOOM_FILTER_COEF_NUM  20
 #define ISP_ZOOM_COEF_ALIGNMENT_DUMMY 12
 
-void *isp_soc_start(hal_isp_adapter_t *isp_adpt);
+void *isp_soc_start(hal_isp_adapter_t *isp_adpt, int *ret);
 int isp_open_stream(hal_isp_adapter_t *isp_adpt, uint8_t stream_id, uint32_t init_raw);
 int isp_close_stream(hal_isp_adapter_t *isp_adpt, uint8_t stream_id);
 int isp_get_stream_cnt(uint8_t stream_id);

@@ -128,6 +128,9 @@ static af_statis_t af_result;
 static ae_statis_t ae_result;
 static awb_statis_t awb_result;
 
+SECTION(".sdram.bss")
+ExifWorkspace jpeg_exif_wsp;
+
 int video_dbg_level = VIDEO_LOG_MSG;
 
 #define video_dprintf(level, ...) if(level >= video_dbg_level) printf(__VA_ARGS__)
@@ -441,7 +444,7 @@ int video_encbuf_release(int ch, int codec, int mode)
 	int ret = 0;
 	//printf("hevc/h264/jpeg release = %d\r\n",mode);
 	ret = hal_video_release(ch, codec, 0);
-	if (ret == NOK) {
+	if (ret != OK) {
 		//retry release again
 		ret = hal_video_release(ch, codec, 0);
 	}
@@ -453,7 +456,7 @@ int video_ispbuf_release(int ch, int addr)
 	int ret = 0;
 	//printf("nv12/nv16/rgb release = 0x%X\r\n",addr);
 	ret = hal_video_isp_buf_release(ch, addr);
-	if (ret == NOK) {
+	if (ret != OK) {
 		//retry release again
 		ret = hal_video_isp_buf_release(ch, addr);
 	}
@@ -633,7 +636,7 @@ int video_bps_stbl_ctrl_en(int ch, int enable)
 int video_set_bps_stbl_ctrl_params(int ch, bps_stbl_ctrl_param_t *bps_stbl_ctrl_param, uint32_t *fps_stage, uint32_t *gop_stage)
 {
 	if (voe_info.ch_info[ch].bps_stbl_ctrl == NULL) {
-		if (video_bps_stbl_ctrl_init(ch) == NOK) {
+		if (video_bps_stbl_ctrl_init(ch) != OK) {
 			video_dprintf(VIDEO_LOG_ERR, "ch%d failed to create bps_stbl_ctrl\r\n", ch);
 			return NOK;
 		}
@@ -1816,6 +1819,9 @@ void video_pre_init_procedure(int ch, video_pre_init_params_t *parm)
 					  parm->zoom_coef[ISP_ZOOM_FILTER_COEF_NUM - 3], parm->zoom_coef[ISP_ZOOM_FILTER_COEF_NUM - 4]);
 		hal_video_isp_zoom_filter_coef_init(ch, &(parm->zoom_coef[0]));
 	}
+
+	hal_video_isp_init_dyn_iq_mode(ch, parm->dyn_iq_mode);
+
 #endif
 }
 
@@ -2128,7 +2134,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 
 	video_dprintf(VIDEO_LOG_INF, "hal_video_str2cmd\r\n");
 	//string to command
-	if (hal_video_str2cmd(cmd1, cmd2, cmd3) == NOK) {
+	if (hal_video_str2cmd(cmd1, cmd2, cmd3) != OK) {
 		video_dprintf(VIDEO_LOG_ERR, "hal_video_str2cmd fail\n");
 		//return -1;
 		status = NOK;
@@ -2344,10 +2350,9 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 		}
 	}
 	video_dprintf(VIDEO_LOG_INF, "hal_video_open\r\n");
-	if (hal_video_open(ch) != OK) {
-		video_dprintf(VIDEO_LOG_ERR, "hal_video_open fail\n");
-		//return -1;
-		status = NOK;
+	status = hal_video_open(ch);
+	if (status != OK) {
+		video_dprintf(VIDEO_LOG_ERR, "hal_video_open fail ret=%x, group=%d\r\n", status, video_get_error_group(status));
 		goto EXIT;
 	}
 
@@ -2360,7 +2365,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 #endif
 EXIT:
 
-	if (status == NOK) {
+	if (status != OK) {
 		video_rc_deinit(ch);
 	}
 
@@ -2381,11 +2386,10 @@ int video_close(int ch)
 	voe_info.ch_info[ch].param = NULL;
 	hal_video_set_fps(0, ch);
 	video_dprintf(VIDEO_LOG_INF, "hal_video_close\r\n");
-	if (hal_video_close(ch) != OK) {
-		video_dprintf(VIDEO_LOG_ERR, "hal_video_close fail\n");
-		status = NOK;
+	status = hal_video_close(ch);
+	if (status != OK) {
+		video_dprintf(VIDEO_LOG_ERR, "hal_video_close fail ret=%x, group=%d\r\n", status, video_get_error_group(status));
 		goto EXIT;
-		//return -1;
 	}
 
 	osDelay(10); // To idle task clean task usage memory
@@ -3888,6 +3892,405 @@ int video_meta_copy_info(video_meta_t *m_parm)
 	}
 	return length;
 }
+//////////////////////EXIF///////////////////////
+static void video_exif_degree2dms(double v, uint32_t *out)
+{
+	double a = fabs(v);
+	out[0] = (int)a;
+	out[1] = 1;
+	double m = (a - out[0]) * 60.0;
+	out[2] = (int)m;
+	out[3] = 1;
+	double s = (m - out[2]) * 60.0;
+	out[4] = (uint32_t)(s * 10000 + 0.5);
+	out[5] = 10000;
+}
+static void video_exif_float2rational(float v, uint32_t *num, uint32_t *den)
+{
+	*den = 10000;
+	*num = (uint32_t)(fabs(v) * (*den) + 0.5);
+}
+static void video_exif_double2rational(double v, uint32_t *num, uint32_t *den)
+{
+	*den = 10000;
+	*num = (uint32_t)(fabs(v) * (*den) + 0.5);
+}
+
+static void video_exif_write_u16(uint8_t *b, uint16_t v)
+{
+	b[0] = v & 0xFF;
+	b[1] = v >> 8;
+}
+static void video_exif_write_u32(uint8_t *b, uint32_t v)
+{
+	b[0] = v & 0xFF;
+	b[1] = (v >> 8) & 0xFF;
+	b[2] = (v >> 16) & 0xFF;
+	b[3] = (v >> 24) & 0xFF;
+}
+
+static void video_exif_write_entry(uint8_t *entry, ExifTag *tag, uint32_t value_offset, uint8_t *data_area, uint32_t *data_offset, uint32_t tiff_header_off)
+{
+	video_exif_write_u16(entry, tag->tag);
+	video_exif_write_u16(entry + 2, tag->type);
+	video_exif_write_u32(entry + 4, tag->count);
+
+	if (tag->type == TYPE_ASCII) {
+		uint32_t len = tag->count;
+		if (len <= 4) {
+			for (uint32_t i = 0; i < len; ++i) {
+				entry[8 + i] = tag->data.bytes[i];
+			}
+			for (uint32_t i = len; i < 4; ++i) {
+				entry[8 + i] = 0;
+			}
+		} else {
+			video_exif_write_u32(entry + 8, (uint32_t)(*data_offset - tiff_header_off));
+			memcpy(data_area + *data_offset, tag->data.bytes, len);
+			*data_offset += len;
+		}
+	} else if (tag->type == TYPE_BYTE) {
+		if (tag->count <= 4) {
+			for (uint32_t i = 0; i < tag->count; ++i) {
+				entry[8 + i] = tag->data.bytes[i];
+			}
+			for (uint32_t i = tag->count; i < 4; ++i) {
+				entry[8 + i] = 0;
+			}
+		} else {
+			video_exif_write_u32(entry + 8, (uint32_t)(*data_offset - tiff_header_off));
+			memcpy(data_area + *data_offset, tag->data.bytes, tag->count);
+			*data_offset += tag->count;
+		}
+	} else if (tag->type == TYPE_SHORT) {
+		if (tag->count == 1) {
+			entry[8] = tag->data.short_val & 0xFF;
+			entry[9] = (tag->data.short_val >> 8) & 0xFF;
+			entry[10] = 0;
+			entry[11] = 0;
+		} else {
+			video_exif_write_u32(entry + 8, (uint32_t)(*data_offset - tiff_header_off));
+			memcpy(data_area + *data_offset, tag->data.short_arr, sizeof(uint16_t)*tag->count);
+			*data_offset += sizeof(uint16_t) * tag->count;
+		}
+	} else if (tag->type == TYPE_LONG) {
+		video_exif_write_u32(entry + 8, tag->data.long_val);
+	} else if (tag->type == TYPE_RATIONAL) {
+		if (tag->count == 1) {
+			video_exif_write_u32(entry + 8, (uint32_t)(*data_offset - tiff_header_off));
+			video_exif_write_u32(data_area + *data_offset, tag->data.rational.num);
+			video_exif_write_u32(data_area + *data_offset + 4, tag->data.rational.den);
+			*data_offset += 8;
+		} else {
+			video_exif_write_u32(entry + 8, (uint32_t)(*data_offset - tiff_header_off));
+			for (uint32_t i = 0; i < tag->count; ++i) {
+				uint32_t num = tag->data.rational_arr[i * 2];
+				uint32_t den = tag->data.rational_arr[i * 2 + 1];
+				video_exif_write_u32(data_area + *data_offset, num);
+				video_exif_write_u32(data_area + *data_offset + 4, den);
+				*data_offset += 8;
+			}
+		}
+	}
+}
+
+int video_create_exif_tags(uint8_t *buf, uint32_t video_len)
+{
+	ExifTag *main_ifd_tags = jpeg_exif_wsp.main_tags;
+	int main_count = jpeg_exif_wsp.exif_count;
+	ExifTag *exif_ifd_tags = jpeg_exif_wsp.exif_tags;
+	int exif_count = jpeg_exif_wsp.exif_count;
+	ExifTag *gps_ifd_tags = jpeg_exif_wsp.gps_tags;
+	int gps_count = jpeg_exif_wsp.gps_count;
+
+	uint32_t exif_header = 6, tiff_header = 8;
+	uint32_t offset = exif_header + tiff_header;
+	uint32_t ifd0_offset = offset;
+	uint32_t ifd0_size = (main_ifd_tags && main_count > 0) ? 2 + main_count * 12 + 4 : 0;
+	offset += ifd0_size;
+
+	uint32_t exif_ifd_offset = offset;
+	uint32_t exif_ifd_size = (exif_ifd_tags && exif_count > 0) ? 2 + exif_count * 12 + 4 : 0;
+	offset += exif_ifd_size;
+
+	uint32_t gps_ifd_offset = offset;
+	uint32_t gps_ifd_size = (gps_ifd_tags && gps_count > 0) ? 2 + gps_count * 12 + 4 : 0;
+	offset += gps_ifd_size;
+
+	uint32_t extra = 0;
+	int i;
+	// count extra for all IFDs: only if tags && count>0
+	for (i = 0; (main_ifd_tags && i < main_count); ++i) {
+		ExifTag *tag = &main_ifd_tags[i];
+		if (tag->type == TYPE_ASCII) {
+			extra += tag->count;
+		} else if (tag->type == TYPE_RATIONAL) {
+			extra += tag->count * 8;
+		} else if (tag->type == TYPE_BYTE && tag->count > 4) {
+			extra += tag->count;
+		} else if (tag->type == TYPE_SHORT && tag->count > 1) {
+			extra += tag->count * 2;
+		}
+	}
+	for (i = 0; (exif_ifd_tags && i < exif_count); ++i) {
+		ExifTag *tag = &exif_ifd_tags[i];
+		if (tag->type == TYPE_ASCII) {
+			extra += tag->count;
+		} else if (tag->type == TYPE_RATIONAL) {
+			extra += tag->count * 8;
+		} else if (tag->type == TYPE_BYTE && tag->count > 4) {
+			extra += tag->count;
+		} else if (tag->type == TYPE_SHORT && tag->count > 1) {
+			extra += tag->count * 2;
+		}
+	}
+	for (i = 0; (gps_ifd_tags && i < gps_count); ++i) {
+		ExifTag *tag = &gps_ifd_tags[i];
+		if (tag->type == TYPE_ASCII) {
+			extra += tag->count;
+		} else if (tag->type == TYPE_RATIONAL) {
+			extra += tag->count * 8;
+		} else if (tag->type == TYPE_BYTE && tag->count > 4) {
+			extra += tag->count;
+		} else if (tag->type == TYPE_SHORT && tag->count > 1) {
+			extra += tag->count * 2;
+		}
+	}
+
+	uint32_t data_start = offset;
+	uint32_t total_size = offset + extra;
+	if (ifd0_size == 0) { //If it don't have the main tag, it won't do it.
+		video_dprintf(VIDEO_LOG_MSG, "It don't have the main tag\r\n");
+		return -1;
+	}
+	if (total_size > video_len) {
+		video_dprintf(VIDEO_LOG_MSG, "The exif size %d is bigger than meta len %d\r\n", total_size, video_len);
+		return -1;
+	}
+
+	memset(buf, 0x00, video_len);
+
+	memcpy(buf, "Exif\0\0", 6);
+
+	// (1) TIFF header (offset 6)
+	video_exif_write_u16(buf + 6, 0x4949);  // II
+	video_exif_write_u16(buf + 8, 42);
+	video_exif_write_u32(buf + 10, 8);      // offset to IFD0: always=8 from TIFF header
+
+	// (2) 0th IFD
+	uint8_t *ifd0 = buf + ifd0_offset;
+	video_exif_write_u16(ifd0, main_count);
+
+	// (3) 0th IFD entry/fields
+	uint32_t data_offset = data_start;
+	for (i = 0; i < main_count; ++i) {
+		uint8_t *entry = ifd0 + 2 + 12 * i;
+		uint32_t tagid = main_ifd_tags[i].tag;
+		// Pointer to EXIF/GPS IFD entry
+		if (tagid == 0x8769) { // ExifIFD pointer
+			video_exif_write_u16(entry, main_ifd_tags[i].tag);
+			video_exif_write_u16(entry + 2, TYPE_LONG);
+			video_exif_write_u32(entry + 4, 1);
+			// pointer only when exif_ifd_tags exists & count>0 else 0
+			if (exif_ifd_tags && exif_count > 0) {
+				video_exif_write_u32(entry + 8, (uint32_t)(exif_ifd_offset - 6));
+			} else {
+				video_exif_write_u32(entry + 8, 0);
+			}
+		} else if (tagid == 0x8825) { // GPSIFD pointer
+			video_exif_write_u16(entry, main_ifd_tags[i].tag);
+			video_exif_write_u16(entry + 2, TYPE_LONG);
+			video_exif_write_u32(entry + 4, 1);
+			if (gps_ifd_tags && gps_count > 0) {
+				video_exif_write_u32(entry + 8, (uint32_t)(gps_ifd_offset - 6));
+			} else {
+				video_exif_write_u32(entry + 8, 0);
+			}
+		} else {
+			video_exif_write_entry(entry, &main_ifd_tags[i], (uint32_t)(data_offset - 6), buf, &data_offset, 6);
+		}
+	}
+	video_exif_write_u32(ifd0 + 2 + 12 * main_count, 0);
+
+	// (4) Exif IFD
+	if (exif_ifd_tags && exif_count > 0) {
+		uint8_t *exif_ifd = buf + exif_ifd_offset;
+		video_exif_write_u16(exif_ifd, exif_count);
+		for (i = 0; i < exif_count; ++i) {
+			uint8_t *entry = exif_ifd + 2 + 12 * i;
+			video_exif_write_entry(entry, &exif_ifd_tags[i], (uint32_t)(data_offset - 6), buf, &data_offset, 6);
+		}
+		video_exif_write_u32(exif_ifd + 2 + 12 * exif_count, 0);
+	}
+	// (5) GPS IFD
+	if (gps_ifd_tags && gps_count > 0) {
+		uint8_t *gps_ifd = buf + gps_ifd_offset;
+		video_exif_write_u16(gps_ifd, gps_count);
+		for (i = 0; i < gps_count; ++i) {
+			uint8_t *entry = gps_ifd + 2 + 12 * i;
+			video_exif_write_entry(entry, &gps_ifd_tags[i], (uint32_t)(data_offset - 6), buf, &data_offset, 6);
+		}
+		video_exif_write_u32(gps_ifd + 2 + 12 * gps_count, 0);
+	}
+	return 0;
+}
+
+int video_insert_jpeg_exif(video_meta_t *m_parm)
+{
+	uint8_t *video_output = NULL;
+	int meta_length = m_parm->meta_size;
+	video_output = (uint8_t *)(m_parm->video_addr) + m_parm->meta_offset;
+	int ret = video_create_exif_tags(video_output + VIDEO_JPEG_META_OFFSET, meta_length);
+
+	if (ret < 0) {
+		return -1;
+	} else {
+		//Modify the app1 to store the exif
+		video_output[0] = 0xFF;
+		video_output[1] = 0XE1;
+	}
+	return 0;
+}
+
+void video_fill_exif_tags_from_struct(const ExifParams *params)
+{
+	int m = 0, e = 0, g = 0;
+	memset(&jpeg_exif_wsp, 0x00, sizeof(ExifWorkspace));
+	ExifWorkspace *wsp = &jpeg_exif_wsp;
+	// ==== Main IFD (Image File Directory) ====
+	// Check if the manufacturer is available and fill the main tags
+	if (params->make)
+		wsp->main_tags[m++] = (ExifTag) {
+		0x010F, TYPE_ASCII, strlen(params->make) + 1, .data.bytes = (const uint8_t *)params->make
+	};
+
+	// Check if the model is available and fill the main tags
+	if (params->model)
+		wsp->main_tags[m++] = (ExifTag) {
+		0x0110, TYPE_ASCII, strlen(params->model) + 1, .data.bytes = (const uint8_t *)params->model
+	};
+
+	// Check if the datetime is available and fill the main tags
+	if (params->datetime)
+		wsp->main_tags[m++] = (ExifTag) {
+		0x0132, TYPE_ASCII, 20, .data.bytes = (const uint8_t *)params->datetime
+	};
+
+	// Add the ExifIFD pointer tag (the pointer to the EXIF data)
+	wsp->main_tags[m++] = (ExifTag) {
+		0x8769, TYPE_LONG, 1, .data.long_val = 0
+	};
+
+	// If GPS data is present, add the GPS pointer tag
+	if (params->has_gps)
+		wsp->main_tags[m++] = (ExifTag) {
+		0x8825, TYPE_LONG, 1, .data.long_val = 0
+	};
+
+	// Set the count of main tags filled
+	wsp->main_count = m;
+
+	// ==== Exif IFD (EXIF Information) ====
+	// If datetime is present, fill EXIF datetime tags
+	if (params->datetime) {
+		wsp->exif_tags[e++] = (ExifTag) {
+			0x9003, TYPE_ASCII, 20, .data.bytes = (const uint8_t *)params->datetime
+		};
+		wsp->exif_tags[e++] = (ExifTag) {
+			0x9004, TYPE_ASCII, 20, .data.bytes = (const uint8_t *)params->datetime
+		};
+	}
+
+	// If exposure time is valid (greater than a small threshold), store it as a rational number (numerator/denominator)
+	if (params->exposure_time > 1e-6) {
+		uint32_t num, den;
+		video_exif_double2rational(params->exposure_time, &num, &den);
+		wsp->exif_tags[e++] = (ExifTag) {
+			0x829A, TYPE_RATIONAL, 1, .data.rational = {num, den}
+		};
+	}
+
+	// If f-number is valid, store it as a rational number (numerator/denominator)
+	if (params->fnumber > 1e-6) {
+		uint32_t num, den;
+		video_exif_double2rational(params->fnumber, &num, &den);
+		wsp->exif_tags[e++] = (ExifTag) {
+			0x829D, TYPE_RATIONAL, 1, .data.rational = {num, den}
+		};
+	}
+
+	// If focal length is valid, store it as a rational number (numerator/denominator)
+	if (params->focal_length > 1e-6) {
+		uint32_t num, den;
+		video_exif_double2rational(params->focal_length, &num, &den);
+		wsp->exif_tags[e++] = (ExifTag) {
+			0x920A, TYPE_RATIONAL, 1, .data.rational = {num, den}
+		};
+	}
+
+	// If white balance is available, store the tag
+	if (params->white_balance >= 0)
+		wsp->exif_tags[e++] = (ExifTag) {
+		0xA403, TYPE_SHORT, 1, .data.short_val = (uint16_t)params->white_balance
+	};
+
+	// If ISO is valid, store the ISO value
+	if (params->iso > 0)
+		wsp->exif_tags[e++] = (ExifTag) {
+		0x8827, TYPE_SHORT, 1, .data.short_val = (uint16_t)params->iso
+	};
+
+	// Set the count of EXIF tags filled
+	wsp->exif_count = e;
+
+	// ==== GPS IFD (GPS Information) ====
+	// If GPS data is present, fill GPS-related tags
+	if (params->has_gps) {
+		const uint8_t gps_ver[4] = {2, 3, 0, 0};
+
+		// Set latitude and longitude reference (North/South and East/West)
+		wsp->latref_buf[0] = (params->gps_latitude >= 0) ? 'N' : 'S';
+		wsp->latref_buf[1] = 0;
+		wsp->lonref_buf[0] = (params->gps_longitude >= 0) ? 'E' : 'W';
+		wsp->lonref_buf[1] = 0;
+
+		// Convert latitude and longitude from degrees to DMS (degrees, minutes, seconds)
+		video_exif_degree2dms(params->gps_latitude, wsp->gps_lat_arr);
+		video_exif_degree2dms(params->gps_longitude, wsp->gps_lon_arr);
+
+		// Set altitude reference and store altitude in a rational format (height in meters * 100)
+		wsp->altref_buf[0] = (params->gps_altitude >= 0) ? 0 : 1;
+		wsp->gps_alt_arr[0] = (uint32_t)fabs(params->gps_altitude * 100);
+		wsp->gps_alt_arr[1] = 100;
+
+		// Add GPS tags with appropriate values
+		wsp->gps_tags[g++] = (ExifTag) {
+			0x0000, TYPE_BYTE, 4, .data.bytes = gps_ver
+		};
+		wsp->gps_tags[g++] = (ExifTag) {
+			0x0001, TYPE_ASCII, 2, .data.bytes = wsp->latref_buf
+		};
+		wsp->gps_tags[g++] = (ExifTag) {
+			0x0002, TYPE_RATIONAL, 3, .data.rational_arr = wsp->gps_lat_arr
+		};
+		wsp->gps_tags[g++] = (ExifTag) {
+			0x0003, TYPE_ASCII, 2, .data.bytes = wsp->lonref_buf
+		};
+		wsp->gps_tags[g++] = (ExifTag) {
+			0x0004, TYPE_RATIONAL, 3, .data.rational_arr = wsp->gps_lon_arr
+		};
+		wsp->gps_tags[g++] = (ExifTag) {
+			0x0005, TYPE_BYTE, 1, .data.bytes = wsp->altref_buf
+		};
+		wsp->gps_tags[g++] = (ExifTag) {
+			0x0006, TYPE_RATIONAL, 1, .data.rational = {wsp->gps_alt_arr[0], wsp->gps_alt_arr[1]}
+		};
+	}
+
+	// Set the count of GPS tags filled
+	wsp->gps_count = g;
+}
+
 void video_sei_write(video_meta_t *m_parm)
 {
 	int length = 0;
@@ -4100,4 +4503,10 @@ int video_get_encoder_nalu_payload_info(unsigned char *frame_buf, unsigned int f
 	}
 EXIT:
 	return ret;
+}
+
+int video_get_error_group(int error_id)
+{
+	//1:VOE, 2:ISP flow, 3: Driver, 4: Mod, 5: OSD
+	return error_id >> 27 & 0xF;
 }

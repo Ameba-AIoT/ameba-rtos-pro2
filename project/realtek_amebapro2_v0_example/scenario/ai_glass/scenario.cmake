@@ -2,6 +2,30 @@ cmake_minimum_required(VERSION 3.6)
 
 enable_language(C CXX ASM)
 
+if(DEFINED SCENARIO AND SCENARIO AND NOT "${SCENARIO}" STREQUAL "standard")
+    if(NOT DEFINED VERSION OR "${VERSION}" STREQUAL "")
+        message(FATAL_ERROR "ERROR: VERSION must be specified when using SCENARIO (e.g., -DVERSION=1.0.0.0)")
+    endif()
+
+    string(REPLACE "." ";" VERSION_LIST ${VERSION})
+    list(LENGTH VERSION_LIST VERSION_LEN)
+    if(VERSION_LEN LESS 4)
+        message(FATAL_ERROR "ERROR: VERSION format must be X.Y.Z.W (e.g., -DVERSION=1.0.0.0)")
+    endif()
+
+    list(GET VERSION_LIST 0 VERSION_RESERVE)
+    list(GET VERSION_LIST 1 VERSION_MAJOR)
+    list(GET VERSION_LIST 2 VERSION_MINOR)
+    list(GET VERSION_LIST 3 VERSION_PATCH)
+
+    list(APPEND scn_flags
+        VERSION_RESERVE=${VERSION_RESERVE}
+        VERSION_MAJOR=${VERSION_MAJOR}
+        VERSION_MINOR=${VERSION_MINOR}
+        VERSION_PATCH=${VERSION_PATCH}
+    )
+endif()
+
 #Find the uart command library
 set(UARTCMD_CMAKE_PATH "${CMAKE_CURRENT_LIST_DIR}/src/common_basics/source/libcommbasics.cmake")
 
@@ -56,6 +80,7 @@ list(
     ${CMAKE_CURRENT_LIST_DIR}/src/media_filesystem.c
     ${CMAKE_CURRENT_LIST_DIR}/src/nv12tojpg.c
     ${CMAKE_CURRENT_LIST_DIR}/src/wlan_scenario.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/ai_glass_version.c
 )
 
 #ENTRY for the project

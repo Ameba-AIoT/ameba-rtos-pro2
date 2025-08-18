@@ -77,6 +77,7 @@ typedef struct ai_glass_record_param_s {
 #define SNAP_PARAM_SIZE  31
 
 typedef struct ai_glass_snapshot_param_s {
+	uint8_t     status;
 	uint8_t     type; // JPEG for sure
 	uint32_t    width;
 	uint32_t    height;
@@ -172,5 +173,9 @@ void lifetime_recording_deinitialize(void);
 int media_update_record_time(uint16_t record_length);
 
 #define MAIN_STREAM_ID  1
+
+#define ENABLE_META_INFO 1
+
+#define ENABLE_JPEG_EXIF 1
 
 #endif

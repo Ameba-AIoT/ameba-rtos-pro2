@@ -13,6 +13,7 @@
 extern void wlan_network(void);
 #endif
 
+#include "wowlan_driver_api.h"
 #include "wifi_conf.h"
 #include <lwip_netconf.h>
 #include <lwip/sockets.h>
@@ -21,6 +22,8 @@ extern void wlan_network(void);
 #include "hal_power_mode.h"
 #include "power_mode_api.h"
 
+#define SSL_KEEPALIVE	1
+#define TCP_RESUME		1
 // ignore mqtt header check
 #define TCPSSL_MODE       0
 #define TCP_SERVER_KEEP_ALIVE 0
@@ -33,6 +36,15 @@ extern void wlan_network(void);
 
 #define WAKUPE_GPIO_PIN PA_2
 #define WOWLAN_MQTT_BCNV2	2
+
+static uint8_t wowlan_wake_reason = 0;
+static uint8_t wlan_resume = 0;
+static uint8_t tcp_resume = 0;
+static uint8_t ssl_resume = 0;
+static uint32_t packet_len = 0;
+static Network network = {0};
+
+__attribute__((section(".retention.data"))) uint16_t retention_local_port __attribute__((aligned(32))) = 0;
 static gpio_irq_t my_GPIO_IRQ;
 void gpio_demo_irq_handler(uint32_t id, gpio_irq_event event)
 {
@@ -44,18 +56,6 @@ void gpio_demo_irq_handler(uint32_t id, gpio_irq_event event)
 extern void console_init(void);
 
 extern struct netif xnetif[NET_IF_NUM];
-
-extern int rtl8735b_suspend(int mode);
-
-extern void rtl8735b_set_lps_pg(void);
-
-extern void wifi_set_publish_wakeup(void);
-
-extern void wifi_set_tcpssl_keepalive(void);
-
-extern int wifi_set_dhcp_offload(void);
-extern int wifi_set_ssl_offload(uint8_t *ctr, uint8_t *iv, uint8_t *enc_key, uint8_t *dec_key, uint8_t *hmac_key, uint8_t *content, size_t len, uint8_t is_etm);
-extern void wifi_set_ssl_counter_report(void);
 /**
  * Lunch a thread to send AT command automatically for a long run test
  */
@@ -71,8 +71,8 @@ static rtw_security_t sec   = RTW_SECURITY_WPA2_AES_PSK;
 
 static TaskHandle_t wowlan_thread_handle = NULL;
 
-static char server_ip[16] = "192.168.0.100";
-static uint16_t server_port = 5566;
+static char server_ip[16] = "192.168.50.197";
+static uint16_t server_port = 8883;
 static int enable_tcp_keep_alive = 0;
 static uint32_t interval_ms = 180000;
 static uint32_t resend_ms = 10000;
@@ -85,13 +85,15 @@ static uint8_t lps_dtim = 10;
 
 //stage1 setting
 static uint8_t rx_bcn_window = 30;
-static uint8_t bcn_limit = 5;
+static uint8_t bcn_limit = 2;
 
 //stage2 setting
 static uint8_t  stage2_start_window = 10;
-static uint8_t  stage2_max_window = 210;
-static uint8_t  stage2_increment_steps = 40;
-static uint8_t  stage2_duration = 10;
+static uint16_t  stage2_max_window = 310;
+static uint8_t  stage2_increment_steps = 50;
+static uint8_t  stage2_duration = 13;
+static uint8_t  stage2_null_limit = 6;
+static uint8_t  stage2_loop_limit = 6;
 
 static uint8_t set_dtimtimeout = 1;
 static uint8_t set_rxbcnlimit = 8;
@@ -152,6 +154,30 @@ static uint8_t ssl_offload_iv[16];
 static uint8_t ssl_offload_is_etm = 0;
 static uint8_t keepalive_content[] = {0xc0, 0x00};
 static size_t keepalive_len = 2;
+
+static void *_calloc_func(size_t nmemb, size_t size)
+{
+	size_t mem_size;
+	void *ptr = NULL;
+
+	mem_size = nmemb * size;
+	ptr = pvPortMalloc(mem_size);
+
+	if (ptr) {
+		memset(ptr, 0, mem_size);
+	}
+
+	return ptr;
+}
+
+static int _random_func(void *p_rng, unsigned char *output, size_t output_len)
+{
+	/* To avoid gcc warnings */
+	(void) p_rng;
+
+	rtw_get_random_bytes(output, output_len);
+	return 0;
+}
 
 int set_ssl_offload(mbedtls_ssl_context *ssl, uint8_t *iv, uint8_t *content, size_t len)
 {
@@ -289,17 +315,16 @@ int keepalive_offload_test(void)
 //component\example\ssl_client\ssl_client.c
 	int ret = 0;
 	MQTTClient client;
-	Network network;
 	int rc = 0, count = 0;
 	MQTTPacket_connectData connectData = MQTTPacket_connectData_initializer;
 #if AWS_IOT_MQTT
 	char *address = "a2zweh2b7yb784-ats.iot.ap-southeast-1.amazonaws.com";
 #else
-	char *address = "192.168.1.68";
+	const char *address = "192.168.1.68";
 #endif
 
-	char *sub_topic[3] = {"wakeup", "wakeup1", "wakeup2"};
-	char *pub_topic = "wakeup";
+	const char *sub_topic[3] = {"wakeup", "wakeup1", "wakeup2"};
+	const char *pub_topic = "wakeup";
 
 	NetworkInit(&network);
 	network.use_ssl = 1;
@@ -322,7 +347,7 @@ int keepalive_offload_test(void)
 
 	connectData.MQTTVersion = 3;
 	//connectData.clientID.cstring = "ameba-iot";
-	connectData.clientID.lenstring.data = "ameba-iot";
+	connectData.clientID.lenstring.data = (char *)"ameba-iot";
 	connectData.clientID.lenstring.len = 9;
 	connectData.keepAliveInterval = 15 * 60;
 	connectData.cleansession = 0;
@@ -363,9 +388,9 @@ int keepalive_offload_test(void)
 			}
 		}
 #if AWS_IOT_MQTT
-		MQTTDataHandle(&client, &read_fds, &connectData, messageArrived, address, sub_topic, 3);
+		MQTTDataHandle(&client, &read_fds, &connectData, messageArrived, address, (char **)sub_topic, 3);
 #else
-		MQTTDataHandle(&client, &read_fds, &connectData, messageArrived, server_ip, sub_topic, 3);
+		MQTTDataHandle(&client, &read_fds, &connectData, messageArrived, server_ip, (char **)sub_topic, 3);
 #endif
 
 		int timercount = 0;
@@ -378,6 +403,17 @@ int keepalive_offload_test(void)
 				break;
 			}
 		}
+	}
+
+	// retain local port
+	struct sockaddr_in sin;
+	socklen_t len = sizeof(sin);
+	if (getsockname(network.my_socket, (struct sockaddr *)&sin, &len) == -1) {
+		printf("ERROR: getsockname \n\r");
+	} else {
+		retention_local_port = ntohs(sin.sin_port);
+		dcache_clean_invalidate_by_addr((uint32_t *) &retention_local_port, sizeof(retention_local_port));
+		printf("retain local port: %d \n\r", retention_local_port);
 	}
 
 //step 2: set ssl offload
@@ -516,6 +552,17 @@ int keepalive_offload_test(void)
 		wifi_set_tcp_keep_alive_offload(network.my_socket, keepalive_content, sizeof(keepalive_content), interval_ms, resend_ms, 0);
 	}
 
+#if SSL_KEEPALIVE
+	// retain ssl
+	extern int mbedtls_ssl_retain(mbedtls_ssl_context * ssl);
+	printf("retain SSL %s \n\r", mbedtls_ssl_retain(network.ssl) == 0 ? "OK" : "FAIL");
+#endif
+#if TCP_RESUME
+	// retain tcp pcb
+	extern int lwip_retain_tcp(int s);
+	printf("retain TCP pcb %s \n\r", lwip_retain_tcp(network.my_socket) == 0 ? "OK" : "FAIL");
+#endif
+
 	return ret;
 }
 
@@ -616,6 +663,11 @@ void wowlan_thread(void *param)
 {
 	int ret;
 	int cnt = 0;
+	int sock_fd = -1;
+#if SSL_KEEPALIVE
+	mbedtls_ssl_context ssl;
+	mbedtls_ssl_config conf;
+#endif
 
 	vTaskDelay(1000);
 #if defined(configENABLE_TRUSTZONE) && (configENABLE_TRUSTZONE == 1)
@@ -628,6 +680,90 @@ void wowlan_thread(void *param)
 			wifi_wowlan_set_wdt(2, 5, 1, 1); //gpiof_2, io trigger interval 1 min, io pull high and trigger pull low, pulse duration 1ms
 #endif
 
+			if (tcp_resume) {
+				sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+				printf("\n\r socket(%d) \n\r", sock_fd);
+				// resume on the same local port
+				if (retention_local_port != 0) {
+					struct sockaddr_in local_addr;
+					local_addr.sin_family = AF_INET;
+					local_addr.sin_addr.s_addr = INADDR_ANY;
+					local_addr.sin_port = htons(retention_local_port);
+					printf("bind local port:%d %s \n\r", retention_local_port, bind(sock_fd, (struct sockaddr *) &local_addr, sizeof(local_addr)) == 0 ? "OK" : "FAIL");
+				}
+
+#if TCP_RESUME
+				// resume tcp pcb
+				extern int lwip_resume_tcp(int s);
+				printf("resume TCP pcb & seqno & ackno %s \n\r", lwip_resume_tcp(sock_fd) == 0 ? "OK" : "FAIL");
+#endif
+//tcp resume read
+#if 0
+				uint32_t pattern_len = 0;
+				uint8_t *wakeup_pattern_buf = malloc(packet_len * sizeof(uint8_t));
+				pattern_len = read(network.my_socket, wakeup_pattern_buf, packet_len);
+				uint32_t x = 0;
+				while (1) {
+					printf("%02x	", *(wakeup_pattern_buf + x));
+					x++;
+					if (x >= pattern_len) {
+						break;
+					}
+					if ((x % 43) == 0) {
+						printf("\n");
+					}
+				}
+				free(wakeup_pattern_buf);
+#endif
+#if SSL_KEEPALIVE
+				mbedtls_platform_set_calloc_free(_calloc_func, vPortFree);
+
+				mbedtls_ssl_init(&ssl);
+				mbedtls_ssl_config_init(&conf);
+				mbedtls_ssl_set_bio(&ssl, &sock_fd, mbedtls_net_send, mbedtls_net_recv, NULL);
+
+				if ((ret = mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT)) != 0) {
+					printf("\nERROR: mbedtls_ssl_config_defaults %d\n", ret);
+					goto exit;
+				}
+
+				static int ciphersuites[] = {MBEDTLS_TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384, 0};
+				mbedtls_ssl_conf_ciphersuites(&conf, ciphersuites);
+				mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE);
+				mbedtls_ssl_conf_rng(&conf, _random_func, NULL);
+				mbedtls_ssl_conf_max_version(&conf, MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_3); // TLS 1.2
+
+				if ((ret = mbedtls_ssl_setup(&ssl, &conf)) != 0) {
+					printf("\nERROR: mbedtls_ssl_setup %d\n", ret);
+					goto exit;
+				}
+
+				if (ssl_resume) {
+					extern int mbedtls_ssl_resume(mbedtls_ssl_context * ssl);
+					printf("\r\nresume SSL %s \n\r", mbedtls_ssl_resume(&ssl) == 0 ? "OK" : "FAIL");
+				}
+
+#if 1 //mbedtls ssl read
+				uint8_t *wakeup_pattern_buf = malloc(packet_len * sizeof(uint8_t));
+				uint32_t pattern_len = mbedtls_ssl_read(&ssl, wakeup_pattern_buf, packet_len);
+				printf("\r\nmbedtls ssl read length = %d\r\n", pattern_len);
+				uint32_t x = 0;
+				while (1) {
+					printf("%02x	", *(wakeup_pattern_buf + x));
+					x++;
+					if (x >= pattern_len) {
+						break;
+					}
+					if ((x % 43) == 0) {
+						printf("\n");
+					}
+				}
+				free(wakeup_pattern_buf);
+#endif
+
+#endif
+
+			}
 			while (keepalive_offload_test() != 0) {
 				vTaskDelay(4000);
 			}
@@ -687,10 +823,11 @@ void wowlan_thread(void *param)
 			// static uint8_t  stage2_max_window = 210;
 			// static uint8_t  stage2_increment_steps = 40;
 			// static uint8_t  stage2_duration = 10;
-			wifi_wowlan_set_bcn_track(stage2_start_window, stage2_max_window, stage2_increment_steps, stage2_duration);
+			// static uint8_t  stage2_null_limit = 6;
+			// static uint8_t  stage2_loop_limit = 6;
+			wifi_wowlan_set_bcn_track(stage2_start_window, stage2_max_window, stage2_increment_steps, stage2_duration, stage2_null_limit, stage2_loop_limit);
 
 			//select fw
-			extern void rtl8735b_select_keepalive(u8 ka);
 			rtl8735b_select_keepalive(WOWLAN_MQTT_BCNV2);
 		}
 
@@ -729,6 +866,11 @@ void wowlan_thread(void *param)
 		HAL_WRITE32(0x4000986C, 0x0, 0x4f004f); //GPIOF_15/GPIOF_14
 		HAL_WRITE32(0x40009870, 0x0, 0x4f004f); //GPIOF_17/GPIOF_16
 #endif
+		extern int dhcp_retain(void);
+		printf("retain DHCP %s \n\r", dhcp_retain() == 0 ? "OK" : "FAIL");
+		// for wlan resume
+		rtw_hal_wlan_resume_backup();
+
 		printf("start suspend\r\n");
 		rtl8735b_set_lps_pg();
 		printf("rtl8735b_set_lps_pg\r\n");
@@ -742,14 +884,14 @@ void wowlan_thread(void *param)
 				gpio_irq_pull_ctrl(&my_GPIO_IRQ, PullDown);
 				gpio_irq_set(&my_GPIO_IRQ, IRQ_RISE, 1);
 				rtw_exit_critical(NULL, NULL);
-				Standby(DSTBY_AON_GPIO | DSTBY_WLAN | DSTBY_AON_TIMER, SLEEP_DURATION, CLOCK, 0);
+				Standby(DSTBY_AON_GPIO | DSTBY_WLAN | DSTBY_AON_TIMER | SLP_GTIMER, SLEEP_DURATION, CLOCK, 1);
 #else
 #if WOWLAN_GPIO_WDT
 				gpio_t my_GPIO1;
 				gpio_init(&my_GPIO1, PA_2);
 				gpio_irq_pull_ctrl((gpio_irq_t *)&my_GPIO1, PullDown);
 				rtw_exit_critical(NULL, NULL);
-				Standby(DSTBY_PON_GPIO | DSTBY_WLAN, 0, CLOCK, 0);
+				Standby(DSTBY_PON_GPIO | DSTBY_WLAN | SLP_GTIMER, 0, CLOCK, 1);
 #else
 
 
@@ -757,7 +899,7 @@ void wowlan_thread(void *param)
 				gpio_init(&my_GPIO1, PA_2);
 				gpio_irq_pull_ctrl((gpio_irq_t *)&my_GPIO1, PullDown);
 				rtw_exit_critical(NULL, NULL);
-				Standby(DSTBY_WLAN, 0, 0, 0);
+				Standby(DSTBY_WLAN | SLP_GTIMER, 0, 0, 1);
 #endif
 #endif
 			} else {
@@ -780,6 +922,14 @@ void wowlan_thread(void *param)
 			printf("!!!\r\n");
 		}
 	}
+exit:
+	printf("\n\r close(%d) \n\r", sock_fd);
+	close(sock_fd);
+#if SSL_KEEPALIVE
+	mbedtls_ssl_free(&ssl);
+	mbedtls_ssl_config_free(&conf);
+#endif
+	vTaskDelete(NULL);
 }
 
 void fPS(void *arg)
@@ -906,10 +1056,6 @@ log_item_t at_power_save_items[ ] = {
 };
 
 //char wakeup_packet[1024];
-extern uint8_t rtl8735b_wowlan_wake_reason(void);
-extern uint8_t rtl8735b_wowlan_wake_pattern(void);
-extern uint8_t *rtl8735b_read_wakeup_packet(uint32_t *size, uint8_t wowlan_reason);
-extern uint8_t *rtl8735b_read_ssl_conuter_report(void);
 #if defined(VIDEO_EXAMPLE_ON)
 /* entry for the example*/
 __weak void app_example(void) {}
@@ -921,6 +1067,32 @@ void run_app_example(void)
 #endif
 }
 #endif
+
+
+
+int wlan_do_resume(void)
+{
+	rtw_hal_wlan_resume_restore();
+
+	wifi_fast_connect_enable(1);
+	wifi_fast_connect_load_fast_dhcp();
+
+	extern uint8_t lwip_check_arp_resume(void);
+	if (lwip_check_arp_resume() == 1) {
+		extern int arp_resume(void);
+		printf("\n\rresume ARP %s\n\r", arp_resume() == 0 ? "OK" : "FAIL");
+	}
+
+	extern uint8_t lwip_check_dhcp_resume(void);
+	if (lwip_check_dhcp_resume() == 1) {
+		extern int dhcp_resume(void);
+		printf("\n\rresume DHCP %s\n\r", dhcp_resume() == 0 ? "OK" : "FAIL");
+	} else {
+		LwIP_DHCP(0, DHCP_START);
+	}
+
+	return 0;
+}
 
 void main(void)
 {
@@ -942,122 +1114,248 @@ void main(void)
 		RX_MQTT_PING_RSP_TO = 0x76,
 
 	*************************************** */
-
-	uint8_t wowlan_wake_reason = rtl8735b_wowlan_wake_reason();
-	u32 beacon_cnt = 20;
-	uint8_t pre_dtim = 10;
-	uint16_t tcp_cnt = 0;
-	uint16_t tcp_retry_cnt = 0;
-	uint8_t tcp_retry_avg_cnt = 0;
-	u32 keepalive_time = 0;
-	uint32_t tcp_resume_seqno = 0;
-	uint32_t tcp_resume_ackno = 0;
-	uint8_t ssl_resume_out_ctr[8];
-	uint8_t ssl_resume_in_ctr[8];
-
+	//get pm reason
 	hal_xtal_divider_enable(1);
 	hal_32k_s1_sel(2);
 	HAL_WRITE32(0x40009000, 0x18, 0x1 | HAL_READ32(0x40009000, 0x18)); //SWR 1.35V
 
-	if (wowlan_wake_reason != 0) {
-		extern uint8_t *read_rf_conuter_report(uint8_t log_en);
-		read_rf_conuter_report(0);
-		printf("\r\nwake fom wlan: 0x%02X\r\n", wowlan_wake_reason);
-		u32 value32;
-		value32 = HAL_READ32(0x40080000, 0x54);
-		value32 = value32 & 0xFF;
-		printf("beacon recv per 20 = %d\r\n", value32);
-		beacon_cnt = value32;
+	uint32_t pm_reason = Get_wake_reason();
+	printf("\n\rpm_reason=0x%x\n\r", pm_reason);
 
+	if (pm_reason) {
+		uint32_t tcp_resume_seqno = 0, tcp_resume_ackno = 0;
+		uint8_t by_wlan = 0, wlan_mcu_ok = 0;
 
-		if (wowlan_wake_reason == 0x6C || wowlan_wake_reason == 0x6D) {
-			uint8_t wowlan_wakeup_pattern = rtl8735b_wowlan_wake_pattern();
-			printf("\r\nwake fom wlan pattern index: 0x%02X\r\n", wowlan_wakeup_pattern);
-		}
+		if (pm_reason & BIT(3)) {
+			// WLAN wake up
+			by_wlan = 1;
 
-		uint8_t *ssl_counter = rtl8735b_read_ssl_conuter_report();
+			/* *************************************
+				RX_DISASSOC = 0x04,
+				RX_DEAUTH = 0x08,
+				FW_DECISION_DISCONNECT = 0x10,
+				RX_PATTERN_PKT = 0x23,
+				TX_TCP_SEND_LIMIT = 0x69,
+				RX_DHCP_NAK = 0x6A,
+				DHCP_RETRY_LIMIT = 0x6B,
+				RX_MQTT_PATTERN_MATCH = 0x6C,
+				RX_MQTT_PUBLISH_WAKE = 0x6D,
+				RX_MQTT_MTU_LIMIT_PACKET = 0x6E,
+				RX_TCP_FROM_SERVER_TO  = 0x6F,
+				RX_TCP_RST_FIN_PKT = 0x75,
+			*************************************** */
 
-		int i = 0;
-		printf("ssl_counter = \r\n");
-		for (i = 0; i < 30; i++) {
-			printf("%02X", ssl_counter[i]);
-		}
-		printf("\r\n");
-
-
-		memcpy(ssl_resume_out_ctr, ssl_counter, 8);
-		memcpy(ssl_resume_in_ctr, ssl_counter + 8, 8);
-
-		memcpy(&tcp_resume_seqno, &ssl_counter[16], 4);
-		memcpy(&tcp_resume_ackno, &ssl_counter[20], 4);
-
-		memcpy(&pre_dtim, &ssl_counter[28], 1);
-		memcpy(&tcp_cnt, &ssl_counter[24], 2);
-		memcpy(&tcp_retry_cnt, &ssl_counter[26], 2);
-		if (tcp_cnt && (tcp_cnt > tcp_retry_cnt)) {
-			tcp_retry_avg_cnt = tcp_retry_cnt / (tcp_cnt - tcp_retry_cnt);
-			keepalive_time = (tcp_cnt - tcp_retry_cnt) * interval_ms;
-		}
-
-		printf("--------dtim adjust--------\r\n");
-		printf("wakeup reason = 0x%X\r\n", wowlan_wake_reason);
-		printf("wakeup beacon_cnt = %d\r\n", beacon_cnt);
-		printf("pre_dtim = %d\r\n", pre_dtim);
-		printf("tcp_cnt = %d\r\n", tcp_cnt);
-		printf("tcp_retry_cnt = %d\r\n", tcp_retry_cnt);
-		printf("tcp_retry_avg_cnt = %d\r\n", tcp_retry_avg_cnt);
-		printf("\ntcp_resume_seqno=%u, tcp_resume_ackno=%u \n\r", tcp_resume_seqno, tcp_resume_ackno);
-		printf("ssl_resume_out_ctr = ");
-		for (int i = 0; i < 8; i ++) {
-			printf("%02X", ssl_resume_out_ctr[i]);
-		}
-		printf("\r\nssl_resume_in_ctr = ");
-		for (int i = 0; i < 8; i ++) {
-			printf("%02X", ssl_resume_in_ctr[i]);
-		}
-
-
-		if (wowlan_wake_reason == 0x6C || wowlan_wake_reason == 0x6D) {
-			uint32_t packet_len = 0;
-			uint8_t *wakeup_packet = rtl8735b_read_wakeup_packet(&packet_len, wowlan_wake_reason);
-			//uint8_t *wakeup_packet = rtl8735b_read_wakeup_payload(&packet_len, 1);
-			//do packet_parser
-			free(wakeup_packet);
-		}
-
-		if (wowlan_wake_reason == 0x08 || wowlan_wake_reason == 0x04) {
-			uint32_t packet_len = 0;
-			uint8_t *wakeup_packet = rtl8735b_read_wakeup_packet(&packet_len, wowlan_wake_reason);
-
-#if 1
-			int i = 0;
-			do {
-				printf("packet content[%d] = 0x%02X%02X%02X%02X\r\n", i, wakeup_packet[i + 3], wakeup_packet[i + 2], wakeup_packet[i + 1], wakeup_packet[i]);
-				if (i >= packet_len) {
-					break;
+			wowlan_wake_reason = rtl8735b_wowlan_wake_reason();
+			if (wowlan_wake_reason != 0) {
+				printf("\r\nwake fom wlan: 0x%02X\r\n", wowlan_wake_reason);
+				if (wowlan_wake_reason == 0x6C || wowlan_wake_reason == 0x6D) {
+					uint8_t wowlan_wakeup_pattern = rtl8735b_wowlan_wake_pattern();
+					printf("\r\nwake fom wlan pattern index: 0x%02X\r\n", wowlan_wakeup_pattern);
 				}
-				i += 4;
-			} while (1);
+
+				if (wowlan_wake_reason == RX_HW_PATTERN_PKT || wowlan_wake_reason == RX_MQTT_PATTERN_MATCH || wowlan_wake_reason == RX_MQTT_PUBLISH_WAKE ||
+					wowlan_wake_reason == MQTT_FW_RX_TCP_PKT_WAKEUP) {
+					wlan_mcu_ok = 1;
+
+					uint8_t *wakeup_packet = rtl8735b_read_wakeup_packet(&packet_len, wowlan_wake_reason);
+
+//read wifi buffer
+#if 1
+					uint32_t x = 0;
+					while (1) {
+						printf("%02x	", *(wakeup_packet + x));
+						x++;
+						if (x >= packet_len) {
+							break;
+						}
+						if ((x % 43) == 0) {
+							printf("\n");
+						}
+					}
 #endif
 
-			//do packet_parser
-			if ((*wakeup_packet == 0xC0) || (*wakeup_packet == 0xA0)) {
-				uint16_t reason_code = 0x0;
-				memcpy(&reason_code, &wakeup_packet[24], 2);
-				printf("reason_code = 0x%X\r\n", reason_code);
+					// parse wakeup packet
+					uint8_t *ip_header = NULL;
+					uint8_t *tcp_header = NULL;
+					uint8_t tcp_header_first4[4];
+					tcp_header_first4[0] = (server_port & 0xff00) >> 8;
+					tcp_header_first4[1] = (server_port & 0x00ff);
+					tcp_header_first4[2] = (retention_local_port & 0xff00) >> 8;
+					tcp_header_first4[3] = (retention_local_port & 0x00ff);
+
+					for (int i = 0; i < packet_len - 4; i ++) {
+						if ((memcmp(wakeup_packet + i, tcp_header_first4, 4) == 0) && (*(wakeup_packet + i - 20) == 0x45)) {
+							ip_header = wakeup_packet + i - 20;
+							tcp_header = wakeup_packet + i;
+							break;
+						}
+					}
+
+					if (ip_header && tcp_header) {
+						if (tcp_header[13] == 0x18) {
+							printf("PUSH + ACK\n\r");
+#if TCP_RESUME
+							tcp_resume = 1;
+
+							uint16_t ip_len = (((uint16_t) ip_header[2]) << 8) | ((uint16_t) ip_header[3]);
+
+							uint16_t tcp_payload_len = ip_len - 20 - 20;
+							tcp_resume_seqno = *((uint32_t *)(rtl8735b_read_ssl_conuter_report() + 16));
+							tcp_resume_ackno = *((uint32_t *)(rtl8735b_read_ssl_conuter_report() + 20)) - tcp_payload_len;
+							printf("\ntcp_resume_seqno=%u, tcp_resume_ackno=%u \n\r", tcp_resume_seqno, tcp_resume_ackno);
+							uint32_t wakeup_eth_packet_len = 6 + 6 + (ip_len + 2);
+							uint8_t *wakeup_eth_packet = (uint8_t *) malloc(wakeup_eth_packet_len);
+							if (wakeup_eth_packet) {
+								memcpy(wakeup_eth_packet, wakeup_packet + 4, 6);
+								memcpy(wakeup_eth_packet + 6, wakeup_packet + 16, 6);
+								memcpy(wakeup_eth_packet + 12, ip_header - 2, ip_len + 2);
+
+								extern int lwip_set_resume_packet(uint8_t *packet, uint32_t packet_len);
+								lwip_set_resume_packet(wakeup_eth_packet, wakeup_eth_packet_len);
+
+								free(wakeup_eth_packet);
+							}
+#endif
+						} else if (tcp_header[13] == 0x11) {
+							printf("FIN + ACK\n\r");
+
+							// not resume because TCP connection is closed
+						}
+					}
+
+					free(wakeup_packet);
+
+#if defined(TCP_RESUME_MAX_PACKETS) && (TCP_RESUME_MAX_PACKETS > 1)
+					for (int j = 1; j < TCP_RESUME_MAX_PACKETS; j ++) {
+						extern uint8_t *rtl8735b_read_packet_with_index(uint32_t *size, uint8_t index);
+						wakeup_packet = rtl8735b_read_packet_with_index(&packet_len, j);
+						if (wakeup_packet == NULL) {
+							break;
+						}
+
+						ip_header = NULL;
+						tcp_header = NULL;
+						for (int i = 0; i < packet_len - 4; i ++) {
+							if ((memcmp(wakeup_packet + i, tcp_header_first4, 4) == 0) && (*(wakeup_packet + i - 20) == 0x45)) {
+								ip_header = wakeup_packet + i - 20;
+								tcp_header = wakeup_packet + i;
+								break;
+							}
+						}
+
+						if (ip_header && tcp_header) {
+							uint16_t ip_len = (((uint16_t) ip_header[2]) << 8) | ((uint16_t) ip_header[3]);
+
+							uint32_t wakeup_eth_packet_len = 6 + 6 + (ip_len + 2);
+							uint8_t *wakeup_eth_packet = (uint8_t *) malloc(wakeup_eth_packet_len);
+							if (wakeup_eth_packet) {
+								memcpy(wakeup_eth_packet, wakeup_packet + 4, 6);
+								memcpy(wakeup_eth_packet + 6, wakeup_packet + 16, 6);
+								memcpy(wakeup_eth_packet + 12, ip_header - 2, ip_len + 2);
+
+								extern int lwip_set_resume_packet_with_index(uint8_t *packet, uint32_t packet_len, uint8_t index);
+								lwip_set_resume_packet_with_index(wakeup_eth_packet, wakeup_eth_packet_len, (uint8_t) j);
+
+								free(wakeup_eth_packet);
+							}
+						}
+
+						free(wakeup_packet);
+					}
+#endif
+				}
+			}
+		} else if (pm_reason & (BIT(9) | BIT(10) | BIT(11) | BIT(12))) {
+			// AON GPIO wake up
+
+			if (rtw_hal_wowlan_check_wlan_mcu_wakeup() == 1) {
+				wlan_mcu_ok = 1;
+#if TCP_RESUME
+				extern uint8_t lwip_check_tcp_resume(void);
+				if (lwip_check_tcp_resume() == 1) {
+					tcp_resume = 1;
+
+					tcp_resume_seqno = *((uint32_t *)(rtl8735b_read_ssl_conuter_report() + 16));
+					tcp_resume_ackno = *((uint32_t *)(rtl8735b_read_ssl_conuter_report() + 20));
+					printf("\ntcp_resume_seqno=%u, tcp_resume_ackno=%u \n\r", tcp_resume_seqno, tcp_resume_ackno);
+				}
+#endif
+			} else {
+				wlan_mcu_ok = 0;
+				printf("\n\rERROR: rtw_hal_wowlan_check_wlan_mcu_wakeup \n\r");
+			}
+		}
+
+		if (tcp_resume) {
+#if TCP_RESUME
+			extern int lwip_set_tcp_resume(uint32_t seqno, uint32_t ackno);
+			lwip_set_tcp_resume(tcp_resume_seqno, tcp_resume_ackno);
+
+			// set tcp resume port to drop packet before tcp resume done
+			// must set before lwip init
+			extern void tcp_set_resume_port(uint16_t port);
+			tcp_set_resume_port(retention_local_port);
+
+			///////??
+			extern void lwip_recover_resume_keepalive(void);
+			lwip_recover_resume_keepalive();
+
+#if SSL_KEEPALIVE
+			ssl_resume = 1;
+
+			uint8_t *ssl_counter = rtl8735b_read_ssl_conuter_report();
+			uint8_t ssl_resume_out_ctr[8];
+			uint8_t ssl_resume_in_ctr[8];
+			memcpy(ssl_resume_out_ctr, ssl_counter, 8);
+			memcpy(ssl_resume_in_ctr, ssl_counter + 8, 8);
+
+			uint8_t zero_ctr[8];
+			memset(zero_ctr, 0, 8);
+			if ((memcmp(zero_ctr, ssl_resume_in_ctr, 8) != 0) && by_wlan) {
+				for (int i = 8; i > 0; i --) {
+					if (ssl_resume_in_ctr[i - 1] != 0) {
+						ssl_resume_in_ctr[i - 1] --;
+						break;
+					} else {
+						ssl_resume_in_ctr[i - 1] = 0xff;
+					}
+				}
 			}
 
-			free(wakeup_packet);
+			printf("ssl_resume_out_ctr = ");
+			for (int i = 0; i < 8; i ++) {
+				printf("%02X", ssl_resume_out_ctr[i]);
+			}
+			printf("\r\nssl_resume_in_ctr = ");
+			for (int i = 0; i < 8; i ++) {
+				printf("%02X", ssl_resume_in_ctr[i]);
+			}
+			extern int mbedtls_set_ssl_resume(uint8_t in_ctr[8], uint8_t out_ctr[8], uint8_t by_wlan);
+			mbedtls_set_ssl_resume(ssl_resume_in_ctr, ssl_resume_out_ctr, 0);
+			//extern void mbedtls_set_ssl_resume_fix_ctr(uint8_t fix_ctr, uint8_t max_try);
+			//mbedtls_set_ssl_resume_fix_ctr(1, 2);
+#endif
+#endif
+		}
+
+		if (wlan_mcu_ok && (rtw_hal_wlan_resume_check() == 1)) {
+			wlan_resume = 1;
+
+			rtw_hal_read_aoac_rpt_from_txfifo(NULL, 0, 0);
 		}
 	}
-
 	/* Initialize log uart and at command service */
 
 	console_init();
 
 	log_service_add_table(at_power_save_items, sizeof(at_power_save_items) / sizeof(at_power_save_items[0]));
 
-	wifi_fast_connect_enable(1);
+	if (wlan_resume) {
+		p_wifi_do_fast_connect = wlan_do_resume;
+		p_store_fast_connect_info = NULL;
+	} else {
+		wifi_fast_connect_enable(1);
+	}
 	/* wlan intialization */
 	wlan_network();
 

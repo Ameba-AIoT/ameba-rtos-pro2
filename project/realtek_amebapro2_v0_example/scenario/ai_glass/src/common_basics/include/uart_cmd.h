@@ -15,7 +15,7 @@ typedef int (*file_read_func)(uint8_t *buf, uint32_t read_size, FILE *ai_snapsho
 typedef int (*file_eof_func)(FILE *ai_snapshot_rfile);
 
 // For UART_RX_OPC_CMD_QUERY_INFO
-int uart_resp_get_query_info(uartcmdpacket_t *param, const uint8_t *version);
+int uart_resp_get_query_info(uartcmdpacket_t *param);
 
 // For UART_RX_OPC_CMD_POWER_DOWN
 int uart_resp_get_power_down(uartcmdpacket_t *param, uint8_t result);
@@ -64,7 +64,7 @@ int uart_resp_get_file_cnt(uartcmdpacket_t *param, uint16_t film_num, uint16_t s
 int uart_resp_delete_file(uartcmdpacket_t *param);
 
 // For UART_RX_OPC_CMD_DELETE_ALL_FILES Todo
-int uart_resp_delete_all_file(uartcmdpacket_t *param);
+int uart_resp_delete_all_file(uint8_t resp_stat);
 
 // For UART_RX_OPC_CMD_GET_SD_INFO
 int uart_resp_get_sd_info(uartcmdpacket_t *param, uint32_t total_Kbytes, uint32_t used_Kbytes);
@@ -83,6 +83,29 @@ int uart_resp_get_pic_data_sliding_window(uartcmdpacket_t *param, FILE *ai_snaps
 int uart_resp_get_pic_data_sliding_window_ack(uartcmdpacket_t *param);
 
 // For UART_RX_OPC_CMD_SET_SYS_UPGRADE
+typedef struct {
+	uint8_t upgradetype;
+	uint8_t version[4];
+} UpgradeInfo;
+UpgradeInfo uart_parser_version_and_upgradetype(uartcmdpacket_t *param);
 void *uart_parser_version(uartcmdpacket_t *param, uint8_t *version);
+int uart_resp_sys_upgrade(uint8_t resp_stat);
+int uart_resp_request_sys_upgrade(uint8_t resp_stat);
+
+// For UART_TX_OPC_CMD_TRANSFER_UPGRADE_DATA
+int uart_resp_transfer_upgrade_data(uint8_t *data_buffer, uint16_t data_length);
+int uart_resp_finish_bt_soc_fw_upgrade(void);
+
+// For UART_RX_OPC_CMD_SET_WIFI_FW_ROLLBACK
+int uart_resp_set_wifi_fw_rollback(uint8_t resp_stat);
+
+// For UART_RX_OPC_RESP_START_BT_SOC_FW_UPGRADE
+int uart_resp_start_bt_soc_fw_upgrade_ack(uint8_t resp_stat);
+
+// For UART_RX_OPC_CMD_GET_SYS_UPGRADE
+int uart_resp_get_sys_upgrade(uint8_t device_id, uint8_t device_upgrade_status);
+
+// UART_RX_OPC_CMD_CANCEL_SYS_UPGRADE
+int uart_resp_cancel_sys_upgrade(uint8_t resp_stat);
 
 #endif //#ifndef __UART_CMD_H__

@@ -469,7 +469,7 @@ void video_frame_complete_cb(void *param1, void  *param2, uint32_t arg)
 				video_encbuf_release(enc2out->ch, enc2out->codec, enc2out->enc_len);
 			} else {
 				int ret = video_ispbuf_release(enc2out->ch, (int)enc2out->isp_addr);
-				if (ret == NOK && enc2out->ch == 4) {
+				if (ret != OK && enc2out->ch == 4) {
 					video_ch4_delay_release((int)enc2out->isp_addr);
 				}
 			}
@@ -526,7 +526,7 @@ int video_control(void *p, int cmd, int arg)
 	case CMD_VIDEO_STREAM_STOP: {
 		if (video_get_stream_info(ch) == 0) {
 			VIDEO_DBG_WARNING("CH %d already close\r\n", ch);
-			return OK;
+			return NOK;
 		}
 		ctx->frame_cnt = 0;
 		memset(&(ctx->meta_data), 0, sizeof(video_meta_t));
@@ -711,7 +711,7 @@ int video_control(void *p, int cmd, int arg)
 		}
 		if (ret < 0 && video_get_video_sensor_status() == 0) { //Change the sensor procedure
 			VIDEO_DBG_ERROR("Please check sensor id first,the id is %d\r\n", sensor_id_value);
-			return -1;
+			return ret;
 		} else {
 			if (video_get_video_sensor_status() == 0) {
 				video_save_sensor_id(sensor_id_value);
@@ -995,7 +995,7 @@ void *video_voe_release_item(void *p, void *d, int length)
 				video_encbuf_release(ch, codec, length);
 			} else if (free_item->type == AV_CODEC_ID_RGB888) {
 				int ret = video_ispbuf_release(ch, free_item->data_addr);
-				if (ret == NOK) {
+				if (ret != OK) {
 					video_ch4_delay_release((int)free_item->data_addr);
 				}
 				rgb_lock = 0;

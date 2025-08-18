@@ -242,7 +242,7 @@ void sensor_thread(void *param)
 				auto_pwm_config.led_idx = led_idx;
 			}
 #endif
-			day_night_mode_change(gray_mode, 0);
+			day_night_mode_switch(gray_mode, 0);
 		} else {
 			ss_dprintf(SS_LOG_ALL, "[SENSOR_SERVICE] STABLE:gray_mode(%d), hw_lux(%3.1f)\n", gray_mode, hw_lux);
 		}

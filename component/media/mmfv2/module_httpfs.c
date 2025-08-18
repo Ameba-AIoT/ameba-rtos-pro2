@@ -16,6 +16,7 @@
 #include <wifi_conf.h>
 #include "lwip_netconf.h"
 
+//SET FAST_MP4 and FAST_MP4_WITHOUT_FILE to 0 if you want to use snapshot with httpfs
 #define FAST_MP4    1
 #define FAST_MP4_WITHOUT_FILE 1
 
@@ -793,7 +794,8 @@ static void pb_test_get_cb(struct httpd_conn *conn)
 			printf("file size = %d\r\n", read_size);
 #else
 			// read HTTP body
-			read_size = m_file_fs.fsize;
+			//read_size = m_file_fs.fsize;
+			read_size = f_size(&m_file_fs);
 			printf("file size = %d\r\n", read_size);
 #endif
 			// write HTTP response

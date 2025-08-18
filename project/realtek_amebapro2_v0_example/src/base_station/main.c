@@ -8,6 +8,7 @@
 #include <platform_opts_bt.h>
 #include "sys_api.h"
 
+#include "wowlan_driver_api.h"
 #include "wifi_conf.h"
 #include <lwip_netconf.h>
 #include <lwip/sockets.h>
@@ -22,17 +23,6 @@
 #define CLOCK 0
 //SLEEP_DURATION, 120s
 #define SLEEP_DURATION (120 * 1000 * 1000)
-
-extern uint8_t rtl8735b_wowlan_wake_reason(void);
-extern uint8_t rtl8735b_wowlan_wake_pattern(void);
-extern uint8_t *rtl8735b_read_wakeup_packet(uint32_t *size, uint8_t wowlan_reason);
-extern int rtl8735b_suspend(int mode);
-extern void rtl8735b_set_lps_pg(void);
-extern void rtl8735b_set_lps_dtim(uint8_t dtim);
-extern void wifi_wowlan_bcntrack_stage1(uint8_t rx_bcn_window, uint8_t bcn_limit);
-extern void wifi_wowlan_set_rxbcnlimit(uint8_t set_rxbcnlimit);
-extern void wifi_wowlan_set_pstimeout(uint8_t set_pstimeout);
-extern void wifi_wowlan_set_psretry(uint8_t set_psretry);
 
 static uint8_t wowlan_wake_reason = 0;
 static uint8_t wlan_resume = 0;
@@ -49,6 +39,8 @@ static uint8_t  stage2_start_window = 10;
 static uint16_t  stage2_max_window = 310;
 static uint8_t  stage2_increment_steps = 50;
 static uint8_t  stage2_duration = 13;
+static uint8_t  stage2_null_limit = 6;
+static uint8_t  stage2_loop_limit = 6;
 
 static uint8_t set_rxbcnlimit = 8;
 static uint8_t set_pstimeout = 16;
@@ -202,12 +194,13 @@ void tcp_app_task(void *param)
 	// static uint16_t  stage2_max_window = 310;
 	// static uint8_t  stage2_increment_steps = 50;
 	// static uint8_t  stage2_duration = 13;
-	wifi_wowlan_set_bcn_track(stage2_start_window, stage2_max_window, stage2_increment_steps, stage2_duration);
+	//static uint8_t  stage2_null_limit = 6;
+	//static uint8_t  stage2_loop_limit = 6;
+	wifi_wowlan_set_bcn_track(stage2_start_window, stage2_max_window, stage2_increment_steps, stage2_duration, stage2_null_limit, stage2_loop_limit);
 
 	wifi_set_unicast_wakeup(unicast_wakeup_enable);
 
 	//select fw
-	extern void rtl8735b_select_keepalive(u8 ka);
 	rtl8735b_select_keepalive(WOWLAN_TCPPTL_BCNV2);
 
 	extern int dhcp_retain(void);
@@ -218,7 +211,6 @@ void tcp_app_task(void *param)
 #endif
 
 	// for wlan resume
-	extern int rtw_hal_wlan_resume_backup(void);
 	rtw_hal_wlan_resume_backup();
 
 	// sleep
@@ -278,7 +270,6 @@ void tcp_app_task(void *param)
 
 int wlan_do_resume(void)
 {
-	extern int rtw_hal_wlan_resume_restore(void);
 	rtw_hal_wlan_resume_restore();
 
 	wifi_fast_connect_enable(1);
@@ -396,9 +387,8 @@ void main(void)
 			if (wowlan_wake_reason != 0) {
 				printf("\r\nwake fom wlan: 0x%02X\r\n", wowlan_wake_reason);
 
-				extern uint8_t *read_rf_conuter_report(uint8_t log_en);
 				read_rf_conuter_report(0);
-				if (wowlan_wake_reason == 0x22) {
+				if (wowlan_wake_reason == RX_UNICAST_PKT) {
 					printf("\r\nunicast wakeup!!\r\n");
 					unicast_wakeup = 1;
 					wlan_mcu_ok = 1;
@@ -434,17 +424,16 @@ void main(void)
 
 					free(wakeup_packet);
 
-				} else if (wowlan_wake_reason == 0x80) {
+				} else if (wowlan_wake_reason == RX_ICMP_REPLY) {
 					wlan_mcu_ok = 1;
 					unicast_wakeup = 1;
-				} else if (wowlan_wake_reason == 0x81) {
+				} else if (wowlan_wake_reason == ICMP_MAX_SEND) {
 					wlan_mcu_ok = 1;
 				}
 			}
 		} else if (pm_reason & (BIT(9) | BIT(10) | BIT(11) | BIT(12))) {
 			// AON GPIO wake up
 
-			extern int rtw_hal_wowlan_check_wlan_mcu_wakeup(void);
 			if (rtw_hal_wowlan_check_wlan_mcu_wakeup() == 1) {
 				wlan_mcu_ok = 1;
 			} else {
@@ -454,20 +443,17 @@ void main(void)
 		} else if (pm_reason & BIT(6)) {
 			//wakeup by suspend fail
 			uint8_t suspend_wakeup = 0;
-			extern uint8_t rtw_hal_wowlan_get_suspend_wakeup_reason(void);
-			extern uint8_t rtw_hal_wowlan_get_suspend_fail(void);
 			suspend_fail = rtw_hal_wowlan_get_suspend_fail();
 
 			if (suspend_fail) {
 				suspend_wakeup = rtw_hal_wowlan_get_suspend_wakeup_reason();
 				printf("\r\nsuspend wakeup reason  0x%x\r\n", suspend_wakeup);
-				if (suspend_wakeup == 0x22) {
+				if (suspend_wakeup == RX_UNICAST_PKT) {
 					printf("\r\nunicast wakeup!!\r\n");
 					unicast_wakeup = 1;
 					wlan_mcu_ok = 1;
 
 					uint32_t packet_len = 0;
-					extern u8 *rtw_hal_wowlan_get_suspend_wakeup_pattern(u32 * packet_len);
 					uint8_t *wakeup_packet = rtw_hal_wowlan_get_suspend_wakeup_pattern(&packet_len);
 
 					// parse wakeup packet
@@ -508,10 +494,8 @@ void main(void)
 			ethernetif_set_blocked(1);
 		}
 
-		extern int rtw_hal_wlan_resume_check(void);
 		if (wlan_mcu_ok && (rtw_hal_wlan_resume_check() == 1)) {
 			wlan_resume = 1;
-			extern int rtw_hal_read_aoac_rpt_from_txfifo(u8 * buf, u16 addr, u16 len);
 			if (suspend_fail == 0) {
 				if ((rtw_hal_read_aoac_rpt_from_txfifo(NULL, 0, 0) == 0)) {
 					wlan_resume = 0;
