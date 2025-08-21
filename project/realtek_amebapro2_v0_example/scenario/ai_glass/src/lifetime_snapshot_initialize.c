@@ -83,8 +83,6 @@ static uint32_t jpeg_nv12_len = 0;
 static char *file_save_path = NULL;
 static SemaphoreHandle_t jpeg_get_sema = NULL;
 #if defined(ENABLE_META_INFO)
-static int capture_exposure_time = 0;
-static float capture_iso = 0;
 static video_meta_t metadata;
 static ExifParams param = {
 	.make = "Realtek",                        // Manufacturer (e.g., "Realtek")
@@ -104,8 +102,10 @@ static ExifParams param = {
 static void video_jpeg_exif(video_meta_t *m_parm)
 {
 	int ret = 0;
-	param.exposure_time = capture_exposure_time;
-	param.iso = capture_iso;
+	isp_get_exposure_time(&ret);
+	param.exposure_time = ((float)ret / 1000000.f); // convert to s
+	isp_get_ae_gain(&ret);
+	param.iso = ((float)ret * 50 / 256); // convert to ISO
 	isp_get_awb_ctrl(&ret);
 	param.white_balance = ret;
 	video_fill_exif_tags_from_struct(&param);
@@ -145,9 +145,9 @@ static int jpeg_encode_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 	for (uint32_t i = 0; i < jpeg_nv12_len; i += JPG_WRITE_SIZE) {
 		extdisk_fwrite((const void *)(jpeg_nv12_addr + i), 1, ((i + JPG_WRITE_SIZE) >= jpeg_nv12_len) ? (jpeg_nv12_len - i) : JPG_WRITE_SIZE, life_snapshot_file);
 	}
-	xSemaphoreGive(jpeg_get_sema);
 	extdisk_fclose(life_snapshot_file);
 	emmc_save_time = mm_read_mediatime_ms() - emmc_save_time;
+	xSemaphoreGive(jpeg_get_sema);
 	lfsnap_status = LIFESNAP_DONE;
 	return 0;
 }
@@ -605,13 +605,6 @@ static void high_resolution_snapshot_take(char *file_path)
 		goto snashot_fail;
 	}
 	AI_GLASS_MSG("get 12M NV16 done time %lu\r\n", mm_read_mediatime_ms());
-	#if defined(ENABLE_META_INFO)
-	if (mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_GET_META_DATA, (int)&metadata) != OK) {
-		AI_GLASS_ERR("get metadata failed\r\n");
-	}
-	capture_exposure_time = ((float)metadata.isp_statis_meta->exposure_h / 1000000.f);
-	capture_iso = metadata.isp_statis_meta->gain_h * 100 / 256;
-	#endif
 	lfsnap_status = LIFESNAP_GET;
 	nv16_take_time = mm_read_mediatime_ms() - nv16_take_time;
 	return;
