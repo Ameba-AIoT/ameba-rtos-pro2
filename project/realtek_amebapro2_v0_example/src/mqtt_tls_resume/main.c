@@ -13,6 +13,7 @@
 extern void wlan_network(void);
 #endif
 
+#include "wowlan_driver_api.h"
 #include "wifi_conf.h"
 #include <lwip_netconf.h>
 #include <lwip/sockets.h>
@@ -53,29 +54,6 @@ extern void console_init(void);
 
 extern struct netif xnetif[NET_IF_NUM];
 
-extern void wifi_wowlan_set_pstune_param(uint8_t set_pstimeout,
-		uint8_t set_pstimeout_retry,
-		uint8_t set_rx_bcn_limit,
-		uint8_t set_dtimtimeout,
-		uint8_t set_bcn_to_limit);
-
-extern int wifi_wowlan_set_fwdecision_param(u8  fwdis_period,
-		u8  fwdis_trypktnum,
-		u8  pno_enable,
-		u8  pno_timeout,
-		u8  l2_keepalive_period);
-
-extern int rtl8735b_suspend(int mode);
-
-extern void rtl8735b_set_lps_pg(void);
-
-extern void wifi_set_publish_wakeup(void);
-
-extern void wifi_set_tcpssl_keepalive(void);
-
-extern int wifi_set_dhcp_offload(void);
-extern int wifi_set_ssl_offload(uint8_t *ctr, uint8_t *iv, uint8_t *enc_key, uint8_t *dec_key, uint8_t *hmac_key, uint8_t *content, size_t len, uint8_t is_etm);
-extern void wifi_set_ssl_counter_report(void);
 /**
  * Lunch a thread to send AT command automatically for a long run test
  */
@@ -303,11 +281,11 @@ int keepalive_offload_test(mbedtls_ssl_context *resume_ssl, int *resume_sock)
 #if AWS_IOT_MQTT
 		char *address = "a2zweh2b7yb784-ats.iot.ap-southeast-1.amazonaws.com";
 #else
-		char *address = "192.168.1.68";
+		const char *address = "192.168.1.68";
 #endif
 
-		char *sub_topic[3] = {"wakeup", "wakeup1", "wakeup2"};
-		char *pub_topic = "wakeup";
+		const char *sub_topic[3] = {"wakeup", "wakeup1", "wakeup2"};
+		const char *pub_topic = "wakeup";
 
 		NetworkInit(&network);
 		network.use_ssl = 1;
@@ -330,7 +308,7 @@ int keepalive_offload_test(mbedtls_ssl_context *resume_ssl, int *resume_sock)
 
 		connectData.MQTTVersion = 3;
 		//connectData.clientID.cstring = "ameba-iot";
-		connectData.clientID.lenstring.data = "ameba-iot";
+		connectData.clientID.lenstring.data = (char *)"ameba-iot";
 		connectData.clientID.lenstring.len = 9;
 		connectData.keepAliveInterval = 15 * 60;
 		connectData.cleansession = 0;
@@ -370,9 +348,9 @@ int keepalive_offload_test(mbedtls_ssl_context *resume_ssl, int *resume_sock)
 				}
 			}
 #if AWS_IOT_MQTT
-			MQTTDataHandle(&client, &read_fds, &connectData, messageArrived, address, sub_topic, 3);
+			MQTTDataHandle(&client, &read_fds, &connectData, messageArrived, address, (char **)sub_topic, 3);
 #else
-			MQTTDataHandle(&client, &read_fds, &connectData, messageArrived, server_ip, sub_topic, 3);
+			MQTTDataHandle(&client, &read_fds, &connectData, messageArrived, server_ip, (char **)sub_topic, 3);
 #endif
 
 			int timercount = 0;
@@ -850,11 +828,9 @@ void wowlan_thread(void *param)
 		extern int dhcp_retain(void);
 		printf("retain DHCP %s \n\r", dhcp_retain() == 0 ? "OK" : "FAIL");
 		// for wlan resume
-		extern int rtw_hal_wlan_resume_backup(void);
 		rtw_hal_wlan_resume_backup();
 
 		//select fw
-		extern void rtl8735b_select_keepalive(u8 ka);
 		rtl8735b_select_keepalive(WOWLAN_NORMAL_BCNV1);
 
 		rtl8735b_set_lps_pg();
@@ -1093,10 +1069,6 @@ log_item_t at_power_save_items[ ] = {
 };
 
 //char wakeup_packet[1024];
-extern uint8_t rtl8735b_wowlan_wake_reason(void);
-extern uint8_t rtl8735b_wowlan_wake_pattern(void);
-extern uint8_t *rtl8735b_read_wakeup_packet(uint32_t *size, uint8_t wowlan_reason);
-extern uint8_t *rtl8735b_read_ssl_conuter_report(void);
 #if defined(VIDEO_EXAMPLE_ON)
 /* entry for the example*/
 __weak void app_example(void) {}
@@ -1111,7 +1083,6 @@ void run_app_example(void)
 
 int wlan_do_resume(void)
 {
-	extern int rtw_hal_wlan_resume_restore(void);
 	rtw_hal_wlan_resume_restore();
 
 	wifi_fast_connect_enable(1);
@@ -1312,7 +1283,6 @@ void main(void)
 	} else { //gpio wakeup
 		printf("\n\rpm_reason=0x%x\n\r", pm_reason);
 		if (pm_reason & (BIT(9) | BIT(10) | BIT(11) | BIT(12))) {
-			extern int rtw_hal_wowlan_check_wlan_mcu_wakeup(void);
 			if (rtw_hal_wowlan_check_wlan_mcu_wakeup() == 1) {
 				wlan_mcu_ok = 1;
 #if TCP_RESUME
@@ -1368,11 +1338,9 @@ void main(void)
 #endif
 			}
 
-			extern int rtw_hal_wlan_resume_check(void);
 			if (wlan_mcu_ok && (rtw_hal_wlan_resume_check() == 1)) {
 				wlan_resume = 1;
 
-				extern int rtw_hal_read_aoac_rpt_from_txfifo(u8 * buf, u16 addr, u16 len);
 				rtw_hal_read_aoac_rpt_from_txfifo(NULL, 0, 0);
 			}
 		}

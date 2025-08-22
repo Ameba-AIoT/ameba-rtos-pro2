@@ -106,14 +106,14 @@ void log_uart_port_init(int log_uart_tx, int log_uart_rx, uint32_t baud_rate)
 
 void setup(void)
 {
-#if CONFIG_WLAN
-#if ENABLE_FAST_CONNECT
-	wifi_fast_connect_enable(1);
-#else
-	wifi_fast_connect_enable(0);
-#endif
-	wlan_network();
-#endif
+// #if CONFIG_WLAN
+// #if ENABLE_FAST_CONNECT
+// 	wifi_fast_connect_enable(1);
+// #else
+// 	wifi_fast_connect_enable(0);
+// #endif
+// 	wlan_network();
+// #endif
 
 #if defined(LOGUART_TX_OFF) && (LOGUART_TX_OFF==1)
 	atcmd_uart_init();
@@ -123,6 +123,8 @@ void setup(void)
 
 void set_initial_tick_count(void)
 {
+	printf("[FOR OTA BOOTLOADER CHECK DIFFERENCE] count = %x\r\n",(*((volatile uint32_t *) 0xe0001004))); //這邊應該會等於1000
+
 	// Check DWT_CTRL(0xe0001000) CYCCNTENA(bit 0). If DWT cycle counter is enabled, set tick count initial value based on DWT cycle counter.
 	if ((*((volatile uint32_t *) 0xe0001000)) & 1) {
 		(*((volatile uint32_t *) 0xe0001000)) &= (~((uint32_t) 1)); // stop DWT cycle counter
@@ -145,11 +147,13 @@ void set_initial_tick_count(void)
   * @retval None
   */
 #include "time.h"
+
 void main(void)
 {
 	/* for debug, protect rodata*/
 	//mpu_rodata_protect_init();
 	console_init();
+
 	voe_t2ff_prealloc();
 
 	setup();

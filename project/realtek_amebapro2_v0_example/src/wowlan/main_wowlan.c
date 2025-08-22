@@ -13,6 +13,7 @@
 extern void wlan_network(void);
 #endif
 
+#include "wowlan_driver_api.h"
 #include "wifi_conf.h"
 #include <lwip_netconf.h>
 #include <lwip/sockets.h>
@@ -49,29 +50,6 @@ extern void console_init(void);
 
 extern struct netif xnetif[NET_IF_NUM];
 
-extern void wifi_wowlan_set_pstune_param(uint8_t set_pstimeout,
-		uint8_t set_pstimeout_retry,
-		uint8_t set_rx_bcn_limit,
-		uint8_t set_dtimtimeout,
-		uint8_t set_bcn_to_limit);
-
-extern int wifi_wowlan_set_fwdecision_param(u8  fwdis_period,
-		u8  fwdis_trypktnum,
-		u8  pno_enable,
-		u8  pno_timeout,
-		u8  l2_keepalive_period);
-
-extern int rtl8735b_suspend(int mode);
-
-extern void rtl8735b_set_lps_pg(void);
-
-extern void wifi_set_publish_wakeup(void);
-
-extern void wifi_set_tcpssl_keepalive(void);
-
-extern int wifi_set_dhcp_offload(void);
-extern int wifi_set_ssl_offload(uint8_t *ctr, uint8_t *iv, uint8_t *enc_key, uint8_t *dec_key, uint8_t *hmac_key, uint8_t *content, size_t len, uint8_t is_etm);
-extern void wifi_set_ssl_counter_report(void);
 /**
  * Lunch a thread to send AT command automatically for a long run test
  */
@@ -292,11 +270,11 @@ int keepalive_offload_test(void)
 #if AWS_IOT_MQTT
 	char *address = "a2zweh2b7yb784-ats.iot.ap-southeast-1.amazonaws.com";
 #else
-	char *address = "192.168.1.68";
+	const char *address = "192.168.1.68";
 #endif
 
-	char *sub_topic[3] = {"wakeup", "wakeup1", "wakeup2"};
-	char *pub_topic = "wakeup";
+	const char *sub_topic[3] = {"wakeup", "wakeup1", "wakeup2"};
+	const char *pub_topic = "wakeup";
 
 	NetworkInit(&network);
 	network.use_ssl = 1;
@@ -319,7 +297,7 @@ int keepalive_offload_test(void)
 
 	connectData.MQTTVersion = 3;
 	//connectData.clientID.cstring = "ameba-iot";
-	connectData.clientID.lenstring.data = "ameba-iot";
+	connectData.clientID.lenstring.data = (char *)"ameba-iot";
 	connectData.clientID.lenstring.len = 9;
 	connectData.keepAliveInterval = 15 * 60;
 	connectData.cleansession = 0;
@@ -360,9 +338,9 @@ int keepalive_offload_test(void)
 			}
 		}
 #if AWS_IOT_MQTT
-		MQTTDataHandle(&client, &read_fds, &connectData, messageArrived, address, sub_topic, 3);
+		MQTTDataHandle(&client, &read_fds, &connectData, messageArrived, address, (char **)sub_topic, 3);
 #else
-		MQTTDataHandle(&client, &read_fds, &connectData, messageArrived, server_ip, sub_topic, 3);
+		MQTTDataHandle(&client, &read_fds, &connectData, messageArrived, server_ip, (char **)sub_topic, 3);
 #endif
 
 		int timercount = 0;
@@ -842,7 +820,6 @@ void wowlan_thread(void *param)
 		dbg_printf("media power off end\r\n");
 #endif
 		//select fw
-		extern void rtl8735b_select_keepalive(u8 ka);
 		rtl8735b_select_keepalive(WOWLAN_NORMAL_BCNV1);
 
 		rtl8735b_set_lps_pg();
@@ -1090,10 +1067,6 @@ log_item_t at_power_save_items[ ] = {
 };
 
 //char wakeup_packet[1024];
-extern uint8_t rtl8735b_wowlan_wake_reason(void);
-extern uint8_t rtl8735b_wowlan_wake_pattern(void);
-extern uint8_t *rtl8735b_read_wakeup_packet(uint32_t *size, uint8_t wowlan_reason);
-extern uint8_t *rtl8735b_read_ssl_conuter_report(void);
 #if defined(VIDEO_EXAMPLE_ON)
 /* entry for the example*/
 __weak void app_example(void) {}
@@ -1152,7 +1125,7 @@ void main(void)
 		beacon_cnt = value32;
 
 
-		if (wowlan_wake_reason == 0x6C || wowlan_wake_reason == 0x6D) {
+		if (wowlan_wake_reason == RX_MQTT_PATTERN_MATCH || wowlan_wake_reason == RX_MQTT_PUBLISH_WAKE) {
 			uint8_t wowlan_wakeup_pattern = rtl8735b_wowlan_wake_pattern();
 			printf("\r\nwake fom wlan pattern index: 0x%02X\r\n", wowlan_wakeup_pattern);
 		}
@@ -1189,9 +1162,9 @@ void main(void)
 		//5. keep alive time: tcp_cnt*interval_ms
 		//dtim adjuest
 		wowlan_dtim2 = pre_dtim;
-		if (wowlan_wake_reason == 0x08 || wowlan_wake_reason == 0x04 ||
-			wowlan_wake_reason == 0x69 || wowlan_wake_reason == 0x6F ||
-			wowlan_wake_reason == 0x75) {
+		if (wowlan_wake_reason == RX_DEAUTH || wowlan_wake_reason == RX_DISASSOC ||
+			wowlan_wake_reason == TX_TCP_SEND_LIMIT || wowlan_wake_reason == RX_TCP_FROM_SERVER_TO ||
+			wowlan_wake_reason == RX_TCP_RST_FIN_PKT) {
 			if (keepalive_time < (2 * 60 * 60 * 1000)) {
 				if (wowlan_dtim2 >= 2) {
 					wowlan_dtim2 = pre_dtim - 2;
@@ -1205,7 +1178,7 @@ void main(void)
 					wowlan_dtim2 = 8;
 				}
 			}
-		} else if (wowlan_wake_reason == 0x6C || wowlan_wake_reason == 0x6D) {
+		} else if (wowlan_wake_reason == RX_MQTT_PATTERN_MATCH || wowlan_wake_reason == RX_MQTT_PUBLISH_WAKE) {
 			if (beacon_cnt > 15) {
 				wowlan_dtim2 = pre_dtim + 2;
 				if (wowlan_dtim2 > 8) {
@@ -1232,7 +1205,7 @@ void main(void)
 		}
 
 
-		if (wowlan_wake_reason == 0x6C || wowlan_wake_reason == 0x6D) {
+		if (wowlan_wake_reason == RX_MQTT_PATTERN_MATCH || wowlan_wake_reason == RX_MQTT_PUBLISH_WAKE) {
 			uint32_t packet_len = 0;
 			uint8_t *wakeup_packet = rtl8735b_read_wakeup_packet(&packet_len, wowlan_wake_reason);
 			//uint8_t *wakeup_packet = rtl8735b_read_wakeup_payload(&packet_len, 1);
@@ -1255,7 +1228,7 @@ void main(void)
 			free(wakeup_packet);
 		}
 
-		if (wowlan_wake_reason == 0x08 || wowlan_wake_reason == 0x04) {
+		if (wowlan_wake_reason == RX_DEAUTH || wowlan_wake_reason == RX_DISASSOC) {
 			uint32_t packet_len = 0;
 			uint8_t *wakeup_packet = rtl8735b_read_wakeup_packet(&packet_len, wowlan_wake_reason);
 

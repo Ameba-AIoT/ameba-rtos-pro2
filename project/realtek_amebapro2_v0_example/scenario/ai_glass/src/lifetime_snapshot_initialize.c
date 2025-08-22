@@ -18,6 +18,7 @@
 #include "ai_glass_dbg.h"
 #include "ai_glass_media.h"
 #include "isp_ctrl_api.h"
+#include "avcodec.h"
 
 // Definition of LIFE SNAPSHOT STATUS
 #define LIFESNAP_IDLE   0x00
@@ -81,6 +82,51 @@ static uint8_t *jpeg_nv12_addr = NULL;
 static uint32_t jpeg_nv12_len = 0;
 static char *file_save_path = NULL;
 static SemaphoreHandle_t jpeg_get_sema = NULL;
+#if defined(ENABLE_META_INFO)
+static video_meta_t metadata;
+static ExifParams param = {
+	.make = "Realtek",                        // Manufacturer (e.g., "Realtek")
+	.model = "Rtl8735b",                     // Camera model (e.g., "Rtl8735b")
+	.datetime = "2025:07:22 15:16:17",      // Date and time of capture (EXIF format: "YYYY:MM:DD HH:MM:SS")
+	.exposure_time = 1.0 / 500.0,           // Exposure time (e.g., 1/500 second ?? 0.002)
+	.fnumber = 2.8,                         // Aperture (e.g., f/2.8)
+	.focal_length = 35.0,                   // Focal length in mm (e.g., 35mm)
+	.white_balance = 0,                     // White balance (0 = Auto, 1 = Manual; here it??s Auto)
+	.iso = 200,                             // ISO value (e.g., ISO 200)
+	.gps_latitude = 25.0701,                // Latitude (e.g., 25.0701 for 25?X 4' 12" North)
+	.gps_longitude = 121.568,               // Longitude (e.g., 121.568 for 121?X 34' 5" East)
+	.gps_altitude = 43.2,                  // Altitude in meters (e.g., 43.2 meters above sea level)
+	.has_gps = 1                             // GPS information present (1 = true, 0 = false)
+};
+
+static void video_jpeg_exif(video_meta_t *m_parm)
+{
+	int ret = 0;
+	isp_get_exposure_time(&ret);
+	param.exposure_time = ((float)ret / 1000000.f); // convert to s
+	isp_get_ae_gain(&ret);
+	param.iso = ((float)ret * 50 / 256); // convert to ISO
+	isp_get_awb_ctrl(&ret);
+	param.white_balance = ret;
+	video_fill_exif_tags_from_struct(&param);
+	video_insert_jpeg_exif(m_parm);
+}
+
+static void video_meta_cb(void *parm)
+{
+	video_meta_t *m_parm = (video_meta_t *)parm;
+	m_parm->user_buf = NULL;
+	if (m_parm->type == AV_CODEC_ID_MJPEG) {
+#ifdef ENABLE_JPEG_EXIF
+		video_jpeg_exif(m_parm);
+#else
+		video_sei_write(m_parm);
+#endif
+	} else {
+		video_sei_write(m_parm);
+	}
+}
+#endif
 static int jpeg_encode_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 {
 	jpeg_nv12_addr = (uint8_t *) jpeg_addr;
@@ -99,28 +145,40 @@ static int jpeg_encode_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 	for (uint32_t i = 0; i < jpeg_nv12_len; i += JPG_WRITE_SIZE) {
 		extdisk_fwrite((const void *)(jpeg_nv12_addr + i), 1, ((i + JPG_WRITE_SIZE) >= jpeg_nv12_len) ? (jpeg_nv12_len - i) : JPG_WRITE_SIZE, life_snapshot_file);
 	}
-	xSemaphoreGive(jpeg_get_sema);
 	extdisk_fclose(life_snapshot_file);
 	emmc_save_time = mm_read_mediatime_ms() - emmc_save_time;
+	xSemaphoreGive(jpeg_get_sema);
 	lfsnap_status = LIFESNAP_DONE;
 	return 0;
 }
 static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
 	if (lfsnap_status == LIFESNAP_GET) {
-		int ret = 0;
+		// int ret = 0;
+		init_params.isp_init_raw = 0;
+		init_params.isp_raw_mode_tnr_dis = 0;
+		init_params.dyn_iq_mode = 0;
+		init_params.dn_init_enable = 0;
+		init_params.dn_init_mode = 0;
+		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
 		AI_GLASS_MSG("get liftime snapshot frame time %lu\r\n", mm_read_mediatime_ms());
 		AI_GLASS_MSG("file_path:%s  data_addr:%ld  data_size:%ld \r\n", file_path, data_addr, data_size);
 		AI_GLASS_MSG("get liftime snapshot frame encode done time %lu\r\n", mm_read_mediatime_ms());
 		ls_video_params.params.width = sensor_params[SENSOR_IMX681_12M].sensor_width;
 		ls_video_params.params.height = sensor_params[SENSOR_IMX681_12M].sensor_height;
 		ls_video_params.params.fps = sensor_params[SENSOR_IMX681_12M].sensor_fps;
-		ls_video_params.params.jpeg_qlevel = 9;
+		ls_video_params.params.jpeg_qlevel = 10;
 		ls_video_params.params.type = VIDEO_JPEG;
 		ls_video_params.params.out_mode = MODE_EXT;
 		ls_video_params.params.ext_fmt = 1; //NV12
+	#if defined(ENABLE_META_INFO)
+		ls_video_params.params.meta_enable = 1; // enable exif meta data
+	#endif
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SNAPSHOT_CB, (int)jpeg_encode_done_cb);
+	#if defined(ENABLE_META_INFO)
+		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_META_CB, (int)video_meta_cb);
+	#endif
 		video_set_isp_ch_buf(JPEG_CHANNEL, 1);
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL);
 		dcache_clean_by_addr((uint32_t *)data_addr, data_size);
@@ -136,7 +194,7 @@ static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t dat
 			AI_GLASS_ERR("High resolution jpeg get timeout\r\n");
 			lfsnap_status = LIFESNAP_FAIL;
 		}
-		printf("nv16_take_time = %d, nv12_gen_time = %d, jpeg_enc_time = %d, emmc_save_time = %d\r\n", nv16_take_time, nv12_gen_time, jpeg_enc_time, emmc_save_time);
+		AI_GLASS_MSG("nv16_take_time = %d, nv12_gen_time = %d, jpeg_enc_time = %d, emmc_save_time = %d\r\n", nv16_take_time, nv12_gen_time, jpeg_enc_time, emmc_save_time);
 		AI_GLASS_MSG("get liftime snapshot frame all done time %lu\r\n", mm_read_mediatime_ms());
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
 		return;
@@ -268,7 +326,7 @@ static void *alloc_dma(rtscam_dma_item_t *dma_item, uint32_t buf_size)
 	align_size = 1 << align_bit;
 	dma_item->virt_addr = malloc(buf_size + align_size);
 	if (!dma_item->virt_addr) {
-		printf("[%s] malloc fail\r\n", __FUNCTION__);
+		AI_GLASS_ERR("[%s] malloc fail\r\n", __FUNCTION__);
 		return NULL;
 	}
 	if ((int)dma_item->virt_addr & (align_size - 1)) {
@@ -288,26 +346,34 @@ static void free_dma(rtscam_dma_item_t *dma_item)
 	dma_item->virt_addr = 0;
 }
 static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint32_t img_buf_addr0, uint32_t img_buf_addr1, uint32_t w, uint32_t h,
-		uint32_t x_overlap)
+		uint32_t x_overlap, bool is_right)
 {
 	uint32_t y_len, uv_len;
 	y_len = (w / 2 + x_overlap) * h;
 	uv_len = y_len;
 	if (v_cfg == NULL) {
-		printf("[%s] fail\r\n", __FUNCTION__);
+		AI_GLASS_ERR("[%s] fail\r\n", __FUNCTION__);
 		return;
 	}
 	v_cfg->verify_addr0 = img_buf_addr0;
 	v_cfg->verify_addr1 = img_buf_addr1;
 	v_cfg->verify_ylen = y_len;
 	v_cfg->verify_uvlen = uv_len;
-	//setup right image nlsc center
-	v_cfg->verify_r_center.x = x_overlap / 2;
-	v_cfg->verify_r_center.y = h / 2;
-	v_cfg->verify_g_center.x = x_overlap / 2;
-	v_cfg->verify_g_center.y = h / 2;
-	v_cfg->verify_b_center.x = x_overlap / 2;
-	v_cfg->verify_b_center.y = h / 2;
+	// Setup NLSC center of second image of verification path. Not working for first frame.
+	uint32_t center_x, center_y;
+	if (is_right) {
+		center_x = x_overlap;
+	} else {
+		center_x = w / 2;
+	}
+	center_y = h / 2;
+
+	v_cfg->verify_r_center.x = center_x;
+	v_cfg->verify_r_center.y = center_y;
+	v_cfg->verify_g_center.x = center_x;
+	v_cfg->verify_g_center.y = center_y;
+	v_cfg->verify_b_center.x = center_x;
+	v_cfg->verify_b_center.y = center_y;
 	dcache_clean_by_addr((uint32_t *)img_buf_addr0, y_len + uv_len);
 	dcache_clean_by_addr((uint32_t *)img_buf_addr1, y_len + uv_len);
 }
@@ -321,7 +387,7 @@ static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32
 	tiled_raws[0] = alloc_dma(&dma_left, tiled_img_size);
 	tiled_raws[1] = alloc_dma(&dma_right, tiled_img_size);
 	if (!tiled_raws[0] || !tiled_raws[1]) {
-		printf("malloc failed %p %p\n", tiled_raws, tiled_raws);
+		AI_GLASS_ERR("malloc failed %p %p\n", tiled_raws, tiled_raws);
 		goto high_resolution_fail;
 	}
 #if USE_SENSOR == SENSOR_IMX681
@@ -329,45 +395,68 @@ static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32
 #else
 	cap_raw_tiling_with_remosaic((uint8_t *)data_addr, tiled_raws, ls_video_params.jpg_width, ls_video_params.jpg_height, x_overlap, 1);
 #endif
-	printf("img_left: %p\n\r", dma_left.phy_addr);
-	printf("img_right: %p\n\r", dma_right.phy_addr);
+	AI_GLASS_INFO("img_left: %p\n\r", dma_left.phy_addr);
+	AI_GLASS_INFO("img_right: %p\n\r", dma_right.phy_addr);
 	get_raw_data = 1;
 	return;
 high_resolution_fail:
 	get_raw_data = -1;
-	printf("high resolution failed\n\r");
+	AI_GLASS_ERR("high resolution failed\n\r");
 	free_dma(&dma_left);
 	free_dma(&dma_right);
 	return;
 }
+enum save_yuv_option { 
+	FILE_PROCESS_DONE = 0,
+	MERGE_LEFT_NV12_SKIP_FIRST,
+	MERGE_LEFT_NV12,
+	MERGE_RIGHT_NV12_SKIP_FIRST,
+	MERGE_RIGHT_NV12,
+	FILE_PROCESS_FAILED
+};
+static enum save_yuv_option save_yuv_option = FILE_PROCESS_DONE;
 static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
-	printf("[%s] 0x%lx, data len = %lu\r\n", __FUNCTION__, data_addr, data_size);
+	AI_GLASS_INFO("[%s] 0x%lx, data len = %lu\r\n", __FUNCTION__, data_addr, data_size);
 	uint8_t *img_buf = (uint8_t *)data_addr;
 	uint32_t out_size;
-	if (image_count == 0) {
+	if(save_yuv_option == MERGE_LEFT_NV12_SKIP_FIRST) {
+		save_yuv_option = MERGE_LEFT_NV12;
+		return;
+	}
+	if(save_yuv_option == MERGE_RIGHT_NV12_SKIP_FIRST) {
+		save_yuv_option = MERGE_RIGHT_NV12;
+		return;
+	}
+
+	if (save_yuv_option == MERGE_LEFT_NV12) {
+		//deal with left 6M NV12 
+		//merge 2 * 6M to 12M NV12 image
 		if (hr_nv12_image == NULL) {
-			printf("hr_nv12_image malloc fail\r\n");
+			AI_GLASS_ERR("hr_nv12_image malloc fail\r\n");
 			image_count = -1;
 			return;
 		}
-		printf("dma_left raw 0x%lx, data len = %lu\r\n", data_addr, data_size);
+		AI_GLASS_INFO("dma_left raw 0x%lx, data len = %lu\r\n", data_addr, data_size);
 		yuv420stitch_step(img_buf, hr_nv12_image, ls_video_params.jpg_width, ls_video_params.jpg_height, x_overlap, &out_size, 0);
-		printf("dma_left raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
+		AI_GLASS_INFO("dma_left raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
 		image_count++;
-	} else if (image_count == 1) {
+	} else if (save_yuv_option == MERGE_RIGHT_NV12) {
+		//deal with right 6M NV12
+		//merge 2 * 6M to 12M NV12 image
 		if (hr_nv12_image == NULL) {
-			printf("hr_nv12_image malloc fail\r\n");
+			AI_GLASS_ERR("hr_nv12_image malloc fail\r\n");
 			image_count = -1;
 			return;
 		}
-		printf("dma_right raw 0x%lx, data len = %lu\r\n", data_addr, data_size);
+		AI_GLASS_INFO("dma_right raw 0x%lx, data len = %lu\r\n", data_addr, data_size);
 		yuv420stitch_step(img_buf, hr_nv12_image, ls_video_params.jpg_width, ls_video_params.jpg_height, x_overlap, &out_size, 1);
-		printf("dma_right raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
+		AI_GLASS_INFO("dma_right raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
 		image_count++;
 	} else {
-		image_count = -1;
+		save_yuv_option = FILE_PROCESS_FAILED;
 	}
+	save_yuv_option = FILE_PROCESS_DONE;
 }
 
 static void high_resolution_snapshot_save(char *file_path)
@@ -395,45 +484,73 @@ static void high_resolution_snapshot_save(char *file_path)
 	};
 	init_params.zoom_coef = zoom_coef;
 #endif
-	//sent 2 * 6M raw to voe
-	config_verification_path_buf(init_params.v_cfg, (uint32_t) dma_left.phy_addr, (uint32_t) dma_right.phy_addr, ls_video_params.jpg_width,
-								 ls_video_params.jpg_height, x_overlap);
-	init_params.isp_init_raw = 0;
-	init_params.isp_raw_mode_tnr_dis = 0;
-	init_params.init_isp_items.init_mirrorflip = 0xf0; // not flip when use sequence
-	image_count = 0;
 	hr_nv12_image = malloc(ls_video_params.jpg_width * ls_video_params.jpg_height * 3 / 2);
 	if (!hr_nv12_image) {
 		goto snashot_fail;
 	}
+	//sent 2 * 6M raw to voe
+	config_verification_path_buf(init_params.v_cfg, (uint32_t) dma_left.phy_addr, (uint32_t) dma_left.phy_addr, ls_video_params.jpg_width,
+								 ls_video_params.jpg_height, x_overlap, false);
+	init_params.isp_init_raw = 0;
+	init_params.isp_raw_mode_tnr_dis = 0;
+	init_params.dyn_iq_mode = 1;
+	init_params.init_isp_items.init_mirrorflip = 0xf0; // not flip when use sequence
+	image_count = 0;
+
 	//switch to verify sequece driver
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
+	ls_video_params.params.direct_output = 0;
+	ls_video_params.params.out_mode = 2; //set to continuous mode
 	ls_video_params.params.width = sensor_params[sen_id[sensor_id]].sensor_width;
 	ls_video_params.params.height = sensor_params[sen_id[sensor_id]].sensor_height;
 	ls_video_params.params.fps = sensor_params[sen_id[sensor_id]].sensor_fps;
 	ls_video_params.params.type = VIDEO_NV12;
+	ls_video_params.params.ext_fmt = 0;
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
 	mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_TYPE_HANDLER, (int)save_high_resolution_yuv);
+	
+	// merge output 2 * 6M nv12 to 12M nv12 image
+	save_yuv_option = MERGE_LEFT_NV12_SKIP_FIRST;
 	timeout_count = 0;
 	video_set_isp_ch_buf(JPEG_CHANNEL, 2);
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL);
-	while (image_count == 0 || image_count == 1) {
+	while (save_yuv_option != FILE_PROCESS_DONE) {
 		vTaskDelay(1);
 		timeout_count++;
 		if (timeout_count > 100000) {
-			printf("snapshot timeout\r\n");
+			AI_GLASS_ERR("hr nv12 convert timeout\r\n");
+			goto snashot_fail;
+		}
+	}	
+	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
+	//right
+	config_verification_path_buf(init_params.v_cfg, (uint32_t) dma_right.phy_addr, (uint32_t) dma_right.phy_addr, ls_video_params.jpg_width,
+								 ls_video_params.jpg_height, x_overlap, true);
+	init_params.isp_init_raw = 0;
+	init_params.isp_raw_mode_tnr_dis = 0;
+	init_params.dyn_iq_mode = 1;
+	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
+	save_yuv_option = MERGE_RIGHT_NV12_SKIP_FIRST;
+	timeout_count = 0;
+	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL);
+	while(save_yuv_option != FILE_PROCESS_DONE) {
+		vTaskDelay(1);
+		timeout_count++;
+		if(timeout_count > 100000) {
+			AI_GLASS_ERR("hr nv12 convert timeout\r\n");
 			goto snashot_fail;
 		}
 	}
-	if (image_count != 2) {
-		printf("snapshot failed \r\n");
+	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
+	if (save_yuv_option == FILE_PROCESS_FAILED) {
+		AI_GLASS_ERR("snapshot failed \r\n");
 		goto snashot_fail;
 	}
-	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
 	if (init_params.v_cfg) {
 		free(init_params.v_cfg);
 		init_params.v_cfg = NULL;
 	}
+	init_params.zoom_coef = NULL;
 	free_dma(&dma_left);
 	free_dma(&dma_right);
 	AI_GLASS_MSG("yuv genaerate done %lu\r\n", mm_read_mediatime_ms());
@@ -479,12 +596,12 @@ static void high_resolution_snapshot_take(char *file_path)
 		vTaskDelay(1);
 		timeout_count++;
 		if (timeout_count > 10000) {
-			printf("wait image timeout\r\n");
+			AI_GLASS_MSG("wait image timeout\r\n");
 			goto snashot_fail;
 		}
 	}
 	if (get_raw_data == -1) {
-		printf("Err: allocate buffer to process 12M snapshot\r\n");
+		AI_GLASS_ERR("Err: allocate buffer to process 12M snapshot\r\n");
 		goto snashot_fail;
 	}
 	AI_GLASS_MSG("get 12M NV16 done time %lu\r\n", mm_read_mediatime_ms());
@@ -601,7 +718,22 @@ int lifetime_snapshot_initialize(void)
 #if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_IMX471)
 	// Deinitialize fake media channel
 	memset(&init_params, 0x00, sizeof(video_pre_init_params_t));
+	init_params.isp_init_enable = 1;
+	init_params.init_isp_items.init_brightness = 0;
+	init_params.init_isp_items.init_contrast = 50;
+	init_params.init_isp_items.init_flicker = 2;
+	init_params.init_isp_items.init_hdr_mode = 0;
+	init_params.init_isp_items.init_mirrorflip = 0xf0;
+	init_params.init_isp_items.init_saturation = 50;
+	init_params.init_isp_items.init_wdr_mode = 0; //disable WDR
+	init_params.init_isp_items.init_mipi_mode = 0;
+	init_params.voe_dbg_disable = 1;
 	deinitial_media();
+	//remalloc voe heap to 45M
+	int voe_heap_size = 45 * 1024 * 1024;
+	video_set_voe_heap((int)NULL, voe_heap_size, 1);
+	AI_GLASS_INFO("\r\n voe heap size = %d\r\n", voe_heap_size);
+	AI_GLASS_INFO("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
 	// Load the AE and AWB data
 	media_get_preinit_isp_data(&init_params);
 	init_params.isp_ae_enable = 1;
@@ -612,6 +744,7 @@ int lifetime_snapshot_initialize(void)
 	init_params.isp_init_raw = 1;
 	init_params.isp_raw_mode_tnr_dis = 1;
 	init_params.video_drop_enable = 0;
+	init_params.dyn_iq_mode = 0;
 	ls_video_params.params.stream_id = JPEG_CHANNEL;
 	ls_video_params.params.type = VIDEO_NV16;
 	ls_video_params.params.width = sensor_params[sen_id[sensor_id]].sensor_width;
@@ -623,6 +756,11 @@ int lifetime_snapshot_initialize(void)
 	ls_video_params.jpg_height = sensor_params[sen_id[sensor_id]].sensor_height;
 	ls_video_params.jpg_qlevel = SNAPSHOT_12M_QLEVEL;  //life_snap_param.jpeg_qlevel * 10
 	ls_video_params.is_high_res = 1;
+	ls_video_params.params.direct_output = 0;
+	ls_video_params.params.ext_fmt = 0;
+#if defined(ENABLE_META_INFO)
+	ls_video_params.params.meta_enable = 1; // enable exif meta data
+#endif
 #if USE_SENSOR == SENSOR_IMX681
 	x_overlap = (sensor_params[SENSOR_IMX681_12M_SEQ].sensor_width * 2 - sensor_params[SENSOR_IMX681_12M].sensor_width) / 2;
 #elif USE_SENSOR == SENSOR_IMX471

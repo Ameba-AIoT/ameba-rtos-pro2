@@ -26,6 +26,15 @@
 #include "mmf2_dbg.h"
 #include "ai_glass_dbg.h"
 #include "lwip_netconf.h"
+#include "ota_8735b.h"
+#include "cJSON.h"
+#include "sys_api.h"
+#include <device_lock.h>
+#include "snand_api.h"
+#include "hal_crypto.h"
+#include "uart_dbg.h"
+#include "ai_glass_version.h"
+#include "wifi_conf.h"
 
 // Configure for ai glass
 #define ENABLE_TEST_CMD             1   // For the tester to test some hardware
@@ -62,13 +71,24 @@ static int usb_msc_initialed = 0;
 static uint8_t temp_file_name[MAX_FILENAME_SIZE] = {0};
 static uint8_t temp_rfile_name[MAX_FILENAME_SIZE] = {0};
 
+// For OTA progress status
+volatile uint8_t bt_progress;
+volatile uint8_t cancel_bt_upgrade = 0;
+volatile uint8_t cancel_wifi_upgrade = 0;
+
+volatile int critical_process_started = 0;
+
 // Funtion Prototype
 static void ai_glass_init_external_disk(void);
+static void ai_glass_deinit_external_disk(void);
 static void ai_glass_init_ram_disk(void);
 void ai_glass_log_init(void);
 
-static const uint8_t version[4] = {0, 0, 0, 0};
+static char version_str[16] = {0};
+static UpgradeInfo info;
 
+static uint8_t g_current_wifi_mode = 0; 
+static int dual_snapshot = 0;
 // These functions are for testing ai glass with mass storage
 #include "usb.h"
 #include "msc/inc/usbd_msc_config.h"
@@ -153,6 +173,13 @@ static void ai_glass_init_external_disk(void)
 	}
 }
 
+static void ai_glass_deinit_external_disk(void)
+{
+	if (extdisk_get_init_status()) {
+		extdisk_filesystem_deinit(ai_glass_disk_name, VFS_FATFS, EXTDISK_PLATFORM);
+	}
+}
+
 static void ai_glass_init_ram_disk(void)
 {
 	if (!ramdisk_get_init_status()) {
@@ -160,7 +187,22 @@ static void ai_glass_init_ram_disk(void)
 	}
 }
 
+int ai_glass_disk_reformat(void) {
+	ai_glass_init_external_disk();
+	AI_GLASS_MSG("Format disk to FAT32\r\n");
+	int ret = vfs_user_format(ai_glass_disk_name, VFS_FATFS, EXTDISK_PLATFORM);
+	if (ret == FR_OK) {
+		AI_GLASS_MSG("format successfully\r\n");
+		ai_glass_deinit_external_disk();
+		return AI_GLASS_CMD_COMPLETE;
+	} else {
+		AI_GLASS_ERR("format failed %d\r\n", ret);
+		return AI_GLASS_PROC_FAIL;
+	}
+}
+
 typedef struct snapshot_pkt_s {
+	uint8_t     status;
 	uint8_t     version;
 	uint8_t     q_vlaue;
 	float       ROIX_TL;
@@ -176,19 +218,24 @@ static void parser_snapshot_pkt2param(ai_glass_snapshot_param_t *snap_buf, uint8
 	snapshot_pkt_t aisnap_buf = {0};
 	uint32_t temp_data = 0;
 	if (snap_buf) {
-		aisnap_buf.version = raw_buf[0];
-		aisnap_buf.q_vlaue = raw_buf[1];
-		temp_data = raw_buf[2] | (raw_buf[3] << 8) | (raw_buf[4] << 16) | (raw_buf[5] << 24);
+		aisnap_buf.status = raw_buf[0];
+		aisnap_buf.version = raw_buf[1];
+		aisnap_buf.q_vlaue = raw_buf[2];
+		temp_data = raw_buf[3] | (raw_buf[4] << 8) | (raw_buf[5] << 16) | (raw_buf[6] << 24);
 		memcpy(&(aisnap_buf.ROIX_TL), &temp_data, sizeof(uint32_t));
-		temp_data = raw_buf[6] | (raw_buf[7] << 8) | (raw_buf[8] << 16) | (raw_buf[9] << 24);
+		temp_data = raw_buf[7] | (raw_buf[8] << 8) | (raw_buf[9] << 16) | (raw_buf[10] << 24);
 		memcpy(&(aisnap_buf.ROIY_TL), &temp_data, sizeof(uint32_t));
-		temp_data = raw_buf[10] | (raw_buf[11] << 8) | (raw_buf[12] << 16) | (raw_buf[13] << 24);
+		temp_data = raw_buf[11] | (raw_buf[12] << 8) | (raw_buf[13] << 16) | (raw_buf[14] << 24);
 		memcpy(&(aisnap_buf.ROIX_BR), &temp_data, sizeof(uint32_t));
-		temp_data = raw_buf[14] | (raw_buf[15] << 8) | (raw_buf[16] << 16) | (raw_buf[17] << 24);
+		temp_data = raw_buf[15] | (raw_buf[16] << 8) | (raw_buf[17] << 16) | (raw_buf[18] << 24);
 		memcpy(&(aisnap_buf.ROIY_BR), &temp_data, sizeof(uint32_t));
-		aisnap_buf.RESIZE_W = raw_buf[18] | (raw_buf[19] << 8);
-		aisnap_buf.RESIZE_H = raw_buf[20] | (raw_buf[21] << 8);
+		aisnap_buf.RESIZE_W = raw_buf[19] | (raw_buf[20] << 8);
+		aisnap_buf.RESIZE_H = raw_buf[21] | (raw_buf[22] << 8);
 
+		AI_GLASS_MSG("AI_snapshot_parameter\r\n");
+
+		//1 additional status parameter Main changes
+		AI_GLASS_MSG("status = %u\r\n", aisnap_buf.status);
 		AI_GLASS_MSG("version = %u\r\n", aisnap_buf.version);
 		AI_GLASS_MSG("q vlaue = %u\r\n", aisnap_buf.q_vlaue);
 		AI_GLASS_MSG("ROIX_TL = %f\r\n", aisnap_buf.ROIX_TL);
@@ -205,13 +252,728 @@ static void parser_snapshot_pkt2param(ai_glass_snapshot_param_t *snap_buf, uint8
 		snap_buf->roi.ymin = (uint32_t)(aisnap_buf.ROIY_TL * sensor_params[USE_SENSOR].sensor_height);
 		snap_buf->roi.xmax = (uint32_t)(aisnap_buf.ROIX_BR * sensor_params[USE_SENSOR].sensor_width);
 		snap_buf->roi.ymax = (uint32_t)(aisnap_buf.ROIY_BR * sensor_params[USE_SENSOR].sensor_height);
+		snap_buf->status = aisnap_buf.status;
 	}
+}
+
+//Check OTA files exists
+static int ota_file_exists(char *version_str, char ota_versions[2][16])
+{
+#define OTA_FILE_WIFI_PREFIX "wifi_ota_v"
+#define OTA_FILE_BT_PREFIX   "bt_ota_v"
+#define OTA_FILE_EXTENSION   ".bin"
+
+	ai_glass_init_external_disk();
+
+	if (extdisk_get_init_status() != 1) {
+		AI_GLASS_ERR("OTA check file: External disk is not initialized.\n");
+		return 0;
+	}
+
+	uint16_t file_count = 0;
+	const char *extensions[] = {OTA_FILE_EXTENSION};
+
+	// Get file list in JSON format
+	cJSON *file_list = extdisk_get_filelist("/", &file_count, extensions, 1, NULL);
+
+	if (!file_list) {
+		AI_GLASS_ERR("OTA check file: Unable to retrieve file list.\n");
+		return 0;
+	}
+
+	printf("Raw JSON response: %s\n", cJSON_Print(file_list)); // Debugging
+
+	int found_wifi = 0, found_bt = 0;
+
+	// Extract "contents" array from JSON
+	cJSON *contents = cJSON_GetObjectItem(file_list, "contents");
+	if (!cJSON_IsArray(contents)) {
+		AI_GLASS_ERR("OTA check file: 'contents' array missing or invalid.\n");
+		cJSON_Delete(file_list);
+		return 0;
+	}
+
+	// Iterate over the JSON "contents" array
+	cJSON *file_item = NULL;
+	cJSON_ArrayForEach(file_item, contents) {
+		cJSON *name_obj = cJSON_GetObjectItem(file_item, "name");
+		if (!cJSON_IsString(name_obj)) {
+			continue;
+		}
+
+		char *filename = name_obj->valuestring;
+		AI_GLASS_MSG("Found file: %s\r\n", filename); // Debugging
+
+		if (!found_wifi && strncmp(filename, OTA_FILE_WIFI_PREFIX, strlen(OTA_FILE_WIFI_PREFIX)) == 0) {
+			char *start = filename + strlen(OTA_FILE_WIFI_PREFIX);
+			char *end = strstr(start, ".bin");
+			if (end) {
+				size_t len = end - start;
+				if (len < 16) {
+					strncpy(ota_versions[0], start, len);
+					ota_versions[0][len] = '\0';
+					if (strcmp(ota_versions[0], version_str) == 0) {
+						found_wifi = 1;
+					}
+				}
+			}
+		}
+
+		if (!found_bt && strncmp(filename, OTA_FILE_BT_PREFIX, strlen(OTA_FILE_BT_PREFIX)) == 0) {
+			char *start = filename + strlen(OTA_FILE_BT_PREFIX);
+			char *end = strstr(start, ".bin");
+			if (end) {
+				size_t len = end - start;
+				if (len < 16) {
+					strncpy(ota_versions[1], start, len);
+					ota_versions[1][len] = '\0';
+					if (strcmp(ota_versions[1], version_str) == 0) {
+						found_bt = 1;
+					}
+				}
+			}
+		}
+
+		if (found_wifi || found_bt) {
+			break; // Only break when both found
+		}
+	}
+
+	cJSON_Delete(file_list);
+
+	if (!found_wifi && !found_bt) {
+		AI_GLASS_ERR("OTA check file: Missing OTA file (WiFi: %d, BT: %d)\n", found_wifi, found_bt);
+		return 0;
+
+	} else if (strcmp(ota_versions[0], version_str) != 0 && strcmp(ota_versions[1], version_str) != 0) {
+		// Both files found, but wrong version
+		AI_GLASS_ERR("OTA check file: Wrong OTA version found (expected: %s, found: %s / %s)\n", version_str, ota_versions[0], ota_versions[1]);
+		return 0;
+
+	} else {
+		// Both files found and versions match
+		return 1;
+	}
+}
+
+// Check OTA files exists and get OTA filename from EMMC
+static int ota_filenames_exists(char ota_filenames[3][32], char *version_str, uint8_t mode)
+{
+#define OTA_FILE_WIFI_PREFIX "wifi_ota_v"
+#define OTA_FILE_BT_PREFIX   "bt_ota_v"
+#define OTA_FILE_BOOT_PREFIX "boot_ota_v"
+#define OTA_FILE_EXTENSION   ".bin"
+
+	ai_glass_init_external_disk();
+
+	if (extdisk_get_init_status() != 1) {
+		AI_GLASS_ERR("OTA get filename: External disk is not initialized.\n");
+		return 0;
+	}
+
+	if (mode != 0x02 && mode != 0x03 && mode != 0x04) {
+        AI_GLASS_ERR("OTA get filename: Unsupported mode 0x%02X\n", mode);
+        return 0;
+    }
+
+	uint16_t file_count = 0;
+	const char *extensions[] = {OTA_FILE_EXTENSION};
+
+	// Get file list in JSON format
+	cJSON *file_list = extdisk_get_filelist("/", &file_count, extensions, 1, NULL);
+
+	if (!file_list) {
+		AI_GLASS_ERR("OTA get filename: Unable to retrieve file list.\r\n");
+		return 0;
+	}
+	
+	AI_GLASS_MSG("Raw JSON response: %s\n", cJSON_Print(file_list)); // Debugging
+
+	int found_wifi = 0, found_bt = 0, found_boot = 0;
+
+	// Extract "contents" array from JSON
+	cJSON *contents = cJSON_GetObjectItem(file_list, "contents");
+	if (!cJSON_IsArray(contents)) {
+		AI_GLASS_ERR("OTA get filename 'contents' array missing or invalid.\r\n");
+		cJSON_Delete(file_list);
+		return 0;
+	}
+
+	// Iterate over the JSON "contents" array
+	cJSON *file_item = NULL;
+	cJSON_ArrayForEach(file_item, contents) {
+		cJSON *name_obj = cJSON_GetObjectItem(file_item, "name");
+		if (!cJSON_IsString(name_obj)) {
+			continue;
+		}
+
+		char *filename = name_obj->valuestring;
+		AI_GLASS_MSG("Found file: %s\r\n", filename); // Debugging
+
+		if ((mode == 0x02 || mode == 0x03) && !found_wifi && strncmp(filename, OTA_FILE_WIFI_PREFIX, strlen(OTA_FILE_WIFI_PREFIX)) == 0) {
+            char *start = filename + strlen(OTA_FILE_WIFI_PREFIX);
+            char *end = strstr(start, ".bin");
+            if (end) {
+                size_t len = end - start;
+                if (len < 16) {
+                    char ver_buf[16] = {0};
+                    strncpy(ver_buf, start, len);
+                    ver_buf[len] = '\0';
+
+                    if (strcmp(ver_buf, version_str) == 0) {
+                        found_wifi = 1;
+                        strncpy(ota_filenames[0], filename, 32);
+						AI_GLASS_MSG("Found WiFi OTA filename: %s\n", ota_filenames[0]);
+                    }
+                }
+            }
+        } 
+		
+		if ((mode == 0x04) && !found_bt && strncmp(filename, OTA_FILE_BT_PREFIX, strlen(OTA_FILE_BT_PREFIX)) == 0) {
+            char *start = filename + strlen(OTA_FILE_BT_PREFIX);
+            char *end = strstr(start, ".bin");
+            if (end) {
+                size_t len = end - start;
+                if (len < 16) {
+                    char ver_buf[16] = {0};
+                    strncpy(ver_buf, start, len);
+                    ver_buf[len] = '\0';
+
+                    if (strcmp(ver_buf, version_str) == 0) {
+                        found_bt = 1;
+                        strncpy(ota_filenames[1], filename, 32);
+						AI_GLASS_MSG("Found BT OTA filename: %s\n", ota_filenames[1]);
+                    }
+                }
+            }
+        }
+
+		if ((mode == 0x03) && !found_boot && strncmp(filename, OTA_FILE_BOOT_PREFIX, strlen(OTA_FILE_BOOT_PREFIX)) == 0) {
+            char *start = filename + strlen(OTA_FILE_BOOT_PREFIX);
+            char *end = strstr(start, ".bin");
+            if (end) {
+                size_t len = end - start;
+                if (len < 16) {
+                    char ver_buf[16] = {0};
+                    strncpy(ver_buf, start, len);
+                    ver_buf[len] = '\0';
+
+                    if (strcmp(ver_buf, version_str) == 0) {
+                        found_boot = 1;
+                        strncpy(ota_filenames[3], filename, 32);
+						AI_GLASS_MSG("Found Bootloader OTA filename: %s\n", ota_filenames[3]);
+                    }
+                }
+            }
+        }
+
+		if (mode == 0x02) {
+			if (found_wifi) {
+				break;  // Break when expected file is found based on mode
+			}
+		}
+		else if (mode == 0x03) {
+			if ((found_wifi && found_boot)) {
+				break;  // Break when expected file is found based on mode
+			}
+		}
+		else if (mode == 0x04) {
+			if (found_bt) {
+				break;  // Break when expected file is found based on mode
+			}
+		}
+	}
+
+	cJSON_Delete(file_list);
+
+	if ((mode == 0x02 && found_wifi) || (mode == 0x04 && found_bt) || (mode == 0x03 && found_wifi && found_boot)) {
+    	return 1; // found
+	} else {
+		AI_GLASS_ERR("OTA get filename: Required OTA file missing (mode=0x%02X, WiFi: %d, BT: %d)\r\n", mode, found_wifi, found_bt);
+		return 0; // not found
+	}
+
+}
+
+static int clear_ota_signature(void)
+{
+	uint8_t cur_fw_idx = 0;
+	uint8_t boot_sel = -1;
+
+	cur_fw_idx = hal_sys_get_ld_fw_idx();
+	if ((1 != cur_fw_idx) && (2 != cur_fw_idx)) {
+		AI_GLASS_ERR("\n\rcurrent fw index is wrong %d \n\r", cur_fw_idx);
+		return 0;
+	}
+
+	boot_sel = sys_get_boot_sel();
+	if (0 == boot_sel) {
+		// boot from NOR flash
+
+		flash_t flash;
+		uint8_t label_init_value[8] = {0x52, 0x54, 0x4c, 0x38, 0x37, 0x33, 0x35, 0x42};
+		uint8_t next_fw_label[8] = {0};
+		uint32_t cur_fw_addr = 0, next_fw_addr = 0;
+		uint8_t *pbuf = NULL;
+		uint32_t buf_size = 4096;
+
+		device_mutex_lock(RT_DEV_LOCK_FLASH);
+		if (1 == cur_fw_idx) {
+			// fw1 record in partition table
+			flash_read_word(&flash, 0x2060, &cur_fw_addr);
+			// fw2 record in partition table
+			flash_read_word(&flash, 0x2080, &next_fw_addr);
+		} else if (2 == cur_fw_idx) {
+			// fw2 record in partition table
+			flash_read_word(&flash, 0x2080, &cur_fw_addr);
+			// fw1 record in partition table
+			flash_read_word(&flash, 0x2060, &next_fw_addr);
+		}
+		flash_stream_read(&flash, next_fw_addr, 8, next_fw_label);
+		device_mutex_unlock(RT_DEV_LOCK_FLASH);
+
+		if (0 != memcmp(next_fw_label, label_init_value, 8)) {
+			AI_GLASS_ERR("\n\rOnly one valid fw, no fw to clear");
+			return 0;
+		}
+
+		//erase current FW signature to make it boot from another FW image
+		AI_GLASS_MSG("\n\rcurrent FW addr = 0x%08X", cur_fw_addr);
+
+		pbuf = malloc(buf_size);
+		if (!pbuf) {
+			AI_GLASS_ERR("\n\rAllocate buf fail");
+			return 0;
+		}
+
+		// need to enter critical section to prevent executing the XIP code at first sector after we erase it.
+		device_mutex_lock(RT_DEV_LOCK_FLASH);
+		flash_stream_read(&flash, cur_fw_addr, buf_size, pbuf);
+		// NOT the first byte of ota signature to make it invalid
+		pbuf[0] = ~(pbuf[0]);
+		flash_erase_sector(&flash, cur_fw_addr);
+		flash_burst_write(&flash, cur_fw_addr, buf_size, pbuf);
+		device_mutex_unlock(RT_DEV_LOCK_FLASH);
+
+		free(pbuf);
+	} else if (1 == boot_sel) {
+		// boot from NAND flash
+
+		//uint8_t partition_data[2112] __attribute__((aligned(32)));
+		//uint8_t data_r[2112] __attribute__((aligned(32)));
+		uint8_t *partition_data;
+		uint8_t *data_r;
+		partition_data = malloc(2112);
+		data_r = malloc(2112);
+		uint32_t crc_out = 0;
+		uint32_t crypto_ret;
+		int update_partition_table = 0;
+		int partition_start_block = 16 ; //B-cut:20
+
+		if (IS_CUT_B(hal_sys_get_rom_ver())) {
+			partition_start_block = 20 ; //B-cut:20
+		}
+
+		snand_t flash;
+		snand_init(&flash);
+		snand_global_unlock();
+
+
+		//read partition_table block16-23
+		for (int i = partition_start_block; i < 24; i++) {
+			snand_page_read(&flash, i * 64, 2048 + 4, &partition_data[0]);
+			if ((partition_data[2048] == 0xff) && (partition_data[2049] == 0xc4)) {
+				break;
+			}
+		}
+
+		if (1 == cur_fw_idx) {
+			for (int i = 0; i < 16; i++) {
+				if ((partition_data[i * 128] == 0x87) && (partition_data[i * 128 + 1] == 0xff) && (partition_data[i * 128 + 2] == 0x35) &&
+					(partition_data[i * 128 + 3] == 0xff) && (partition_data[i * 128 + 4] == 0xc8) && (partition_data[i * 128 + 5] == 0xb9)) {
+					AI_GLASS_ERR("partition_table FW2 type_id is valid \n\r");
+					update_partition_table = 1;
+				}
+			}
+			if (update_partition_table == 1) {
+				for (int i = 0; i < 16; i++) {
+					if ((partition_data[i * 128] == 0x87) && (partition_data[i * 128 + 1] == 0xff) && (partition_data[i * 128 + 2] == 0x35) &&
+						(partition_data[i * 128 + 3] == 0xff) && (partition_data[i * 128 + 4] == 0xc7) && (partition_data[i * 128 + 5] == 0xc1)) {
+						AI_GLASS_ERR("clear partition_table FW1 magic_num \n\r");
+						partition_data[i * 128] = 0x0; //0x87 to 0x0
+						partition_data[i * 128 + 2] = 0x0; //0x35 to 0x0
+					}
+				}
+			}
+		} else if (2 == cur_fw_idx) {
+			for (int i = 0; i < 16; i++) {
+				if ((partition_data[i * 128] == 0x87) && (partition_data[i * 128 + 1] == 0xff) && (partition_data[i * 128 + 2] == 0x35) &&
+					(partition_data[i * 128 + 3] == 0xff) && (partition_data[i * 128 + 4] == 0xc7) && (partition_data[i * 128 + 5] == 0xc1)) {
+					AI_GLASS_ERR("partition_table FW1 type_id is valid \n\r");
+					update_partition_table = 1;
+				}
+			}
+			if (update_partition_table == 1) {
+				for (int i = 0; i < 16; i++) {
+					if ((partition_data[i * 128] == 0x87) && (partition_data[i * 128 + 1] == 0xff) && (partition_data[i * 128 + 2] == 0x35) &&
+						(partition_data[i * 128 + 3] == 0xff) && (partition_data[i * 128 + 4] == 0xc8) && (partition_data[i * 128 + 5] == 0xb9)) {
+						AI_GLASS_ERR("clear partition_table FW2 magic_num \n\r");
+						partition_data[i * 128] = 0x0; //0x87 to 0x0
+						partition_data[i * 128 + 2] = 0x0; //0x35 to 0x0
+					}
+				}
+			}
+		}
+
+		//update partition table CRC16
+		if (update_partition_table == 1) {
+			crypto_ret = hal_crypto_engine_init();
+			if (crypto_ret != SUCCESS) {
+				AI_GLASS_ERR("Crypto Init Failed!%d\r\n", crypto_ret);
+				return 0;
+			}
+			crypto_ret =  hal_crypto_crc16_division(partition_data, 2048, &crc_out);
+			if (crypto_ret != SUCCESS) {
+				AI_GLASS_ERR("CRC failed\r\n");
+				// ignore error and go-on
+				return 0;
+			}
+
+			AI_GLASS_MSG("crc_out = 0x%x \n\r", crc_out);
+			partition_data[2050] = (uint8_t)(crc_out & 0xff);
+			partition_data[2051] = (uint8_t)(crc_out >> 8);
+		}
+
+		//update partition table block16-23
+		if (update_partition_table == 1) {
+			int success = 0;
+			int fail = 0;
+			for (int i = partition_start_block; i < 24; i++) {
+				fail = 0;
+				snand_erase_block(&flash, i * 64);
+				snand_page_write(&flash, i * 64, 2048 + 4, &partition_data[0]);
+				snand_page_read(&flash, i * 64, 2048 + 4, &data_r[0]);
+				if (memcmp(partition_data, data_r, (2048 + 4)) != 0) {
+					AI_GLASS_ERR("bolck %d write fail! \n\r", i);
+					fail = 1;
+					snand_erase_block(&flash, i * 64);
+					data_r[2048] = 0;
+					snand_page_write(&flash, i * 64, 2048 + 4, &data_r[0]);
+				}
+				if (fail == 0) {
+					success = success + 1;
+				}
+				if (success == 2) {
+					break;
+				}
+			}
+
+		}
+		free(partition_data);
+		free(data_r);
+
+	}
+
+	AI_GLASS_MSG("\n\rClear OTA signature success.");
+	return 1;
+}
+
+
+//8430
+static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
+{
+	AI_GLASS_INFO("get UART_TX_OPC_CMD_TRANSFER_UPGRADE_DATA\r\n");
+
+	deinitial_media();
+
+	critical_process_started = 1;
+
+	info = uart_parser_version_and_upgradetype(param);
+
+	AI_GLASS_INFO("Upgrade type: %u, Version: %u.%u.%u.%u\n",
+       info.upgradetype,
+       info.version[0], info.version[1], info.version[2], info.version[3]);
+
+	uint8_t status = AI_GLASS_CMD_COMPLETE;
+	uart_resp_request_sys_upgrade(status);
+	AI_GLASS_INFO("After 8430 CMD acknowledgement\r\n");
+
+	if(info.upgradetype == 0x02) {
+		AI_GLASS_INFO("Start WiFI OTA\r\n");
+
+		// Convert received version to a string
+		snprintf(version_str, sizeof(version_str), "%u.%u.%u.%u",
+			 info.version[0], info.version[1],
+			 info.version[2], info.version[3]);
+		
+		AI_GLASS_INFO("WIFI version to be upgrade to: %s\r\n", version_str);
+
+		char ota_filenames[3][32] = {0};
+
+		if (ota_filenames_exists(ota_filenames, version_str, info.upgradetype)) {
+
+			char full_wifi_path[64];
+
+			sprintf(full_wifi_path, "%s:/%s", ai_glass_disk_name, ota_filenames[0]);
+
+			int ret = -1;
+			ret = ext_storage_update_ota(full_wifi_path);
+			if (!ret) {
+				AI_GLASS_MSG("\n\r Ready to reboot\n");
+				// uart_resp_request_sys_upgrade(status);
+				ota_platform_reset();
+			} else {
+				AI_GLASS_ERR("\n\r OTA Process Failed\n");
+				status = AI_GLASS_OTA_PROCESS_FAILED;
+				uart_resp_request_sys_upgrade(status);
+			}
+			
+		} else {
+			AI_GLASS_ERR("OTA file name not found.\n");
+			status = AI_GLASS_OTA_FILE_NOT_EXISTED;
+			uart_resp_request_sys_upgrade(status);
+		}
+	}
+
+	else if (info.upgradetype == 0x04) {
+		AI_GLASS_INFO("Start BT OTA\r\n");
+
+		// Convert received version to a string
+		snprintf(version_str, sizeof(version_str), "%u.%u.%u.%u",
+			 info.version[0], info.version[1],
+			 info.version[2], info.version[3]);
+		
+		AI_GLASS_INFO("BT version to be upgrade to: %s\r\n", version_str);
+	
+		status = AI_GLASS_CMD_COMPLETE;
+		uart_resp_start_bt_soc_fw_upgrade_ack(status);
+		AI_GLASS_INFO("Send 631 CMD, waiting BT response of 631.\r\n");
+	}
+
+	else if (info.upgradetype == 0x03) {
+		AI_GLASS_INFO("Start WIFI Bootloader and WIFI OTA\r\n");
+
+		// Convert received version to a string
+		snprintf(version_str, sizeof(version_str), "%u.%u.%u.%u",
+			 info.version[0], info.version[1],
+			 info.version[2], info.version[3]);
+		
+		AI_GLASS_INFO("Bootloader and WIFI version to be upgrade to: %s\r\n", version_str);
+
+		char ota_filenames[3][32] = {0};
+
+		if (ota_filenames_exists(ota_filenames, version_str, info.upgradetype)) {
+
+			char boot_wifi_path[64];
+
+			sprintf(boot_wifi_path, "%s:/%s", ai_glass_disk_name, ota_filenames[3]);
+
+			int ret = -1;
+			ret = ext_storage_update_boot_ota(boot_wifi_path);
+			if (!ret) {
+				AI_GLASS_MSG("\n\r Bootloader OTA done. Continue to upgrade wifi firmware...\r\n");
+				char full_wifi_path[64];
+
+				sprintf(full_wifi_path, "%s:/%s", ai_glass_disk_name, ota_filenames[0]);
+
+				int ret = -1;
+				ret = ext_storage_update_ota(full_wifi_path);
+				if (!ret) {
+					AI_GLASS_MSG("\n\r Ready to reboot\n");
+					// uart_resp_request_sys_upgrade(status);
+					ota_platform_reset();
+				} else {
+					AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
+					status = AI_GLASS_OTA_PROCESS_FAILED;
+					uart_resp_request_sys_upgrade(status);
+				}
+			} else {
+				AI_GLASS_ERR("\n\r OTA Bootloader Process Failed\n");
+				status = AI_GLASS_OTA_PROCESS_FAILED;
+				uart_resp_request_sys_upgrade(status);
+			}
+		} else {
+			AI_GLASS_ERR("OTA file name not found.\n");
+			status = AI_GLASS_OTA_FILE_NOT_EXISTED;
+			uart_resp_request_sys_upgrade(status);
+		}
+	}
+
+	AI_GLASS_INFO("end of UART_TX_OPC_CMD_TRANSFER_UPGRADE_DATA\r\n");
+	
+}
+
+// 631
+static void ai_glass_resp_bt_fw_upgrade(uartcmdpacket_t *param)
+{
+	AI_GLASS_INFO("get UART_TX_OPC_CMD_START_BT_SOC_FW_UPGRADE\r\n");
+
+		cancel_bt_upgrade = 0;  // Reset cancel flag on entry
+		
+		int packet_count = 0;
+
+		uint32_t sendtime = mm_read_mediatime_ms();
+		ai_glass_init_external_disk();
+		if (extdisk_get_init_status() != 1) {
+			AI_GLASS_ERR("Error: External disk is not initialized.\n");
+			return;
+		}
+
+		wifi_off();
+		vTaskDelay(20);
+
+		AI_GLASS_INFO("Disabled WIFI\r\n");
+
+		AI_GLASS_INFO("Sending bluetooth binary via UART...\r\n");
+
+		char ota_filenames[3][32] = {0};
+		if (ota_filenames_exists(ota_filenames, version_str, info.upgradetype)) {
+
+			char full_bt_path[64];
+			sprintf(full_bt_path, "/%s", ota_filenames[1]);
+
+			// Currently using a hardcoded data_buffer size of 1541 bytes
+			uint8_t data_buffer[1541] = {0};
+
+			// Open the OTA file from eMMC
+			FILE *ota_file = extdisk_fopen(full_bt_path, "rb");
+			if (!ota_file) {
+				AI_GLASS_ERR("Error: Failed to open bluetooth binary on eMMC!\n");
+				return;
+			}
+
+			uint16_t tmp_uart_pic_size = uart_service_get_pic_size() - EMPTY_PACKET_LEN;
+			uint16_t data_length = 0;
+			#if UPDATE_UPGRADE_PROGRESS_TO_8773
+				int total_bytes_sent = 0;
+				uart_resp_get_sys_upgrade((uint8_t) 2, (uint8_t) 0);
+				extdisk_fseek(ota_file, 0, SEEK_END); 
+				int file_size = extdisk_ftell(ota_file);
+				AI_GLASS_MSG("BT FW File_size: %d\r\n", file_size);
+				extdisk_fseek(ota_file, 0, SEEK_SET); 		
+			#endif
+
+			while (1) {
+				if (cancel_bt_upgrade) {
+					AI_GLASS_INFO("BT upgrade cancelled by command!\r\n");
+					bt_progress = 0;
+					packet_count = 0;
+					#if UPDATE_UPGRADE_PROGRESS_TO_8773
+					AI_GLASS_INFO("FW rollback...\r\n");
+					if (clear_ota_signature()) {
+						uint8_t status = AI_GLASS_CMD_COMPLETE;
+						uart_resp_set_wifi_fw_rollback(status);
+						uart_resp_cancel_sys_upgrade(status);
+						AI_GLASS_INFO("FW rollback done\r\n");
+					}
+					else {
+						uint8_t status = AI_GLASS_SCEN_ERR;
+						uart_resp_set_wifi_fw_rollback(status);
+						uart_resp_cancel_sys_upgrade(status);
+						AI_GLASS_ERR("FW rollback failed\r\n");
+					}
+					#endif
+					break;
+				}
+
+				memset(data_buffer, 0, tmp_uart_pic_size);
+				int bytesRead = extdisk_fread(data_buffer, 1, tmp_uart_pic_size, ota_file);
+
+				if (bytesRead <= 0) {
+					if (ferror(ota_file)) {
+						AI_GLASS_ERR("Error: File read failed!\n");
+					} else {
+						AI_GLASS_INFO("End of file reached.\n");
+					}
+					break;
+				}
+				data_length = bytesRead;
+
+				#if UPDATE_UPGRADE_PROGRESS_TO_8773
+					total_bytes_sent += data_length;
+					packet_count++;
+					AI_GLASS_INFO("Total_bytes_sent: %u\r\n", total_bytes_sent);
+
+					static uint8_t last_bt_progress = 0xFF; 
+				
+				if (file_size > 0) {
+					bt_progress = (uint8_t)(((total_bytes_sent * 100) / file_size));
+					AI_GLASS_INFO("BT progress: %u\r\n", bt_progress);
+					if (bt_progress > 99) {
+						bt_progress = 99;
+					}
+				}
+				// Send update only when progress changes
+				if (bt_progress != last_bt_progress) {
+					last_bt_progress = bt_progress;
+					uart_resp_get_sys_upgrade((uint8_t) 2, bt_progress);
+					AI_GLASS_INFO("BT progress update: %u%% after %d packets\r\n", bt_progress, packet_count);
+				}
+				#endif
+
+				AI_GLASS_MSG("[8735(2) Sending] Data Length: %d bytes, Data[0-2]: %02X %02X %02X\n", data_length, data_buffer[0], data_buffer[1], data_buffer[2]);
+
+				uart_resp_transfer_upgrade_data(data_buffer, data_length);
+				vTaskDelay(pdMS_TO_TICKS(10));
+				// Prevent packet loss by adding delay between UART transmissions.
+				if (extdisk_feof(ota_file)) {
+					uart_resp_get_sys_upgrade((uint8_t) 2, (uint8_t) 100);
+					AI_GLASS_MSG("Send BT progress status 100\r\n");
+					break;
+				}
+			}
+			extdisk_fclose(ota_file);
+			// Add delay to ensure all UART data packets are fully sent before starting BT SoC OTA.
+			// Without this delay, the last packet may be lost, causing an incomplete OTA binary and OTA failure.
+			vTaskDelay(5000);
+			AI_GLASS_INFO("Firmware transfer completed.\r\n");
+			uint32_t endtime = mm_read_mediatime_ms();
+			uint32_t transfertime = endtime - sendtime;
+			uart_resp_finish_bt_soc_fw_upgrade();
+			bt_progress = 0;
+			AI_GLASS_MSG("End of START_BT_SOC_FW_UPGRADE_RESP = %lu\r\n", transfertime);
+			
+		}
+		AI_GLASS_INFO("end of UART_TX_OPC_CMD_START_BT_SOC_FW_UPGRADE\r\n");
+		critical_process_started = 0;
+}
+
+// UART_TX_OPC_CMD_FINISH_BT_SOC_FW_UPGRADE 633
+static void ai_glass_resp_bt_fw_finish(uartcmdpacket_t *param)
+{
+	critical_process_started = 1;
+	AI_GLASS_INFO("get UART_TX_OPC_CMD_FINISH_BT_SOC_FW_UPGRADE\r\n");
+	if (extdisk_delete_bin_files()) {
+		AI_GLASS_MSG("Delete OTA files\r\n");
+	}
+	AI_GLASS_INFO("end of UART_TX_OPC_CMD_FINISH_BT_SOC_FW_UPGRADE\r\n");
+	critical_process_started = 0;
+
+}
+
+// For UART_RX_OPC_CMD_SET_WIFI_FW_ROLLBACK 8415
+static void ai_glass_wifi_fw_rollback(uartcmdpacket_t *param)
+{
+	critical_process_started = 1;
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_SET_WIFI_FW_ROLLBACK\r\n");
+
+	if (clear_ota_signature()) {
+		uint8_t status = AI_GLASS_CMD_COMPLETE;
+
+		uart_resp_set_wifi_fw_rollback(status);
+	}
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_SET_WIFI_FW_ROLLBACK\r\n");
+	//Reboot (or may let BT_SoC to control the power)
+	critical_process_started = 0;
+	ota_platform_reset();
+	
+
 }
 
 static void ai_glass_get_query_info(uartcmdpacket_t *param)
 {
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_QUERY_INFO\r\n");
-	uart_resp_get_query_info(param, version);
+	uart_resp_get_query_info(param);
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_QUERY_INFO\r\n");
 }
 
@@ -222,6 +984,12 @@ static void ai_glass_get_power_down(uartcmdpacket_t *param)
 	// Wait until the video is down
 	if (xSemaphoreTake(video_proc_sema, POWER_DOWN_TIMEOUT) != pdTRUE) {
 		AI_GLASS_WARN("AI glass is snapshot or record, power down fail %lu\r\n", mm_read_mediatime_ms());
+		result = AI_GLASS_BUSY;
+		uart_resp_get_power_down(param, result);
+		goto endofpowerdown;
+	}
+
+	if (critical_process_started == 1) {
 		result = AI_GLASS_BUSY;
 		uart_resp_get_power_down(param, result);
 		goto endofpowerdown;
@@ -415,7 +1183,9 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 				status = AI_GLASS_PROC_FAIL;
 			}
 			AI_GLASS_MSG("snapshot send pkt time = %lu\r\n", mm_read_mediatime_ms());
-			uart_resp_snapshot(param, status);
+			if (ai_snap_params.status == 0) {
+				uart_resp_snapshot(param, status);
+			}
 			if (ret == 0) {
 				AI_GLASS_MSG("wait for ai snapshot deinit\r\n");
 				while (ai_snapshot_deinitialize()) {
@@ -423,26 +1193,35 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 				}
 				AI_GLASS_MSG("wait for ai snapshot deinit done = %lu\r\n", mm_read_mediatime_ms());
 			}
+			if (ai_snap_params.status == 1) {
+				critical_process_started = 1;
+				dual_snapshot = 1;
+				AI_GLASS_MSG("AI+Lifetime Snapshot\r\n");
+				goto lifetimesnapshot;
+			}
 		} else if (mode == 0) {
+lifetimesnapshot:
 			ai_glass_init_external_disk();
 			AI_GLASS_MSG("Process LIFETIME SNAPSHOT\r\n");
 
 			int ret = lifetime_snapshot_initialize();
 			if (ret == 0) {
-				status = AI_GLASS_CMD_COMPLETE; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
+				status = AI_GLASS_DEVICE_WORKING_IN_PROG; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
 				uart_resp_snapshot(param, status);
 				uint8_t file_name_length = snapshot_param[0];
 				char temp_record_filename_buffer[160] = {0};
 				uint8_t lifetime_snap_name[160] = {0};
-				if (file_name_length > 0 && file_name_length <= 125) {
+				if (file_name_length > 0 && file_name_length <= 125 && dual_snapshot != 1) {
 					char uart_filename_str[160] = {0};
 					memset(uart_filename_str, 0, file_name_length + 1);
 					memcpy(uart_filename_str, snapshot_param + 1, file_name_length);
+					AI_GLASS_MSG("Filename retrieved from 8773\r\n"); 
 					extdisk_generate_unique_filename("", uart_filename_str, ".jpg", (char *)temp_record_filename_buffer, 160);
 					snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s%s", (const char *)temp_record_filename_buffer, ".jpg");
 				} else {
 					char *cur_time_str = (char *)media_filesystem_get_current_time_string();
 					if (cur_time_str) {
+						AI_GLASS_MSG("Filename generated from 8735B\r\n");
 						extdisk_generate_unique_filename("PICTURE_0_0_", cur_time_str, ".jpg", (char *)temp_record_filename_buffer, 160);
 						snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s%s", (const char *)temp_record_filename_buffer, ".jpg");
 						free(cur_time_str);
@@ -454,9 +1233,14 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 				if (lifetime_snapshot_take((const char *)lifetime_snap_name) == 0) {
 					if (lifetime_highres_save((const char *)lifetime_snap_name) != 0) {
 						AI_GLASS_WARN("lifetime snapshot high res save failed\r\n");
-						status = AI_GLASS_HR_SAVE_FAILED;
+						status = AI_GLASS_PROC_FAIL;
 						uart_resp_snapshot(param, status);
 					}
+					extdisk_save_file_cntlist();
+					AI_GLASS_MSG("Extdisk save file countlist done = %lu\r\n", mm_read_mediatime_ms());
+					status = AI_GLASS_CMD_COMPLETE;
+					critical_process_started = 0;
+					uart_resp_snapshot(param, status);
 				} else {
 					status = AI_GLASS_PROC_FAIL;
 					uart_resp_snapshot(param, status);
@@ -475,7 +1259,7 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 				uart_resp_snapshot(param, status);
 			}
 			// Save filelist to EMMC
-			extdisk_save_file_cntlist();
+			// extdisk_save_file_cntlist();
 		} else {
 			AI_GLASS_WARN("Not implement yet\r\n");
 			status = AI_GLASS_PROC_FAIL;
@@ -725,8 +1509,14 @@ static void ai_glass_delete_file(uartcmdpacket_t *param)
 static void ai_glass_delete_all_file(uartcmdpacket_t *param)
 {
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_DELETE_ALL_FILES\r\n");
-	ai_glass_init_external_disk();
-	uart_resp_delete_all_file(param);
+	if (ai_glass_disk_reformat() == AI_GLASS_CMD_COMPLETE) {
+		uint8_t status = AI_GLASS_CMD_COMPLETE;
+		uart_resp_delete_all_file(status);
+	}
+	else {
+		uint8_t status = AI_GLASS_PROC_FAIL;
+		uart_resp_delete_all_file(status);
+	}
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_DELETE_ALL_FILES\r\n");
 }
 
@@ -785,14 +1575,6 @@ static void ai_glass_set_sta_mode(uartcmdpacket_t *param)
 {
 	AI_GLASS_MSG("get UART_RX_OPC_CMD_SET_STA_MODE %lu\r\n", mm_read_mediatime_ms());
 
-	// Step 1: Disable AP mode
-	if (wifi_disable_ap_mode() == WLAN_SET_OK) {
-		AI_GLASS_INFO("AP mode disabled successfully.\r\n");
-	} else {
-		AI_GLASS_INFO("Fail to disable AP mode.\r\n");
-	}
-
-	// Step 2: Get params and set variables
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 
 	for (int i = 0; i < 128; i++) {
@@ -803,7 +1585,7 @@ static void ai_glass_set_sta_mode(uartcmdpacket_t *param)
 	}
 	AI_GLASS_INFO("\r\n");
 
-	uint8_t mode = query_pkt->data_buf[0];
+	uint8_t new_mode = query_pkt->data_buf[0];
 	uint8_t ssid_length = query_pkt->data_buf[1];
 	uint8_t channel = query_pkt->data_buf[40];
 	uint8_t password_length = query_pkt->data_buf[41];
@@ -816,7 +1598,7 @@ static void ai_glass_set_sta_mode(uartcmdpacket_t *param)
 		password_length = MAX_PASSWORD_LEN;
 	}
 
-	AI_GLASS_INFO("Mode: %d\r\n", mode);
+	AI_GLASS_INFO("Mode: %d\r\n", new_mode);
 	AI_GLASS_INFO("SSID Length: %d\r\n", ssid_length);
 	AI_GLASS_INFO("Channel: %d\r\n", channel);
 	AI_GLASS_INFO("Password Length: %d\r\n", password_length);
@@ -860,49 +1642,70 @@ static void ai_glass_set_sta_mode(uartcmdpacket_t *param)
 		connect_param.pscan_option = (unsigned char)PSCAN_FAST_SURVEY;
 	}
 
-	if (mode == 1) {
-		//Init emmc
-		ai_glass_init_external_disk();
-		AI_GLASS_MSG("wifi_enable_sta_mode %lu\r\n", mm_read_mediatime_ms());
+	if (new_mode == 1 || new_mode == 2) {
+		// Only proceed if current mode is 0 (AP -> STA transition)
+		if (g_current_wifi_mode == 0) {
+			// Init emmc and try to connect to STA
+			ai_glass_init_external_disk();
+			AI_GLASS_MSG("wifi_enable_sta_mode %lu\r\n", mm_read_mediatime_ms());
 
-		if (wifi_enable_sta_mode(&connect_param, 100, 2) == WLAN_SET_OK) {
-			result = AI_GLASS_CMD_COMPLETE;
+			if (wifi_enable_sta_mode(&connect_param, 100, 20) == WLAN_SET_OK) {
+				result = AI_GLASS_CMD_COMPLETE;
+				g_current_wifi_mode = new_mode;
+				AI_GLASS_MSG("Current mode is %u\r\n", g_current_wifi_mode);
+
+			} else {
+				result = AI_GLASS_PROC_FAIL;
+			}
+			
+			u32 ip;
+			uint8_t ip0,ip1,ip2,ip3;
+			while (1) {
+				ip = *(u32 *)LwIP_GetIP(0);
+
+				ip0 = (ip) & 0xFF;
+				ip1 = (ip >> 8) & 0xFF;
+				ip2 = (ip >> 16) & 0xFF;
+				ip3 = (ip >> 24) & 0xFF;
+
+				if (ip0 != 0 && ip1 != 0 && ip2 !=0 && ip3 !=0) {
+					break;
+				}
+				AI_GLASS_INFO("Waiting for IP...\r\n");
+				vTaskDelay(100);
+			}
+
+			AI_GLASS_INFO("ip_idx0: %d\r\n", ip0);
+			AI_GLASS_INFO("ip_idx1: %d\r\n", ip1);
+			AI_GLASS_INFO("ip_idx2: %d\r\n", ip2);
+			AI_GLASS_INFO("ip_idx3: %d\r\n", ip3);
+			
+			uart_resp_set_sta_mode(param, result,
+				ip0,
+				ip1,
+				ip2,
+				ip3);
 		} else {
-			result = AI_GLASS_PROC_FAIL;
+			AI_GLASS_INFO("Already in STA mode. Skipping re-init.\r\n");
 		}
-		u32 ip = *(u32 *)LwIP_GetIP(0);
-		// Send response
-		uint8_t sta_status = result;
-		// Get the IP address here:
-		uint8_t ip0 = (ip) & 0xFF; // Highest byte (first)
-		uint8_t ip1 = (ip >> 8) & 0xFF;
-		uint8_t ip2 = (ip >> 16) & 0xFF;
-		uint8_t ip3 = (ip >> 24) & 0xFF; // Lowest byte (last)
-
-		AI_GLASS_INFO("ip_idx0: %d\r\n", ip0);
-		AI_GLASS_INFO("ip_idx1: %d\r\n", ip1);
-		AI_GLASS_INFO("ip_idx2: %d\r\n", ip2);
-		AI_GLASS_INFO("ip_idx3: %d\r\n", ip3);
-		uart_resp_set_sta_mode(param, sta_status, ip0, ip1, ip2, ip3);
-
-	} else if (mode == 0) {
-		// Disable AP mode
+	}
+	else if (new_mode == 0) {
 		if (wifi_disable_sta_mode() == WLAN_SET_OK) {
 			AI_GLASS_INFO("STA mode disabled successfully.\r\n");
+			g_current_wifi_mode = new_mode;
+			AI_GLASS_MSG("Current mode is %u\r\n", g_current_wifi_mode);
+			result = AI_GLASS_CMD_COMPLETE;
 		} else {
 			AI_GLASS_INFO("Fail to disable STA mode.\r\n");
+			result = AI_GLASS_PROC_FAIL;
 		}
-	} else {
-		result = AI_GLASS_PARAMS_ERR;
-		AI_GLASS_INFO("ERROR: Mode received for STA Mode is not 0 or 1.\r\n");
 		uart_resp_set_sta_mode(param, result, 0, 0, 0, 0);
 	}
-
-	AI_GLASS_MSG("UART_RX_OPC_CMD_SET_STA_MODE set mode %d done %lu\r\n", mode, mm_read_mediatime_ms());
-	if (mode == 1 && result == AI_GLASS_CMD_COMPLETE) {
-		deinitial_media(); // To save power
+	else {
+		result = AI_GLASS_PARAMS_ERR;
+		AI_GLASS_INFO("Invalid mode value: %d\r\n", new_mode);
+		uart_resp_set_sta_mode(param, result, 0, 0, 0, 0);
 	}
-	AI_GLASS_MSG("end of UART_RX_OPC_CMD_SET_STA_MODE %lu\r\n", mm_read_mediatime_ms());
 }
 
 static void ai_glass_get_pic_data_sliding_window(uartcmdpacket_t *param)
@@ -953,6 +1756,12 @@ static rxopc_item_t rx_opcode_basic_items[ ] = {
 	{UART_RX_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW,       {false, false, ai_glass_get_pic_data_sliding_window},       {NULL, NULL}},
 	{UART_RX_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW_ACK,   {false, true, ai_glass_get_pic_data_sliding_window_ack},    {NULL, NULL}},
 
+	{UART_RX_OPC_CMD_SET_SYS_UPGRADE,                        {false, false, ai_glass_get_set_sys_upgrade},              {NULL, NULL}},
+	{UART_TX_OPC_CMD_START_BT_SOC_FW_UPGRADE,                {false, false, ai_glass_resp_bt_fw_upgrade},               {NULL, NULL}},
+	{UART_TX_OPC_CMD_FINISH_BT_SOC_FW_UPGRADE,               {false, false, ai_glass_resp_bt_fw_finish},                {NULL, NULL}},
+	{UART_RX_OPC_CMD_SET_WIFI_FW_ROLLBACK,                   {false, false, ai_glass_wifi_fw_rollback},                 {NULL, NULL}},
+	     
+
 };
 
 void uart_fun_regist(void)
@@ -998,12 +1807,22 @@ void ai_glass_service_thread(void *param)
 	uart_service_set_protocal_version(UART_PROTOCAL_VERSION);
 	uart_service_start(1);
 	AI_GLASS_MSG("uart service send data time %lu\r\n", mm_read_mediatime_ms());
+
+	// ai_glass_init_external_disk();
+	// AI_GLASS_MSG("Format disk to FAT32\r\n");
+	// int ret = vfs_user_format(ai_glass_disk_name, VFS_FATFS, EXTDISK_PLATFORM);
+	// if (ret == FR_OK) {
+	// 	AI_GLASS_MSG("format successfully\r\n");
+	// } else {
+	// 	AI_GLASS_ERR("format failed %d\r\n", ret);
+	// }
 exit:
 	vTaskDelete(NULL);
 }
 
 void ai_glass_init(void)
 {
+	ai_glass_get_fw_version();
 	if (xTaskCreate(ai_glass_service_thread, ((const char *)"example_uart_service_thread"), 4096, NULL, tskIDLE_PRIORITY + 5, NULL) != pdPASS) {
 		AI_GLASS_ERR("\n\r%s xTaskCreate(example_uart_service_thread) failed", __FUNCTION__);
 	}
@@ -1048,6 +1867,7 @@ void fDISKFORMAT(void *arg)
 	int ret = vfs_user_format(ai_glass_disk_name, VFS_FATFS, EXTDISK_PLATFORM);
 	if (ret == FR_OK) {
 		AI_GLASS_MSG("format successfully\r\n");
+		ai_glass_deinit_external_disk();
 	} else {
 		AI_GLASS_ERR("format failed %d\r\n", ret);
 	}
@@ -1190,7 +2010,7 @@ void fENABLESTAMODE(void *arg)
 
 		if (mode == 1) {
 			AI_GLASS_MSG("Command enable STA mode start = %lu\r\n", mm_read_mediatime_ms());
-			if (wifi_enable_sta_mode(&connect_param, 100, 2) == WLAN_SET_OK) {
+			if (wifi_enable_sta_mode(&connect_param, 100, 20) == WLAN_SET_OK) {
 				deinitial_media(); // For saving power
 				AI_GLASS_MSG("Command enable STA mode OK = %lu\r\n", mm_read_mediatime_ms());
 			} else {
@@ -1237,7 +2057,7 @@ void fLFSNAPSHOT(void *arg)
 			status = AI_GLASS_CMD_COMPLETE;
 			if (lifetime_highres_save((const char *)lifetime_snap_name) != 0) {
 				AI_GLASS_WARN("lifetime snapshot high res save failed\r\n");
-				status = AI_GLASS_HR_SAVE_FAILED;
+				status = AI_GLASS_PROC_FAIL;
 			}
 		} else {
 			status = AI_GLASS_PROC_FAIL;

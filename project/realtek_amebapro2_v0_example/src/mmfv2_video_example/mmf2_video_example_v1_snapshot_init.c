@@ -35,6 +35,7 @@
 
 //#define ENABLE_META_INFO  //Enable the marco to wirte the META data to frame
 //#define ENABLE_SD_SNAPSHOT //Enable the snapshot to sd card
+//#define ENABLE_JPEG_EXIF
 
 static void atcmd_userctrl_init(void);
 static mm_context_t *video_v1_ctx			= NULL;
@@ -68,11 +69,42 @@ int v1_snapshot_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 	return 0;
 }
 #if defined(ENABLE_META_INFO)
+static ExifParams param = {
+	.make = "Realtek",                        // Manufacturer (e.g., "Realtek")
+	.model = "Rtl8735b",                     // Camera model (e.g., "Rtl8735b")
+	.datetime = "2025:07:22 15:16:17",      // Date and time of capture (EXIF format: "YYYY:MM:DD HH:MM:SS")
+	.exposure_time = 1.0 / 500.0,           // Exposure time (e.g., 1/500 second �� 0.002)
+	.fnumber = 2.8,                         // Aperture (e.g., f/2.8)
+	.focal_length = 35.0,                   // Focal length in mm (e.g., 35mm)
+	.white_balance = 0,                     // White balance (0 = Auto, 1 = Manual; here it��s Auto)
+	.iso = 200,                             // ISO value (e.g., ISO 200)
+	.gps_latitude = 25.0701,                // Latitude (e.g., 25.0701 for 25�X 4' 12" North)
+	.gps_longitude = 121.568,               // Longitude (e.g., 121.568 for 121�X 34' 5" East)
+	.gps_altitude = 43.2,                   // Altitude in meters (e.g., 43.2 meters above sea level)
+	.has_gps = 1                            // GPS information present (1 = true, 0 = false)
+};
+
+static void video_jpeg_exif(video_meta_t *m_parm)
+{
+	param.exposure_time = ((float)m_parm->isp_statis_meta->exposure_h / 1000000.f);
+	param.iso = m_parm->isp_statis_meta->gain_h * 100 / 256;
+	video_fill_exif_tags_from_struct(&param);
+	video_insert_jpeg_exif(m_parm);
+}
+
 static void video_meta_cb(void *parm)
 {
 	video_meta_t *m_parm = (video_meta_t *)parm;
 	m_parm->user_buf = NULL;
-	video_sei_write(m_parm);
+	if (m_parm->type == AV_CODEC_ID_MJPEG) {
+#ifdef ENABLE_JPEG_EXIF
+		video_jpeg_exif(m_parm);
+#else
+		video_sei_write(m_parm);
+#endif
+	} else {
+		video_sei_write(m_parm);
+	}
 }
 #endif
 
@@ -105,7 +137,11 @@ void mmf2_video_example_v1_shapshot_init(void)
 	video_pre_init_params_t init_params;
 	memset(&init_params, 0x00, sizeof(video_pre_init_params_t));
 	init_params.meta_enable = 1;
+#ifdef ENABLE_JPEG_EXIF
+	init_params.meta_size = VIDEO_META_USER_SIZE + 0x100;
+#else
 	init_params.meta_size = VIDEO_META_USER_SIZE;
+#endif
 	memcpy(init_params.video_meta_uuid, uuid, VIDEO_META_UUID_SIZE);
 	video_pre_init_setup_parameters(&init_params);
 	video_v1_params.meta_enable = 1;
