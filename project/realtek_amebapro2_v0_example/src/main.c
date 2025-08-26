@@ -85,7 +85,7 @@ static void (*wputc)(phal_uart_adapter_t puart_adapter, uint8_t tx_data) = hal_u
 
 void log_uart_port_init(int log_uart_tx, int log_uart_rx, uint32_t baud_rate)
 {
-	baud_rate = 115200;  //115200, 1500000, 3000000
+	baud_rate = 3000000;  //115200, 1500000, 3000000
 
 	hal_status_t ret;
 	uint8_t uart_idx;
@@ -115,10 +115,17 @@ void log_uart_port_init(int log_uart_tx, int log_uart_rx, uint32_t baud_rate)
 
 /* entry for the example*/
 __weak void app_example(void) {}
+void run_app_example(void)
+{
+#if !defined(CONFIG_UNITEST) || (CONFIG_UNITEST==0)
+	/* Execute application example */
+	app_example();
+#endif
+}
 
 void setup(void)
 {
-#if CONFIG_WLAN
+#if 0
 #if ENABLE_FAST_CONNECT
 	wifi_fast_connect_enable(1);
 #else
@@ -170,7 +177,7 @@ void main(void)
 	setup();
 
 	/* Execute application example */
-	app_example();
+	run_app_example();
 
 	/* set tick count initial value before start scheduler */
 	set_initial_tick_count();

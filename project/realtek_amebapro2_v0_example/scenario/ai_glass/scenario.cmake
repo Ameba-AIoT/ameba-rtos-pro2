@@ -115,6 +115,16 @@ list(
 )
 
 list(JOIN _wrapper " " function_wrapper)
+
+# remosaic library for mmf2_video_example_v1_snapshot_hr_init
+ADD_LIBRARY (librtsremosaic STATIC IMPORTED )
+SET_PROPERTY ( TARGET librtsremosaic PROPERTY IMPORTED_LOCATION ${sdk_root}/component/video/driver/RTL8735B/librtsremosaic.a )
+
+list(
+	APPEND libs
+	librtsremosaic
+)
+
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${function_wrapper}" CACHE INTERNAL "")
 
 

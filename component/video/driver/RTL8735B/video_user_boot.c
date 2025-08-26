@@ -22,7 +22,7 @@
 //#define ROI_TEST
 //#define SCALE_UP_TEST
 //#define PRIVATE_TEST
-//#define META_DATA_TEST
+#define META_DATA_TEST
 #define ISP_CONTROL_TEST
 //#define USE_FCS_LOOKUPTABLE_SAMPLE
 video_boot_stream_t video_boot_stream = {
@@ -515,7 +515,7 @@ void user_boot_config_init(void *parm)
 #endif
 #ifdef META_DATA_TEST
 	video_boot_stream.meta_enable = 1;
-	video_boot_stream.meta_size = VIDEO_BOOT_META_USER_SIZE;
+	video_boot_stream.meta_size = VIDEO_BOOT_META_USER_SIZE + 100;
 	//video_boot_stream.extra_fcs_meta_enable_extend = 1;//Insert the 3A info into Meta
 #endif
 #ifdef ISP_CONTROL_TEST

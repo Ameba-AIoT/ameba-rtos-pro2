@@ -737,6 +737,7 @@ int video_btldr_process(voe_fcs_load_ctrl_t *pvoe_fcs_ld_ctrl, int *code_start)
 		}
 
 		int voe_heap_size = video_boot_buf_calc(video_boot_stream);
+		voe_heap_size = 45 * 1024 * 1024;
 		addr = video_boot_malloc(voe_heap_size);
 		video_boot_stream.voe_heap_addr = addr;
 		video_boot_stream.voe_heap_size = voe_heap_size;

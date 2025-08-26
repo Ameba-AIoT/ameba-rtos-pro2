@@ -17,6 +17,8 @@
 
 #define TOTAL_STEAM_NUM 5
 #define MAX_SW_BUFFER 5
+#define MAX_VERIFY_NUM 32
+
 //#define RTS_VIDEOIN_HEIGHT_ALIGN	16
 
 typedef struct hal_isp_buffer {
@@ -191,6 +193,8 @@ typedef struct {
 	int *cali_iq_addr;		// Add for store input calibration iq data
 
 	int isp_raw_mode_tnr_en;
+
+	uint32_t i2c_clock;
 } __attribute__((aligned(32))) hal_isp_adapter_t;
 
 
@@ -275,9 +279,9 @@ typedef struct {
 	int colot_temperature;
 
 	int y_average;
-    uint32_t white_num;
-    uint32_t rg_sum;
-    uint32_t bg_sum;
+	uint32_t white_num;
+	uint32_t rg_sum;
+	uint32_t bg_sum;
 
 	int hdr_mode;
 	int sensor_fps;
@@ -286,9 +290,9 @@ typedef struct {
 
 	u32 time_stamp;
 
-    uint32_t wdr_hist_contrast;
-    uint32_t wdr_hist_contrast_origin;
-    uint32_t reserved;
+	uint32_t wdr_hist_contrast;
+	uint32_t wdr_hist_contrast_origin;
+	uint32_t reserved;
 
 } isp_statis_meta_t;
 
@@ -330,7 +334,7 @@ typedef struct {
 
 typedef struct {
 	isp_grid_t grid;
-	uint8_t bitmap[ISP_MASK_GRID_CELLS/8];
+	uint8_t bitmap[ISP_MASK_GRID_CELLS / 8];
 
 } isp_grid_mask_entry_t;
 
@@ -384,19 +388,21 @@ struct isp_iq_cali {
 	struct isp_iq_cali_nlsc nlsc;
 } __attribute__((packed));
 
-struct isp_iq_nlsc_point_t { 
-    int32_t x; 
-    int32_t y; 
-};
+typedef struct {
+	u32 verify_nlsc_rcenter_x;
+	u32 verify_nlsc_rcenter_y;
+	u32 verify_nlsc_gcenter_x;
+	u32 verify_nlsc_gcenter_y;
+	u32 verify_nlsc_bcenter_x;
+	u32 verify_nlsc_bcenter_y;
+} verify_nlsc_center_s;
 
 struct verify_ctrl_config {
-	u32 verify_addr0;
-	u32 verify_addr1;
+	u32 verify_number;
+	u32 verify_addr[MAX_VERIFY_NUM];
 	u32 verify_ylen;
 	u32 verify_uvlen;
-	struct isp_iq_nlsc_point_t verify_r_center;
-	struct isp_iq_nlsc_point_t verify_g_center;
-	struct isp_iq_nlsc_point_t verify_b_center;
+	verify_nlsc_center_s verify_nlsc_center[MAX_VERIFY_NUM];
 };
 
 #define RTSV_BRIGHTNESS           0x0000
@@ -471,10 +477,12 @@ u32 hal_isp_get_axi_buf_addr(enum ISP_Buf_Cfg_Order sel);
 void hal_isp_set_verify_info(struct verify_ctrl_config v_cfg);
 int hal_isp_get_verify_info(struct verify_ctrl_config *v_cfg);
 int hal_isp_is_verify_path_on(void);
-void hal_isp_verify_path_config_buf(void);
+void hal_isp_verify_path_config_buf(u32 idx);
 void hal_isp_verify_path_trigger(u32 delay_ms);
 int hal_isp_is_verify_path_last_trigger(void);
-int hal_isp_tuning_iq_nlsc(struct verify_ctrl_config v_cfg);
+int hal_isp_tuning_iq_nlsc(u32 idx, struct verify_ctrl_config v_cfg);
 void hal_isp_set_zoom_filter_coeff(u8* buff);
+void hal_isp_set_verify_counter(void);
+u32 hal_isp_get_verify_counter(void);
 
 #endif /* HAL_RTL8735B_LIB_SOURCE_RAM_VIDEO_ISP_HAL_ISP_H_ */

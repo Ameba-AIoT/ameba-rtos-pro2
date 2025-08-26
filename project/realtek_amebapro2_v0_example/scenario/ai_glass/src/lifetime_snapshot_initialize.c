@@ -19,6 +19,7 @@
 #include "ai_glass_media.h"
 #include "isp_ctrl_api.h"
 #include "avcodec.h"
+#include "librtsremosaic.h"
 
 // Definition of LIFE SNAPSHOT STATUS
 #define LIFESNAP_IDLE   0x00
@@ -30,10 +31,17 @@
 
 // Configure for lifetime snapshot
 #define JPG_WRITE_SIZE          4096
-#define LIFE_SNAP_PRIORITY      5
+#define LIFE_SNAP_PRIORITY      7
 #define MAXIMUM_FILE_TAG_SIZE   32
 #define MAXIMUM_FILE_SIZE       (MAXIMUM_FILE_TAG_SIZE + 32)
 #define SNAPSHOT_12M_QLEVEL     91 // can be 0~100, higher means higher quality
+#define BURST_MODE_MAX_COUNT   1 // when set to 1, disable burst mode. for DDR 128M, maximum can set to 2
+static int raw_index = 0;
+//set output resolution to high resolution
+#define OUT_IMG_WIDTH sensor_params[sen_id[2]].sensor_width
+#define OUT_IMG_HEIGHT sensor_params[sen_id[2]].sensor_height
+#define OUT_IMG_OVERLAP_WIDTH (((sensor_params[sen_id[3]].sensor_width * 2) - sensor_params[sen_id[2]].sensor_width) / 2)
+static uint32_t hr_nv12_size = OUT_IMG_WIDTH * OUT_IMG_HEIGHT * 3 / 2;
 
 static uint32_t nv16_take_time = 0;
 static uint32_t nv12_gen_time = 0;
@@ -65,16 +73,21 @@ static int lfsnap_status = LIFESNAP_IDLE;
 #define JPEG_CHANNEL 0
 #include "sensor_service.h"
 #include "isp_ctrl_api.h"
+/*
+allocate virt addr and free virt addr
+dma use phy addr
+fill data in phy addr
+*/
+#define SPLIT_RAW_NUM 2
 typedef struct {
-	void *virt_addr;
-	void *phy_addr;
-} rtscam_dma_item_t;
+	void *virt_addr; //for temporary save 12M raw
+	void *phy_addr[SPLIT_RAW_NUM];
+} splited_raw_item_t;
+static splited_raw_item_t splited_raw_image[BURST_MODE_MAX_COUNT] = {0};
 static int get_raw_data = 0;
 static uint32_t raw_image_len = 0;
 static int image_count = 0;
 static uint8_t *hr_nv12_image = NULL;
-static rtscam_dma_item_t dma_left, dma_right;
-static int x_overlap = 16;
 static video_pre_init_params_t init_params = {0};
 
 // Hardware 12M snapshot
@@ -102,10 +115,18 @@ static ExifParams param = {
 static void video_jpeg_exif(video_meta_t *m_parm)
 {
 	int ret = 0;
-	isp_get_exposure_time(&ret);
-	param.exposure_time = ((float)ret / 1000000.f); // convert to s
-	isp_get_ae_gain(&ret);
-	param.iso = ((float)ret * 50 / 256); // convert to ISO
+
+	if(USE_SENSOR == SENSOR_IMX681 || USE_SENSOR == SENSOR_IMX471) {
+		isp_get_exposure_time(&ret);
+		param.exposure_time = ((float)ret / 1000000.f); // convert to s
+		isp_get_ae_gain(&ret);
+		param.iso = (ret * 50 / 256); // convert to ISO
+
+	} else {
+		// For other sensors, use the default values
+		param.exposure_time = ((float)m_parm->isp_statis_meta->exposure_h / 1000000.f);
+		param.iso = m_parm->isp_statis_meta->gain_h * 100 / 256;
+	}
 	isp_get_awb_ctrl(&ret);
 	param.white_balance = ret;
 	video_fill_exif_tags_from_struct(&param);
@@ -201,6 +222,10 @@ static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t dat
 	}
 }
 
+/*
+OUT_IMG_WIDTH => full width
+h => full height
+*/
 __attribute__((optimize("-O2")))
 static int yuv420stitch_step(uint8_t *tiled_yuv, uint8_t *output_buf, int w, int h, int x_overlap, uint32_t *out_size, int is_right)
 {
@@ -255,155 +280,90 @@ static void get_remosaiced_cord(uint16_t x, uint16_t y, uint16_t *rm_x, uint16_t
 		break;
 	}
 }
-/*
-output width = w / 2 + x_overlap
-output height = h * 2
-input buf => original buf
-outbuf => tiled output buf
-*/
-__attribute__((optimize("-O2")))
-static int cap_raw_tiling_with_remosaic(uint8_t *input_buf, uint8_t *outbuf[2], uint16_t in_w, uint16_t in_h, uint16_t x_overlap, uint8_t remosaic_en)
+static void *alloc_split_raw_item(splited_raw_item_t *splited_raw, uint32_t split_raw_size)
 {
-	uint16_t tiled_w = (in_w / 2 + x_overlap);
-	uint32_t tiled_size = tiled_w * in_h;
-	uint32_t x_start_idx;
-	uint32_t img_in_size = in_w * in_h;
-	uint32_t in_idx = 0;
-	uint16_t x, y, rm_x, rm_y;
-	uint16_t right_tiled_x;
-	uint8_t *left = outbuf[0];
-	uint8_t *right = outbuf[1];
-	uint8_t pxl_veri_h, pxl_veri_l;
-	uint16_t left_only_len;
-
-	for (y = 0; y < in_h; y ++) {
-		for (x = 0; x < in_w; x ++) {
-			pxl_veri_l = input_buf[in_idx + img_in_size];
-			pxl_veri_h = (input_buf[in_idx] & 0xf) << 4 | pxl_veri_l >> 4;
-			pxl_veri_l = (pxl_veri_l & 0xf) << 4;
-
-			if (remosaic_en) {
-				get_remosaiced_cord(x, y, &rm_x, &rm_y);
-			} else {
-				rm_x = x;
-				rm_y = y;
-			}
-			x_start_idx = rm_y * tiled_w;
-			left_only_len = in_w / 2 - x_overlap;
-			// move to out buf (tiled raw)
-			// left 0 ~ 2023
-			// right
-			if (rm_x < left_only_len) { // left
-				left[rm_x + x_start_idx] = pxl_veri_h;
-				left[rm_x + x_start_idx + tiled_size] = pxl_veri_l;
-			} else if (rm_x >= in_w / 2 + x_overlap) { // right
-				right_tiled_x = rm_x - (left_only_len);
-				right[right_tiled_x + x_start_idx] = pxl_veri_h;
-				right[right_tiled_x +  x_start_idx + tiled_size] = pxl_veri_l;
-			} else { // both
-				left[rm_x + x_start_idx] = pxl_veri_h;
-				left[rm_x +  x_start_idx + tiled_size] = pxl_veri_l;
-				right_tiled_x = rm_x - (left_only_len);
-				right[right_tiled_x + x_start_idx] = pxl_veri_h;
-				right[right_tiled_x + x_start_idx + tiled_size] = pxl_veri_l;
-			}
-			in_idx++;
-		}
-	}
-	return 0;
-}
-/*
-allocate virt addr and free virt addr
-dma use phy addr
-fill data in phy addr
-ret: phy_addr
-*/
-static void *alloc_dma(rtscam_dma_item_t *dma_item, uint32_t buf_size)
-{
-	int align_size;
-	//Cache line size 2^5 bytes aligned
+	// Cache line size 2^5 bytes aligned
 	uint16_t align_bit = 5;
-	align_size = 1 << align_bit;
-	dma_item->virt_addr = malloc(buf_size + align_size);
-	if (!dma_item->virt_addr) {
-		AI_GLASS_ERR("[%s] malloc fail\r\n", __FUNCTION__);
+	int align_size = 1 << align_bit;
+	uint32_t split_raw_size_align = (split_raw_size + align_size - 1) & ~(align_size - 1);
+	uint32_t buffer_size = split_raw_size_align * 2 + align_size;
+
+	splited_raw->virt_addr = malloc(buffer_size);
+	if (!splited_raw->virt_addr) {
+		printf("[%s] malloc failed\n", __FUNCTION__);
 		return NULL;
 	}
-	if ((int)dma_item->virt_addr & (align_size - 1)) {
-		dma_item->phy_addr = (void *)(((int)dma_item->virt_addr + align_size) & (-align_size));
-	} else {
-		dma_item->phy_addr = (void *)((int)dma_item->virt_addr);
-	}
-	return dma_item->phy_addr;
-}
 
-static void free_dma(rtscam_dma_item_t *dma_item)
-{
-	if (dma_item->virt_addr) {
-		free(dma_item->virt_addr);
+	uintptr_t base_addr = (uintptr_t)splited_raw->virt_addr;
+	uintptr_t aligned_addr = (base_addr + align_size - 1) & ~(uintptr_t)(align_size - 1);
+	
+	for(int i = 0; i < SPLIT_RAW_NUM; i++) {
+		splited_raw->phy_addr[i] = (void*)(aligned_addr + i * split_raw_size_align);
 	}
-	dma_item->phy_addr = 0;
-	dma_item->virt_addr = 0;
+
+	return splited_raw->virt_addr;
+}
+static void free_split_raw_item(splited_raw_item_t *splited_raw)
+{
+	if(splited_raw->virt_addr) {
+		free(splited_raw->virt_addr);
+		splited_raw->virt_addr = NULL;
+	}
+	for(int i = 0; i < SPLIT_RAW_NUM; i++) {
+		splited_raw->phy_addr[i] = NULL;
+	}
 }
 static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint32_t img_buf_addr0, uint32_t img_buf_addr1, uint32_t w, uint32_t h,
-		uint32_t x_overlap, bool is_right)
+		uint32_t overlap_width, uint32_t verify_number)
 {
 	uint32_t y_len, uv_len;
-	y_len = (w / 2 + x_overlap) * h;
+	y_len = (w / 2 + overlap_width) * h;
 	uv_len = y_len;
 	if (v_cfg == NULL) {
 		AI_GLASS_ERR("[%s] fail\r\n", __FUNCTION__);
 		return;
 	}
-	v_cfg->verify_addr0 = img_buf_addr0;
-	v_cfg->verify_addr1 = img_buf_addr1;
+	v_cfg->verify_number = verify_number;
 	v_cfg->verify_ylen = y_len;
 	v_cfg->verify_uvlen = uv_len;
-	// Setup NLSC center of second image of verification path. Not working for first frame.
-	uint32_t center_x, center_y;
-	if (is_right) {
-		center_x = x_overlap;
-	} else {
-		center_x = w / 2;
-	}
-	center_y = h / 2;
 
-	v_cfg->verify_r_center.x = center_x;
-	v_cfg->verify_r_center.y = center_y;
-	v_cfg->verify_g_center.x = center_x;
-	v_cfg->verify_g_center.y = center_y;
-	v_cfg->verify_b_center.x = center_x;
-	v_cfg->verify_b_center.y = center_y;
-	dcache_clean_by_addr((uint32_t *)img_buf_addr0, y_len + uv_len);
-	dcache_clean_by_addr((uint32_t *)img_buf_addr1, y_len + uv_len);
+	uint32_t center_x, center_y;
+	for (int i = 0; i < verify_number; i++) {
+		if (i < 2) {
+			v_cfg->verify_addr[i] = img_buf_addr0;
+			center_x = w / 2;
+		} else {
+			v_cfg->verify_addr[i] = img_buf_addr1;
+			center_x = overlap_width;
+		}
+		center_y = h / 2;
+
+		v_cfg->verify_nlsc_center[i].verify_nlsc_rcenter_x = center_x;
+		v_cfg->verify_nlsc_center[i].verify_nlsc_rcenter_y = center_y;
+		v_cfg->verify_nlsc_center[i].verify_nlsc_gcenter_x = center_x;
+		v_cfg->verify_nlsc_center[i].verify_nlsc_gcenter_y = center_y;
+		v_cfg->verify_nlsc_center[i].verify_nlsc_bcenter_x = center_x;
+		v_cfg->verify_nlsc_center[i].verify_nlsc_bcenter_y = center_y;
+	}
+	// dcache_clean_by_addr((uint32_t *)img_buf_addr0, y_len + uv_len);
+	// dcache_clean_by_addr((uint32_t *)img_buf_addr1, y_len + uv_len);
+	SCB_CleanDCache();
 }
 static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
 	raw_image_len = data_size;
 	//split 12M raw to 2 * 6M raw
 	uint8_t *tiled_raws[2];
-	int tiled_w = ls_video_params.jpg_width / 2 + x_overlap;
-	uint32_t tiled_img_size = tiled_w * ls_video_params.jpg_height * 2;
-	tiled_raws[0] = alloc_dma(&dma_left, tiled_img_size);
-	tiled_raws[1] = alloc_dma(&dma_right, tiled_img_size);
-	if (!tiled_raws[0] || !tiled_raws[1]) {
-		AI_GLASS_ERR("malloc failed %p %p\n", tiled_raws, tiled_raws);
-		goto high_resolution_fail;
-	}
+	tiled_raws[0] = splited_raw_image[raw_index].phy_addr[0];
+	tiled_raws[1] = splited_raw_image[raw_index].phy_addr[1];
 #if USE_SENSOR == SENSOR_IMX681
-	cap_raw_tiling_with_remosaic((uint8_t *)data_addr, tiled_raws, ls_video_params.jpg_width, ls_video_params.jpg_height, x_overlap, 0);
+	cap_raw_tiling_with_remosaic((uint8_t *)data_addr, tiled_raws, ls_video_params.jpg_width, ls_video_params.jpg_height, OUT_IMG_OVERLAP_WIDTH, REMOSAIC_DISABLE, REMOSAIC_DIRECT_MODE, GR);
 #else
-	cap_raw_tiling_with_remosaic((uint8_t *)data_addr, tiled_raws, ls_video_params.jpg_width, ls_video_params.jpg_height, x_overlap, 1);
+	cap_raw_tiling_with_remosaic((uint8_t *)data_addr, tiled_raws, ls_video_params.jpg_width, ls_video_params.jpg_height, OUT_IMG_OVERLAP_WIDTH, REMOSAIC_ENABLE, REMOSAIC_DETECT_MODE, GR);
 #endif
-	AI_GLASS_INFO("img_left: %p\n\r", dma_left.phy_addr);
-	AI_GLASS_INFO("img_right: %p\n\r", dma_right.phy_addr);
+	AI_GLASS_INFO("img_left: %x\n\r", splited_raw_image[raw_index].phy_addr[0]);
+	AI_GLASS_INFO("img_right: %x\n\r", splited_raw_image[raw_index].phy_addr[1]);
 	get_raw_data = 1;
-	return;
-high_resolution_fail:
-	get_raw_data = -1;
-	AI_GLASS_ERR("high resolution failed\n\r");
-	free_dma(&dma_left);
-	free_dma(&dma_right);
 	return;
 }
 enum save_yuv_option { 
@@ -438,9 +398,11 @@ static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32
 			return;
 		}
 		AI_GLASS_INFO("dma_left raw 0x%lx, data len = %lu\r\n", data_addr, data_size);
-		yuv420stitch_step(img_buf, hr_nv12_image, ls_video_params.jpg_width, ls_video_params.jpg_height, x_overlap, &out_size, 0);
+		yuv420stitch_step(img_buf, hr_nv12_image, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_OVERLAP_WIDTH, &out_size, 0);
 		AI_GLASS_INFO("dma_left raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
+		save_yuv_option = MERGE_RIGHT_NV12_SKIP_FIRST;
 		image_count++;
+		return;
 	} else if (save_yuv_option == MERGE_RIGHT_NV12) {
 		//deal with right 6M NV12
 		//merge 2 * 6M to 12M NV12 image
@@ -450,11 +412,12 @@ static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32
 			return;
 		}
 		AI_GLASS_INFO("dma_right raw 0x%lx, data len = %lu\r\n", data_addr, data_size);
-		yuv420stitch_step(img_buf, hr_nv12_image, ls_video_params.jpg_width, ls_video_params.jpg_height, x_overlap, &out_size, 1);
+		yuv420stitch_step(img_buf, hr_nv12_image, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_OVERLAP_WIDTH, &out_size, 1);
 		AI_GLASS_INFO("dma_right raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
 		image_count++;
 	} else {
 		save_yuv_option = FILE_PROCESS_FAILED;
+		return;
 	}
 	save_yuv_option = FILE_PROCESS_DONE;
 }
@@ -462,6 +425,7 @@ static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32
 static void high_resolution_snapshot_save(char *file_path)
 {
 #if USE_VIDEO_HR_FLOW
+	int proc_raw_idx = 0;
 	int timeout_count = 0;
 	nv12_gen_time = mm_read_mediatime_ms();
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
@@ -484,13 +448,14 @@ static void high_resolution_snapshot_save(char *file_path)
 	};
 	init_params.zoom_coef = zoom_coef;
 #endif
-	hr_nv12_image = malloc(ls_video_params.jpg_width * ls_video_params.jpg_height * 3 / 2);
+	// hr_nv12_image = malloc(OUT_IMG_WIDTH * OUT_IMG_HEIGHT * 3 / 2);
 	if (!hr_nv12_image) {
+		AI_GLASS_ERR("hr_nv12_image malloc fail\r\n");
+		AI_GLASS_ERR("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
 		goto snashot_fail;
 	}
 	//sent 2 * 6M raw to voe
-	config_verification_path_buf(init_params.v_cfg, (uint32_t) dma_left.phy_addr, (uint32_t) dma_left.phy_addr, ls_video_params.jpg_width,
-								 ls_video_params.jpg_height, x_overlap, false);
+	config_verification_path_buf(init_params.v_cfg, (uint32_t) splited_raw_image[proc_raw_idx].phy_addr[0], (uint32_t) splited_raw_image[proc_raw_idx].phy_addr[1], OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_OVERLAP_WIDTH, 4);
 	init_params.isp_init_raw = 0;
 	init_params.isp_raw_mode_tnr_dis = 0;
 	init_params.dyn_iq_mode = 1;
@@ -523,25 +488,7 @@ static void high_resolution_snapshot_save(char *file_path)
 		}
 	}	
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
-	//right
-	config_verification_path_buf(init_params.v_cfg, (uint32_t) dma_right.phy_addr, (uint32_t) dma_right.phy_addr, ls_video_params.jpg_width,
-								 ls_video_params.jpg_height, x_overlap, true);
-	init_params.isp_init_raw = 0;
-	init_params.isp_raw_mode_tnr_dis = 0;
-	init_params.dyn_iq_mode = 1;
-	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
-	save_yuv_option = MERGE_RIGHT_NV12_SKIP_FIRST;
-	timeout_count = 0;
-	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL);
-	while(save_yuv_option != FILE_PROCESS_DONE) {
-		vTaskDelay(1);
-		timeout_count++;
-		if(timeout_count > 100000) {
-			AI_GLASS_ERR("hr nv12 convert timeout\r\n");
-			goto snashot_fail;
-		}
-	}
-	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
+	
 	if (save_yuv_option == FILE_PROCESS_FAILED) {
 		AI_GLASS_ERR("snapshot failed \r\n");
 		goto snashot_fail;
@@ -551,8 +498,9 @@ static void high_resolution_snapshot_save(char *file_path)
 		init_params.v_cfg = NULL;
 	}
 	init_params.zoom_coef = NULL;
-	free_dma(&dma_left);
-	free_dma(&dma_right);
+	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
+		free_split_raw_item(&(splited_raw_image[i]));
+	}
 	AI_GLASS_MSG("yuv genaerate done %lu\r\n", mm_read_mediatime_ms());
 	nv12_gen_time = mm_read_mediatime_ms() - nv12_gen_time;
 	jpeg_enc_time = mm_read_mediatime_ms();
@@ -575,8 +523,9 @@ snashot_fail:
 		free(init_params.v_cfg);
 		init_params.v_cfg = NULL;
 	}
-	free_dma(&dma_left);
-	free_dma(&dma_right);
+	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
+		free_split_raw_item(&(splited_raw_image[i]));
+	}
 	lifetime_snapshot_deinitialize();
 #endif
 	return;
@@ -585,9 +534,32 @@ snashot_fail:
 static void high_resolution_snapshot_take(char *file_path)
 {
 #if USE_VIDEO_HR_FLOW
+	int proc_raw_idx = 0;
+	//prevent memory fragment, allocate hr splited raw buffer
+	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
+		uint8_t *tiled_raws[2];
+		int tiled_w = OUT_IMG_WIDTH / 2 + OUT_IMG_OVERLAP_WIDTH;
+		uint32_t tiled_img_size = tiled_w * OUT_IMG_HEIGHT * 2;
+
+		if(alloc_split_raw_item(&(splited_raw_image[i]), tiled_img_size) == NULL) {
+			printf("splited raw image malloc failed\n");
+			printf("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
+			goto snashot_fail;
+		}
+	}
+	//prevent memory fragment, allocate hr nv12 buffer
+	if(hr_nv12_image == NULL) {
+		hr_nv12_image = malloc(hr_nv12_size);
+	}
+	if(hr_nv12_image == NULL) {
+		AI_GLASS_ERR("hr_nv12_image malloc fail\r\n");
+		AI_GLASS_ERR("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
+		goto snashot_fail;
+	}
 	// get 12M NV16 raw
 	get_raw_data = 0;
 	int timeout_count = 0;
+	raw_index = proc_raw_idx;
 	video_set_isp_ch_buf(JPEG_CHANNEL, 1);
 	if (mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL) != OK) {
 		goto snashot_fail;
@@ -618,8 +590,9 @@ snashot_fail:
 		free(init_params.v_cfg);
 		init_params.v_cfg = NULL;
 	}
-	free_dma(&dma_left);
-	free_dma(&dma_right);
+	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
+		free_split_raw_item(&(splited_raw_image[i]));
+	}
 	lifetime_snapshot_deinitialize();
 #endif
 	return;
@@ -761,11 +734,6 @@ int lifetime_snapshot_initialize(void)
 #if defined(ENABLE_META_INFO)
 	ls_video_params.params.meta_enable = 1; // enable exif meta data
 #endif
-#if USE_SENSOR == SENSOR_IMX681
-	x_overlap = (sensor_params[SENSOR_IMX681_12M_SEQ].sensor_width * 2 - sensor_params[SENSOR_IMX681_12M].sensor_width) / 2;
-#elif USE_SENSOR == SENSOR_IMX471
-	x_overlap = (sensor_params[SENSOR_IMX471_12M_SEQ].sensor_width * 2 - sensor_params[SENSOR_IMX471_12M].sensor_width) / 2;
-#endif
 	ls_snapshot_ctx = mm_module_open(&video_module);
 	if (ls_snapshot_ctx) {
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_SENSOR_ID, sensor_id);
@@ -830,6 +798,9 @@ int lifetime_snapshot_initialize(void)
 	ls_video_params.params.fps = 5;
 	ls_video_params.params.gop = 5;
 	ls_video_params.params.use_static_addr = 1;
+#if defined(ENABLE_META_INFO)
+	ls_video_params.params.meta_enable = 1;
+#endif
 	ls_snapshot_ctx = mm_module_open(&video_module);
 	if (ls_snapshot_ctx) {
 		media_get_preinit_isp_data(&ai_glass_pre_init_params);
@@ -838,6 +809,9 @@ int lifetime_snapshot_initialize(void)
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
 		mm_module_ctrl(ls_snapshot_ctx, MM_CMD_SET_QUEUE_LEN, 2);//Default 30
 		mm_module_ctrl(ls_snapshot_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
+	#if defined(ENABLE_META_INFO)
+		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_META_CB, (int)video_meta_cb);
+	#endif
 	} else {
 		AI_GLASS_ERR("video open fail\n\r");
 		ret = -1;

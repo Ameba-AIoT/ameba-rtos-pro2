@@ -1672,7 +1672,11 @@ void video_pre_init_save_cur_params(int meta_enable, video_meta_t *meta_data, en
 
 int video_pre_init_get_meta_enable(void)
 {
-	return video_pre_init_param.meta_enable;
+	if(isp_boot->fcs_status){
+		return isp_boot->meta_enable;
+	}else{
+		return video_pre_init_param.meta_enable;
+	}
 }
 
 void video_calcu_meta_size(video_pre_init_params_t *parm)
@@ -2298,7 +2302,11 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 	}
 	if (isp_boot->fcs_status == 1) {
 		if (v_stream->meta_enable == 1 && isp_boot->meta_enable == 1) {
-			v_adp->cmd[ch]->EncuserData = isp_boot->fcs_meta_total_size;
+			if (codec & CODEC_JPEG) {
+				v_adp->cmd[ch]->JPGuserData = isp_boot->fcs_meta_total_size;
+			}else{
+				v_adp->cmd[ch]->EncuserData = isp_boot->fcs_meta_total_size;
+			}
 			if (isp_boot->extra_fcs_meta_enable_extend == 1) {
 				v_adp->cmd[ch]->IDRuserData = isp_boot->extra_fcs_meta_extend_total_size;
 			} else {
