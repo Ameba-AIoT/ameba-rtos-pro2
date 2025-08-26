@@ -840,6 +840,16 @@ void initial_media_parameters(void)
 			pre_init_params.init_isp_items.init_wdr_mode = 2;
 			pre_init_params.init_isp_items.init_mipi_mode = 0;
 			pre_init_params.voe_dbg_disable = !APP_VOE_LOG_EN;
+		#if defined(ENABLE_META_INFO)
+			unsigned char uuid[16] = {0xc7, 0x98, 0x2c, 0x28, 0x0a, 0xfc, 0x49, 0xe6, 0xaa, 0xe4, 0x7f, 0x8f, 0x64, 0xee, 0x65, 0x01};
+			pre_init_params.meta_enable = 1;
+		#ifdef ENABLE_JPEG_EXIF
+			pre_init_params.meta_size = VIDEO_META_USER_SIZE + 0x100;
+		#else
+			pre_init_params.meta_size = VIDEO_META_USER_SIZE;
+		#endif
+			memcpy(pre_init_params.video_meta_uuid, uuid, VIDEO_META_UUID_SIZE);
+		#endif	
 			// Init ISP parameters
 			mm_module_ctrl(video_fake_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&pre_init_params);
 
