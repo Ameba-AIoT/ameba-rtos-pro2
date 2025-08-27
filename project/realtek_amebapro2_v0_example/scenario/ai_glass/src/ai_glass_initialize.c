@@ -211,6 +211,8 @@ typedef struct snapshot_pkt_s {
 	float       ROIY_BR;
 	uint16_t    RESIZE_W;
 	uint16_t    RESIZE_H;
+	uint8_t     lifetime_file_name_len;
+	char        lifetime_file_name[49];
 } snapshot_pkt_t;
 
 static void parser_snapshot_pkt2param(ai_glass_snapshot_param_t *snap_buf, uint8_t *raw_buf)
@@ -231,6 +233,11 @@ static void parser_snapshot_pkt2param(ai_glass_snapshot_param_t *snap_buf, uint8
 		memcpy(&(aisnap_buf.ROIY_BR), &temp_data, sizeof(uint32_t));
 		aisnap_buf.RESIZE_W = raw_buf[19] | (raw_buf[20] << 8);
 		aisnap_buf.RESIZE_H = raw_buf[21] | (raw_buf[22] << 8);
+		aisnap_buf.lifetime_file_name_len = raw_buf[23];
+
+		
+		memcpy(aisnap_buf.lifetime_file_name, &raw_buf[24], aisnap_buf.lifetime_file_name_len);
+
 
 		AI_GLASS_MSG("AI_snapshot_parameter\r\n");
 
@@ -244,6 +251,8 @@ static void parser_snapshot_pkt2param(ai_glass_snapshot_param_t *snap_buf, uint8
 		AI_GLASS_MSG("ROIY_BR = %f\r\n", aisnap_buf.ROIY_BR);
 		AI_GLASS_MSG("RESIZE_W = %u\r\n", aisnap_buf.RESIZE_W);
 		AI_GLASS_MSG("RESIZE_H = %u\r\n", aisnap_buf.RESIZE_H);
+		AI_GLASS_MSG("LF_FILENAME_LENGTH = %u\r\n", aisnap_buf.lifetime_file_name_len);
+		AI_GLASS_MSG("LF_FILENAME = %s\r\n", aisnap_buf.lifetime_file_name);	
 
 		snap_buf->width = aisnap_buf.RESIZE_W;
 		snap_buf->height = aisnap_buf.RESIZE_H;
@@ -253,6 +262,10 @@ static void parser_snapshot_pkt2param(ai_glass_snapshot_param_t *snap_buf, uint8
 		snap_buf->roi.xmax = (uint32_t)(aisnap_buf.ROIX_BR * sensor_params[USE_SENSOR].sensor_width);
 		snap_buf->roi.ymax = (uint32_t)(aisnap_buf.ROIY_BR * sensor_params[USE_SENSOR].sensor_height);
 		snap_buf->status = aisnap_buf.status;
+		snap_buf->lifetime_file_name_len = aisnap_buf.lifetime_file_name_len;
+		memcpy(snap_buf->lifetime_file_name,
+       		aisnap_buf.lifetime_file_name,
+       		sizeof(snap_buf->lifetime_file_name));
 	}
 }
 
@@ -1152,6 +1165,7 @@ static void ai_glass_set_gps(uartcmdpacket_t *param)
 static void ai_glass_snapshot(uartcmdpacket_t *param)
 {
 	uint8_t status = AI_GLASS_CMD_COMPLETE;
+	ai_glass_snapshot_param_t ai_snap_params = {0};
 	AI_GLASS_MSG("get UART_RX_OPC_CMD_SNAPSHOT = %lu\r\n", mm_read_mediatime_ms());
 	if (xSemaphoreTake(video_proc_sema, 0) != pdTRUE) {
 		status = AI_GLASS_BUSY;
@@ -1162,7 +1176,6 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 		AI_GLASS_MSG("%s get mode = %d\r\n", __func__, mode);
 		if (mode == 1) {
 			AI_GLASS_MSG("Process AI SNAPSHOT\r\n");
-			ai_glass_snapshot_param_t ai_snap_params = {0};
 			media_get_ai_snapshot_params(&ai_snap_params);
 			parser_snapshot_pkt2param(&ai_snap_params, snapshot_param);
 			if (media_update_ai_snapshot_params(&ai_snap_params) != MEDIA_OK) {
@@ -1218,12 +1231,28 @@ lifetimesnapshot:
 					AI_GLASS_MSG("Filename retrieved from 8773\r\n"); 
 					extdisk_generate_unique_filename("", uart_filename_str, ".jpg", (char *)temp_record_filename_buffer, 160);
 					snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s%s", (const char *)temp_record_filename_buffer, ".jpg");
+				} else if((ai_snap_params.lifetime_file_name_len > 0) && (dual_snapshot == 1)) {
+					file_name_length = ai_snap_params.lifetime_file_name_len;
+					char uart_filename_str[160] = {0};
+					memset(uart_filename_str, 0, file_name_length + 1);
+					memcpy(uart_filename_str, ai_snap_params.lifetime_file_name, file_name_length);
+					AI_GLASS_MSG("Filename retrieved from 8773 (AI snapshot params)\r\n");
+					if (ai_snap_params.lifetime_file_name_len >= sizeof(ai_snap_params.lifetime_file_name)) {
+						ai_snap_params.lifetime_file_name_len = sizeof(ai_snap_params.lifetime_file_name) - 1;
+					}
+					ai_snap_params.lifetime_file_name[ai_snap_params.lifetime_file_name_len] = '\0';
+					
+					extdisk_generate_unique_filename("", (const char *)uart_filename_str, ".jpg", (char *)temp_record_filename_buffer, 160);
+					snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s%s", (const char *)temp_record_filename_buffer, ".jpg");
+					AI_GLASS_MSG("lifetime_snap_name = %s\r\n", (char *)lifetime_snap_name);
+					
 				} else {
 					char *cur_time_str = (char *)media_filesystem_get_current_time_string();
 					if (cur_time_str) {
 						AI_GLASS_MSG("Filename generated from 8735B\r\n");
 						extdisk_generate_unique_filename("PICTURE_0_0_", cur_time_str, ".jpg", (char *)temp_record_filename_buffer, 160);
 						snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s%s", (const char *)temp_record_filename_buffer, ".jpg");
+						AI_GLASS_MSG("lifetime_snap_name = %s\r\n", (char *)lifetime_snap_name);
 						free(cur_time_str);
 					} else {
 						AI_GLASS_WARN("no memory for lifetime snapshot file name\r\n");

@@ -91,6 +91,8 @@ typedef struct ai_glass_snapshot_param_s {
 	uint16_t    minQp;
 	uint16_t    maxQp;
 	uint8_t     rotation;
+	uint8_t     lifetime_file_name_len;
+	char        lifetime_file_name[49];
 } ai_glass_snapshot_param_t;
 
 #define MAX_LIFESNAP_WIDTH          sensor_params[USE_SENSOR].sensor_width
