@@ -536,6 +536,7 @@ static void http_file_send_thread(void *pvParameters)
 			if (notifyValue == TASK_NOTIFY_ERROR || notifyValue == TASK_NOTIFY_WERROR) {
 				WLAN_SCEN_ERR("[Reader Task] Stopping read due to writer error.\r\n");
 				send_success = 0;
+				critical_process_started = 0;
 				break;
 			}
 		}
@@ -550,6 +551,7 @@ static void http_file_send_thread(void *pvParameters)
 					xTaskNotify(send_taskhandle, TASK_NOTIFY_ERROR, eSetValueWithOverwrite); // Notify error
 				}
 				send_success = 0;
+				critical_process_started = 0;
 				break;
 			}
 
@@ -577,6 +579,7 @@ static void http_file_send_thread(void *pvParameters)
 		} else {
 			WLAN_SCEN_ERR("[Reader Task] Queue is not valid.\r\n");
 			send_success = 0;
+			critical_process_started = 0;
 			break;
 		}
 	}
