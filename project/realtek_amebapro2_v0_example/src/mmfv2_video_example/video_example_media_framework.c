@@ -225,6 +225,21 @@ static void example_mmf2_video_surport(void)
 	//V1 timslapse mp4 example
 	//mmf2_video_example_timelapse_mp4_init();
 
+	// H264 and 2way audio (G711, PCMU)
+	// CH1 Video -> H264/HEVC -> RTSP + SNAPSHOT
+	// AUDIO -> G711E  -> RTSP
+	// RTP   -> G711D  -> AUDIO
+	// ARRAY (PCMU) -> G711D -> AUDIO
+	//mmf2_video_example_snapshot_httpfs_audio_init();
+
+	// H264 and 2way audio (G711, PCMU)
+	// CH1 Video -> H264/HEVC -> RTSP + SNAPSHOT
+	// AUDIO -> G711E  -> RTSP
+	// RTP   -> G711D  -> AUDIO
+	// ARRAY (PCMU) -> G711D -> AUDIO
+	// TOF sensor
+	mmf2_video_example_snapshot_httpfs_audio_with_tof_init();
+
 	video_init_done = 1;
 }
 
