@@ -44,4 +44,17 @@ list(
 	${sdk_root}/component/video/osd2/osd_render.c
 )
 
+# tof library for mmf2_video_example_snapshot_httpfs_audio_with_tof_init.c
+#VL53L5CX_LIBRARIES
+list(
+    APPEND app_sources
+	
+    ${sdk_root}/component/application/tof_sensor/vl53l5cx_uld_driver/src/vl53l5cx_api.c
+    ${sdk_root}/component/application/tof_sensor/vl53l5cx_uld_driver/src/vl53l5cx_plugin_detection_thresholds.c
+    ${sdk_root}/component/application/tof_sensor/vl53l5cx_uld_driver/src/vl53l5cx_plugin_motion_indicator.c
+    ${sdk_root}/component/application/tof_sensor/vl53l5cx_uld_driver/src/vl53l5cx_plugin_xtalk.c
+	${sdk_root}/component/application/tof_sensor/vl53l5cx_uld_driver/platform/platform.c
+	${sdk_root}/component/application/tof_sensor/vl53l5cx_rtl8735b_i2c.c
+)
+
 
