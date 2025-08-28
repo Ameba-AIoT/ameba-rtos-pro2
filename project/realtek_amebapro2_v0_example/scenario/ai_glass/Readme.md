@@ -233,3 +233,9 @@ Note: this baudrate will have strong influence to the process time but need to s
 3. Disable OSD function
 	component\media\mmfv2\module_video.c
 	#define OSD_ENABLE 0
+
+## Enabling OTA progress report to 8773 ##
+
+1. Please enable the flag to update OTA progress to 8773.
+   component\soc\8735b\misc\platform\ota_8735b.h	
+   #define UPDATE_UPGRADE_PROGRESS_TO_8773   1	

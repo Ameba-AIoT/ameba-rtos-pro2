@@ -153,7 +153,7 @@ int fatfs_sd_init(void)
 	return 0;
 
 fatfs_init_err:
-	// fatfs_sd_close();
+	fatfs_sd_close();
 	return ret;
 }
 
@@ -179,15 +179,13 @@ int fatfs_sd_format(void *parm)
 		format_attr.align = 0;
 		format_attr.n_root = 0;
 		format_attr.au_size = 128;
-		ret = f_mount(&fatfs_sd_param.fs, fatfs_sd_param.drv, 0);
-		if (ret == FR_OK) {
-			ret =  f_mkfs(fatfs_sd_param.drv, &format_attr, NULL, 64 * 1024);
-			if (ret != FR_OK) {
-				printf("sd cardformat fail\r\n");
-			} else {
-				printf("format successful\r\n");
-				ret = f_mount(&fatfs_sd_param.fs, fatfs_sd_param.drv, 1);
-			}
+		f_mount(&fatfs_sd_param.fs, fatfs_sd_param.drv, 0);
+		ret =  f_mkfs(fatfs_sd_param.drv, &format_attr, NULL, 64 * 1024);
+		if (ret) {
+			printf("sd cardformat fail\r\n");
+		} else {
+			printf("format successful\r\n");
+			ret = f_mount(&fatfs_sd_param.fs, fatfs_sd_param.drv, 1);
 		}
 	}
 	return ret;

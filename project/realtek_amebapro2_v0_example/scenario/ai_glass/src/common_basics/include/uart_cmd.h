@@ -84,8 +84,8 @@ int uart_resp_get_pic_data_sliding_window_ack(uartcmdpacket_t *param);
 
 // For UART_RX_OPC_CMD_SET_SYS_UPGRADE
 typedef struct {
-    uint8_t upgradetype;
-    uint8_t version[4];
+	uint8_t upgradetype;
+	uint8_t version[4];
 } UpgradeInfo;
 UpgradeInfo uart_parser_version_and_upgradetype(uartcmdpacket_t *param);
 void *uart_parser_version(uartcmdpacket_t *param, uint8_t *version);

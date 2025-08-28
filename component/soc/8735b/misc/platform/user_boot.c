@@ -1,7 +1,7 @@
 #include "fw_img_export.h"
 #include "hal_spic.h"
 
-uint8_t bl_log_cust_ctrl = DISABLE;
+uint8_t bl_log_cust_ctrl = ENABLE;
 
 uint8_t user_boot_fw_selection(fw_img_user_export_info_type_t *pfw_img_user_export_info)
 {
@@ -17,4 +17,5 @@ void spic_user_select(pspic_user_define_t pspic_user_define)
 
 void bootloader_enter(void)
 {
+
 }

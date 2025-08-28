@@ -13,10 +13,11 @@
 #include "log_service.h"
 #include "avcodec.h"
 #include "isp_ctrl_api.h"
+#include "librtsremosaic.h"
 
 /*
 Usage Guide:
-1. Please modify sensor driver setting and enable FCS bootup.
+1. Please modify sensor driver setting and enable FCS bootup. Only support imx681 and imx471.
 	project\realtek_amebapro2_v0_example\inc\sensor.h
 	static const unsigned char sen_id[SENSOR_MAX] = {
 		SENSOR_DUMMY,
@@ -40,7 +41,8 @@ Usage Guide:
 	int video_btldr_process(voe_fcs_load_ctrl_t *pvoe_fcs_ld_ctrl, int *code_start)
 	{
 		...
-			int voe_heap_size = 45 * 1024 * 1024;//video_boot_buf_calc(video_boot_stream);
+			int voe_heap_size = video_boot_buf_calc(video_boot_stream);
+			voe_heap_size = 45 * 1024 * 1024;
 	}
 
 5. To enable burst mode, define BURST_MODE_MAX_COUNT larger than 1. For DDR 128M, maaximun can set to 2.
@@ -96,7 +98,7 @@ typedef struct {
 //set output resolution to high reesolution
 #define OUT_IMG_WIDTH sensor_params[sen_id[2]].sensor_width
 #define OUT_IMG_HEIGHT sensor_params[sen_id[2]].sensor_height
-#define OUT_IMG_X_OVERLAP (((sensor_params[sen_id[3]].sensor_width * 2) - sensor_params[sen_id[2]].sensor_width) / 2)
+#define OUT_IMG_OVERLAP_WIDTH (((sensor_params[sen_id[3]].sensor_width * 2) - sensor_params[sen_id[2]].sensor_width) / 2)
 static uint8_t *hr_nv12_image = NULL;
 static uint32_t hr_nv12_size = OUT_IMG_WIDTH * OUT_IMG_HEIGHT * 3 / 2;
 #define SAVE_DBG_IMG 0
@@ -119,12 +121,12 @@ OUT_IMG_WIDTH => full width
 h => full height
 */
 __attribute__((optimize("-O2")))
-static int yuv420stitch_step(uint8_t *tiled_yuv, uint8_t *output_buf, int w, int h, int x_overlap, uint32_t *out_size, int is_right)
+static int yuv420stitch_step(uint8_t *tiled_yuv, uint8_t *output_buf, int w, int h, int overlap_width, uint32_t *out_size, int is_right)
 {
 	uint32_t yuv420sp_size = w * h * 3 / 2;
 	uint8_t *output_pos = output_buf;
 	uint8_t *in_pos = tiled_yuv;
-	uint16_t w_tiled = (w / 2 + x_overlap);
+	uint16_t w_tiled = (w / 2 + overlap_width);
 	uint16_t w_half = w / 2;
 	if (is_right) {
 		output_pos += w_half;
@@ -132,7 +134,7 @@ static int yuv420stitch_step(uint8_t *tiled_yuv, uint8_t *output_buf, int w, int
 	}
 	for (int l = 0; l < h * 3 / 2; l++) {
 		if (is_right) {
-			memcpy(output_pos, in_pos + x_overlap, w_half);
+			memcpy(output_pos, in_pos + overlap_width, w_half);
 		}
 		else {
 			memcpy(output_pos, in_pos, w_half);
@@ -179,67 +181,6 @@ static void get_remosaiced_cord(uint16_t x, uint16_t y, uint16_t *rm_x, uint16_t
     }
 }
 
-/*
-output width = w / 2 + x_overlap
-output height = h * 2
-input buf => original buf
-outbuf => tiled output buf
-*/
-__attribute__((optimize("-O2")))
-static int cap_raw_tiling_with_remosaic(uint8_t *input_buf, uint8_t *outbuf[2], uint16_t in_w, uint16_t in_h, uint16_t x_overlap, uint8_t remosaic_en)
-{
-	uint16_t pxl_val;
-	uint16_t tiled_w = (in_w / 2 + x_overlap);
-	uint32_t tiled_size = tiled_w * in_h;
-	uint32_t x_start_idx;
-	uint32_t img_in_size = in_w * in_h;
-	uint32_t in_idx = 0;
-	uint16_t x, y, rm_x, rm_y;
-	uint16_t right_tiled_x;
-	uint8_t *left = outbuf[0];
-	uint8_t *right = outbuf[1];
-	uint8_t pxl_veri_h, pxl_veri_l;
-	uint16_t left_only_len;
-
-	for (y = 0; y < in_h; y ++) {
-		for (x = 0; x < in_w; x ++) {
-			// pxl_val = input_buf[in_idx] << 8 | input_buf[in_idx + img_in_size];
-			pxl_veri_l = input_buf[in_idx + img_in_size];
-			pxl_veri_h = (input_buf[in_idx] & 0xf) << 4 | pxl_veri_l >> 4;
-			pxl_veri_l = (pxl_veri_l & 0xf) << 4;
-			if (remosaic_en) {
-				get_remosaiced_cord(x, y, &rm_x, &rm_y);
-			}
-			else {
-				rm_x = x;
-				rm_y = y;
-			}
-			x_start_idx = rm_y * tiled_w;
-			left_only_len = in_w / 2 - x_overlap;
-			// move to out buf (tiled raw)
-			// left 0 ~ 2023
-			// right
-			if (rm_x < left_only_len) { // left
-				left[rm_x + x_start_idx] = pxl_veri_h;
-				left[rm_x + x_start_idx + tiled_size] = pxl_veri_l;
-			} else if (rm_x >= in_w / 2 + x_overlap) { // right
-				right_tiled_x = rm_x - (left_only_len);
-				right[right_tiled_x + x_start_idx] = pxl_veri_h;
-				right[right_tiled_x +  x_start_idx + tiled_size] = pxl_veri_l;
-			} else { // both
-				left[rm_x + x_start_idx] = pxl_veri_h;
-				left[rm_x +  x_start_idx + tiled_size] = pxl_veri_l;
-				right_tiled_x = rm_x - (left_only_len);
-				right[right_tiled_x + x_start_idx] = pxl_veri_h;
-				right[right_tiled_x + x_start_idx + tiled_size] = pxl_veri_l;
-			}
-			in_idx++;
-		}
-	}
-    return 0;
-}
-
-
 static void *alloc_dma(rtscam_dma_item_t *dma_item, uint32_t buf_size)
 {
 	int align_size;
@@ -271,11 +212,11 @@ static void free_dma(rtscam_dma_item_t *dma_item)
 }
 
 static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint32_t img_buf_addr0, uint32_t img_buf_addr1,
-	uint32_t w, uint32_t h, uint32_t x_overlap, bool is_right)
+	uint32_t w, uint32_t h, uint32_t overlap_width, bool is_right)
 {
-	uint32_t buf_size = (w / 2 + x_overlap) * h * 2;
+	uint32_t buf_size = (w / 2 + overlap_width) * h * 2;
 	uint32_t y_len, uv_len;
-	y_len = (w / 2 + x_overlap) * h;
+	y_len = (w / 2 + overlap_width) * h;
 	uv_len = y_len;
 
 	if(v_cfg == NULL) {
@@ -291,7 +232,7 @@ static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint3
 	// Setup NLSC center of second image of verification path. Not working for first frame.
 	uint32_t center_x, center_y;
 	if (is_right) {
-		center_x = x_overlap;
+		center_x = overlap_width;
 	} else {
 		center_x = w / 2;
 	}
@@ -393,9 +334,9 @@ static void file_process(char *file_path, uint32_t data_addr, uint32_t data_size
 		tiled_raws[0] = splited_raw_image[raw_index][0].phy_addr;
 		tiled_raws[1] = splited_raw_image[raw_index][1].phy_addr;
 #if USE_SENSOR == SENSOR_IMX681
-		cap_raw_tiling_with_remosaic((uint8_t*)data_addr, tiled_raws, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_X_OVERLAP, 0);
+		cap_raw_tiling_with_remosaic((uint8_t*)data_addr, tiled_raws, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_OVERLAP_WIDTH, REMOSAIC_DISABLE, REMOSAIC_DIRECT_MODE, GR);
 #else
-		cap_raw_tiling_with_remosaic((uint8_t*)data_addr, tiled_raws, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_X_OVERLAP, 1);
+		cap_raw_tiling_with_remosaic((uint8_t*)data_addr, tiled_raws, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_OVERLAP_WIDTH, REMOSAIC_ENABLE, REMOSAIC_DETECT_MODE, GR);
 #endif
 		printf("img_left: %x\n\r", splited_raw_image[raw_index][0].phy_addr);
 		printf("img_right: %x\n\r", splited_raw_image[raw_index][1].phy_addr);
@@ -404,13 +345,13 @@ static void file_process(char *file_path, uint32_t data_addr, uint32_t data_size
 		//merge 2 * 6M to 12M NV12 image
 		uint8_t *img_pos = (uint8_t *)img_buf;
 		uint8_t *output_pos = (uint8_t *)hr_nv12_image;
-		yuv420stitch_step(img_pos, hr_nv12_image, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_X_OVERLAP, &out_size, 0);
+		yuv420stitch_step(img_pos, hr_nv12_image, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_OVERLAP_WIDTH, &out_size, 0);
 	} else if(file_process_option == MERGE_RIGHT_NV12) {
 		//deal with right 6M NV12
 		//merge 2 * 6M to 12M NV12 image
 		uint8_t *img_pos = (uint8_t *)img_buf;
 		uint8_t *output_pos = (uint8_t *)hr_nv12_image;
-		yuv420stitch_step(img_pos, hr_nv12_image, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_X_OVERLAP, &out_size, 1);
+		yuv420stitch_step(img_pos, hr_nv12_image, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_OVERLAP_WIDTH, &out_size, 1);
 	}
 	file_process_option = FILE_PROCESS_DONE;
 }
@@ -513,24 +454,11 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 	int sensor_id = 3;
 	int ret = OK;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_SENSOR_ID, sensor_id);
-#if USE_SENSOR == SENSOR_IMX471
-	uint8_t zoom_coef[ISP_ZOOM_FILTER_COEF_NUM] = {
-		0, 0, 1, 1, 3, 5, 9, 14, 21, 30,
-		40, 52, 65, 79, 92, 105, 116, 125, 131, 135
-	};
-	init_params->zoom_coef = zoom_coef;
-#elif USE_SENSOR == SENSOR_IMX681
-	uint8_t zoom_coef[ISP_ZOOM_FILTER_COEF_NUM] = {
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		0, 0, 1, 1, 1, 1, 255, 255, 255, 255
-	};
-	init_params->zoom_coef = zoom_coef;
-#endif
 	if(init_params->v_cfg == NULL) {
 		init_params->v_cfg = malloc(sizeof(struct verify_ctrl_config));
 	}
 	//sent 2 * 6M raw to voe
-	config_verification_path_buf(init_params->v_cfg, (uint32_t) splited_raw_image[proc_raw_idx][0].phy_addr, (uint32_t) splited_raw_image[proc_raw_idx][0].phy_addr, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_X_OVERLAP, false);
+	config_verification_path_buf(init_params->v_cfg, (uint32_t) splited_raw_image[proc_raw_idx][0].phy_addr, (uint32_t) splited_raw_image[proc_raw_idx][0].phy_addr, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_OVERLAP_WIDTH, false);
 	init_params->isp_init_raw = 0;
 	init_params->isp_raw_mode_tnr_dis = 0;
 	init_params->dyn_iq_mode = 1;
@@ -558,11 +486,10 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 			break;
 		}
 	}
-
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
 
-	//right
-	config_verification_path_buf(init_params->v_cfg, (uint32_t) splited_raw_image[proc_raw_idx][1].phy_addr, (uint32_t) splited_raw_image[proc_raw_idx][1].phy_addr, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_X_OVERLAP, true);
+	//right nv12
+	config_verification_path_buf(init_params->v_cfg, (uint32_t) splited_raw_image[proc_raw_idx][1].phy_addr, (uint32_t) splited_raw_image[proc_raw_idx][1].phy_addr, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_OVERLAP_WIDTH, true);
 	init_params->isp_init_raw = 0;
 	init_params->isp_raw_mode_tnr_dis = 0;
 	init_params->dyn_iq_mode = 1;
@@ -585,7 +512,6 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 		free(init_params->v_cfg);
 		init_params->v_cfg = NULL;
 	}
-	init_params->zoom_coef = NULL;
 	return ret;
 }
 
@@ -602,12 +528,6 @@ static void hr_jpg_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 static int hr_nv12_to_jpeg(video_pre_init_params_t *init_params, int jpg_save_timeout, int jpg_idx)
 {
 	int ret = OK;
-	init_params->isp_init_raw = 0;
-	init_params->isp_raw_mode_tnr_dis = 0;
-	init_params->dyn_iq_mode = 0;
-	init_params->dn_init_enable = 0;
-	init_params->dn_init_mode = 0;
-	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)init_params);
 	video_v1_params.direct_output = 0;
 	video_v1_params.width = OUT_IMG_WIDTH;
 	video_v1_params.height = OUT_IMG_HEIGHT;
@@ -656,13 +576,13 @@ void mmf2_video_example_v1_snapshot_hr_init(void)
 	voe_heap_size = 45 * 1024 * 1024;
 	video_set_voe_heap((int)NULL, voe_heap_size, 1);
 	printf("\r\n voe heap size = %d\r\n", voe_heap_size);
-	printf("output resolution w=%d, h=%d, x_overlap=%d\r\n", OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_X_OVERLAP);
+	printf("output resolution w=%d, h=%d, overlap_width=%d\r\n", OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_OVERLAP_WIDTH);
 	printf("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
 	
 	//prevent memory fragment, allocate hr splited raw buffer
 	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
 		uint8_t *tiled_raws[2];
-		int tiled_w = OUT_IMG_WIDTH / 2 + OUT_IMG_X_OVERLAP;
+		int tiled_w = OUT_IMG_WIDTH / 2 + OUT_IMG_OVERLAP_WIDTH;
 		uint32_t tiled_img_size = tiled_w * OUT_IMG_HEIGHT * 2;
 		tiled_raws[0] = alloc_dma(&(splited_raw_image[i][0]), tiled_img_size);
 		tiled_raws[1] = alloc_dma(&(splited_raw_image[i][1]), tiled_img_size);
@@ -694,7 +614,7 @@ void mmf2_video_example_v1_snapshot_hr_init(void)
 	init_params.init_isp_items.init_hdr_mode = 0;
 	init_params.init_isp_items.init_mirrorflip = 0xf0;
 	init_params.init_isp_items.init_saturation = 50;
-	init_params.init_isp_items.init_wdr_mode = 0; //disable WDR
+	init_params.init_isp_items.init_wdr_mode = 0; //12M not support WDR, disable WDR.
 	init_params.init_isp_items.init_mipi_mode = 0;
 	init_params.voe_dbg_disable = 1;
 	video_v1_ctx = mm_module_open(&video_module);

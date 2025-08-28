@@ -53,7 +53,7 @@
 #define IS_AFTER_CUT_E(chip)                (CHIP_E_CUT <= chip)
 
 
-#define CONFIG_CHIP_VER							CHIP_B_CUT
+#define CONFIG_CHIP_VER                     CHIP_B_CUT
 
 #define CONFIG_FPGA                         0
 #define CONFIG_PXP                          0

@@ -160,7 +160,7 @@ typedef struct jpeg_crop_parm_s {
 #define MASK_RECT_ID_1 0X02
 #define MASK_RECT_ID_2 0X03
 #define MASK_RECT_ID_3 0X04
-#define USE_VIDEO_HR_FLOW 1
+#define USE_VIDEO_HR_FLOW 0
 typedef struct video_pre_init_params_s {
 	uint32_t meta_enable;
 	uint32_t meta_size;

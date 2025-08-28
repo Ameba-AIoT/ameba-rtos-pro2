@@ -123,7 +123,7 @@ void setup(void)
 
 void set_initial_tick_count(void)
 {
-	printf("[FOR OTA BOOTLOADER CHECK DIFFERENCE] count = %x\r\n",(*((volatile uint32_t *) 0xe0001004))); //這邊應該會等於1000
+	printf("[FOR OTA BOOTLOADER CHECK DIFFERENCE] count = %x\r\n", (*((volatile uint32_t *) 0xe0001004))); //這邊應該會等於1000
 
 	// Check DWT_CTRL(0xe0001000) CYCCNTENA(bit 0). If DWT cycle counter is enabled, set tick count initial value based on DWT cycle counter.
 	if ((*((volatile uint32_t *) 0xe0001000)) & 1) {

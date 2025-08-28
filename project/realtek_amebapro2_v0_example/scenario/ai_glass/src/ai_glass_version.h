@@ -1,20 +1,21 @@
 #if defined(_MSC_VER)
-    #pragma pack(push, 1)
+#pragma pack(push, 1)
 #endif
 
 typedef struct
 #if defined(__GNUC__)
-    __attribute__((packed))
+__attribute__((packed))
 #endif
 {
-    uint8_t reserve;
-    uint8_t major;
-    uint8_t minor;
-    uint8_t patch;
-} ai_glass_fw_version_t;
+	uint8_t reserve;
+	uint8_t major;
+	uint8_t minor;
+	uint8_t patch;
+}
+ai_glass_fw_version_t;
 
 #if defined(_MSC_VER)
-    #pragma pack(pop)
+#pragma pack(pop)
 #endif
 
 static int default_ai_glass_fw_version_get(ai_glass_fw_version_t *out_buf);

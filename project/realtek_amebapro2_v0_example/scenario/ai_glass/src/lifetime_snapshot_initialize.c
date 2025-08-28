@@ -83,6 +83,8 @@ static uint32_t jpeg_nv12_len = 0;
 static char *file_save_path = NULL;
 static SemaphoreHandle_t jpeg_get_sema = NULL;
 #if defined(ENABLE_META_INFO)
+static int capture_exposure_time = 0;
+static float capture_iso = 0;
 static video_meta_t metadata;
 static ExifParams param = {
 	.make = "Realtek",                        // Manufacturer (e.g., "Realtek")
@@ -102,10 +104,8 @@ static ExifParams param = {
 static void video_jpeg_exif(video_meta_t *m_parm)
 {
 	int ret = 0;
-	isp_get_exposure_time(&ret);
-	param.exposure_time = ((float)ret / 1000000.f); // convert to s
-	isp_get_ae_gain(&ret);
-	param.iso = ((float)ret * 50 / 256); // convert to ISO
+	param.exposure_time = capture_exposure_time;
+	param.iso = capture_iso;
 	isp_get_awb_ctrl(&ret);
 	param.white_balance = ret;
 	video_fill_exif_tags_from_struct(&param);
@@ -145,9 +145,9 @@ static int jpeg_encode_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 	for (uint32_t i = 0; i < jpeg_nv12_len; i += JPG_WRITE_SIZE) {
 		extdisk_fwrite((const void *)(jpeg_nv12_addr + i), 1, ((i + JPG_WRITE_SIZE) >= jpeg_nv12_len) ? (jpeg_nv12_len - i) : JPG_WRITE_SIZE, life_snapshot_file);
 	}
+	xSemaphoreGive(jpeg_get_sema);
 	extdisk_fclose(life_snapshot_file);
 	emmc_save_time = mm_read_mediatime_ms() - emmc_save_time;
-	xSemaphoreGive(jpeg_get_sema);
 	lfsnap_status = LIFESNAP_DONE;
 	return 0;
 }
@@ -171,14 +171,14 @@ static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t dat
 		ls_video_params.params.type = VIDEO_JPEG;
 		ls_video_params.params.out_mode = MODE_EXT;
 		ls_video_params.params.ext_fmt = 1; //NV12
-	#if defined(ENABLE_META_INFO)
+#if defined(ENABLE_META_INFO)
 		ls_video_params.params.meta_enable = 1; // enable exif meta data
-	#endif
+#endif
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SNAPSHOT_CB, (int)jpeg_encode_done_cb);
-	#if defined(ENABLE_META_INFO)
+#if defined(ENABLE_META_INFO)
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_META_CB, (int)video_meta_cb);
-	#endif
+#endif
 		video_set_isp_ch_buf(JPEG_CHANNEL, 1);
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL);
 		dcache_clean_by_addr((uint32_t *)data_addr, data_size);
@@ -194,7 +194,8 @@ static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t dat
 			AI_GLASS_ERR("High resolution jpeg get timeout\r\n");
 			lfsnap_status = LIFESNAP_FAIL;
 		}
-		AI_GLASS_MSG("nv16_take_time = %d, nv12_gen_time = %d, jpeg_enc_time = %d, emmc_save_time = %d\r\n", nv16_take_time, nv12_gen_time, jpeg_enc_time, emmc_save_time);
+		AI_GLASS_MSG("nv16_take_time = %d, nv12_gen_time = %d, jpeg_enc_time = %d, emmc_save_time = %d\r\n", nv16_take_time, nv12_gen_time, jpeg_enc_time,
+					 emmc_save_time);
 		AI_GLASS_MSG("get liftime snapshot frame all done time %lu\r\n", mm_read_mediatime_ms());
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
 		return;
@@ -406,7 +407,7 @@ high_resolution_fail:
 	free_dma(&dma_right);
 	return;
 }
-enum save_yuv_option { 
+enum save_yuv_option {
 	FILE_PROCESS_DONE = 0,
 	MERGE_LEFT_NV12_SKIP_FIRST,
 	MERGE_LEFT_NV12,
@@ -420,17 +421,17 @@ static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32
 	AI_GLASS_INFO("[%s] 0x%lx, data len = %lu\r\n", __FUNCTION__, data_addr, data_size);
 	uint8_t *img_buf = (uint8_t *)data_addr;
 	uint32_t out_size;
-	if(save_yuv_option == MERGE_LEFT_NV12_SKIP_FIRST) {
+	if (save_yuv_option == MERGE_LEFT_NV12_SKIP_FIRST) {
 		save_yuv_option = MERGE_LEFT_NV12;
 		return;
 	}
-	if(save_yuv_option == MERGE_RIGHT_NV12_SKIP_FIRST) {
+	if (save_yuv_option == MERGE_RIGHT_NV12_SKIP_FIRST) {
 		save_yuv_option = MERGE_RIGHT_NV12;
 		return;
 	}
 
 	if (save_yuv_option == MERGE_LEFT_NV12) {
-		//deal with left 6M NV12 
+		//deal with left 6M NV12
 		//merge 2 * 6M to 12M NV12 image
 		if (hr_nv12_image == NULL) {
 			AI_GLASS_ERR("hr_nv12_image malloc fail\r\n");
@@ -508,7 +509,7 @@ static void high_resolution_snapshot_save(char *file_path)
 	ls_video_params.params.ext_fmt = 0;
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
 	mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_TYPE_HANDLER, (int)save_high_resolution_yuv);
-	
+
 	// merge output 2 * 6M nv12 to 12M nv12 image
 	save_yuv_option = MERGE_LEFT_NV12_SKIP_FIRST;
 	timeout_count = 0;
@@ -521,7 +522,7 @@ static void high_resolution_snapshot_save(char *file_path)
 			AI_GLASS_ERR("hr nv12 convert timeout\r\n");
 			goto snashot_fail;
 		}
-	}	
+	}
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
 	//right
 	config_verification_path_buf(init_params.v_cfg, (uint32_t) dma_right.phy_addr, (uint32_t) dma_right.phy_addr, ls_video_params.jpg_width,
@@ -533,10 +534,10 @@ static void high_resolution_snapshot_save(char *file_path)
 	save_yuv_option = MERGE_RIGHT_NV12_SKIP_FIRST;
 	timeout_count = 0;
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL);
-	while(save_yuv_option != FILE_PROCESS_DONE) {
+	while (save_yuv_option != FILE_PROCESS_DONE) {
 		vTaskDelay(1);
 		timeout_count++;
-		if(timeout_count > 100000) {
+		if (timeout_count > 100000) {
 			AI_GLASS_ERR("hr nv12 convert timeout\r\n");
 			goto snashot_fail;
 		}
@@ -605,6 +606,13 @@ static void high_resolution_snapshot_take(char *file_path)
 		goto snashot_fail;
 	}
 	AI_GLASS_MSG("get 12M NV16 done time %lu\r\n", mm_read_mediatime_ms());
+#if defined(ENABLE_META_INFO)
+	if (mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_GET_META_DATA, (int)&metadata) != OK) {
+		AI_GLASS_ERR("get metadata failed\r\n");
+	}
+	capture_exposure_time = ((float)metadata.isp_statis_meta->exposure_h / 1000000.f);
+	capture_iso = metadata.isp_statis_meta->gain_h * 100 / 256;
+#endif
 	lfsnap_status = LIFESNAP_GET;
 	nv16_take_time = mm_read_mediatime_ms() - nv16_take_time;
 	return;

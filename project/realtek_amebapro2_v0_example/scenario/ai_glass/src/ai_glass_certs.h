@@ -92,13 +92,13 @@ const char ai_glass_src_cert_pem[]  = AI_GLASS_SRC_CERT_PEM;
 const char ai_glass_src_key_pem[]   = AI_GLASS_SRC_KEY_PEM;
 
 const size_t ai_glass_ca_cert_pem_len =
-    sizeof( ai_glass_ca_cert_pem );
+	sizeof(ai_glass_ca_cert_pem);
 
 const size_t ai_glass_src_cert_pem_len =
-    sizeof( ai_glass_src_cert_pem );
+	sizeof(ai_glass_src_cert_pem);
 
 const size_t ai_glass_src_key_pem_len =
-    sizeof( ai_glass_src_key_pem );
+	sizeof(ai_glass_src_key_pem);
 
 
 

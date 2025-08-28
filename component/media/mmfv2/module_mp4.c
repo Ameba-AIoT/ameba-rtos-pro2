@@ -26,9 +26,9 @@
 #include <stdio.h>
 #include "vfs.h"
 
-// #define FATFS_SD_CARD
-// #define FATFS_RAM
-#define VFS_ENABLE
+#define FATFS_SD_CARD
+//#define FATFS_RAM
+//#define VFS_ENABLE
 #ifdef VFS_ENABLE
 #include "vfs.h"
 #endif
@@ -231,7 +231,7 @@ void *mp4_destroy(void *p)
 		fatfs_ram_close();
 #endif
 #ifdef VFS_ENABLE
-		// vfs_user_unregister("sd", VFS_FATFS, VFS_INF_SD);
+		vfs_user_unregister("sd", VFS_FATFS, VFS_INF_SD);
 #endif
 		free(ctx);
 	}
@@ -267,12 +267,12 @@ void *mp4_create(void *parent)
 	set_mp4_fatfs_param(ctx->mp4_muxer, &ctx->fatfs_params);
 #endif
 #ifdef VFS_ENABLE
-	// vfs_init(NULL);
-	memcpy(ctx->mp4_muxer->_drv, "aiglass:/", strlen("aiglass:/")); //Set tag
+	vfs_init(NULL);
+	memcpy(ctx->mp4_muxer->_drv, "sd:/", strlen("sd:/")); //Set tag
 	ctx->mp4_muxer->vfs_format_enable = 1;//Enable the vfs format
-	// if (vfs_user_register("sd", VFS_FATFS, VFS_INF_SD) < 0) {
-	// 	goto mp4_create_fail;
-	// }
+	if (vfs_user_register("sd", VFS_FATFS, VFS_INF_SD) < 0) {
+		goto mp4_create_fail;
+	}
 #endif
 	mp4_muxer_init(ctx->mp4_muxer);
 
