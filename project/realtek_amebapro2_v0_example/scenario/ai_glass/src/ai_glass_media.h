@@ -118,7 +118,7 @@ typedef struct ai_glass_snapshot_param_s {
 #define DEFAULT_RECORD_GOP          24
 #define DEFAULT_RECORD_MINQP        0
 #define DEFAULT_RECORD_MAXQP        0
-#define DEFAULT_RECORD_ROTATION     0
+#define DEFAULT_RECORD_ROTATION     0 // 0: no rotate, 1: 90 degree CCW, 2: 90 degree CW, 3: 180 degree
 #define DEFAULT_RECORD_RCMODE       2 // 1: CBR, 2: VBR
 #define DEFAULT_RECORD_RECTIME      30
 
@@ -130,7 +130,7 @@ typedef struct ai_glass_snapshot_param_s {
 #define DEFAULT_AISNAP_QLEVEL       8
 #define DEFAULT_AISNAP_MINQP        0
 #define DEFAULT_AISNAP_MAXQP        0
-#define DEFAULT_AISNAP_ROTATION     0
+#define DEFAULT_AISNAP_ROTATION     0 // 0: no rotate, 1: 90 degree CCW, 2: 90 degree CW, 3: 180 degree
 
 #define DEFAULT_LIFESNAP_TYPE       VIDEO_JPEG
 #define DEFAULT_LIFESNAP_WIDTH      sensor_params[USE_SENSOR].sensor_width
@@ -138,7 +138,7 @@ typedef struct ai_glass_snapshot_param_s {
 #define DEFAULT_LIFESNAP_QLEVEL     8
 #define DEFAULT_LIFESNAP_MINQP      0
 #define DEFAULT_LIFESNAP_MAXQP      0
-#define DEFAULT_LIFESNAP_ROTATION   0
+#define DEFAULT_LIFESNAP_ROTATION   0 // 0: no rotate, 1: 90 degree CCW, 2: 90 degree CW, 3: 180 degree
 
 // Function for media
 int media_update_record_params(const ai_glass_record_param_t *params);

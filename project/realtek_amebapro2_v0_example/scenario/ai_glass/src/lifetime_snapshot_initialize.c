@@ -34,6 +34,8 @@
 #define LIFE_SNAP_PRIORITY      7
 #define MAXIMUM_FILE_TAG_SIZE   32
 #define MAXIMUM_FILE_SIZE       (MAXIMUM_FILE_TAG_SIZE + 32)
+#define SNAPSHOT_12M_ROTATION   DEFAULT_LIFESNAP_ROTATION 
+
 #define SNAPSHOT_12M_QLEVEL     91 // can be 0~100, higher means higher quality
 #define BURST_MODE_MAX_COUNT   1 // when set to 1, disable burst mode. for DDR 128M, maximum can set to 2
 static int raw_index = 0;
@@ -190,6 +192,7 @@ static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t dat
 		ls_video_params.params.fps = sensor_params[SENSOR_IMX681_12M].sensor_fps;
 		ls_video_params.params.jpeg_qlevel = 10;
 		ls_video_params.params.type = VIDEO_JPEG;
+		ls_video_params.params.rotation = SNAPSHOT_12M_ROTATION;
 		ls_video_params.params.out_mode = MODE_EXT;
 		ls_video_params.params.ext_fmt = 1; //NV12
 	#if defined(ENABLE_META_INFO)
@@ -470,6 +473,7 @@ static void high_resolution_snapshot_save(char *file_path)
 	ls_video_params.params.height = sensor_params[sen_id[sensor_id]].sensor_height;
 	ls_video_params.params.fps = sensor_params[sen_id[sensor_id]].sensor_fps;
 	ls_video_params.params.type = VIDEO_NV12;
+	ls_video_params.params.rotation = SNAPSHOT_12M_ROTATION;
 	ls_video_params.params.ext_fmt = 0;
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
 	mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_TYPE_HANDLER, (int)save_high_resolution_yuv);
@@ -719,6 +723,7 @@ int lifetime_snapshot_initialize(void)
 	init_params.video_drop_enable = 0;
 	init_params.dyn_iq_mode = 0;
 	ls_video_params.params.stream_id = JPEG_CHANNEL;
+	ls_video_params.params.rotation = SNAPSHOT_12M_ROTATION;
 	ls_video_params.params.type = VIDEO_NV16;
 	ls_video_params.params.width = sensor_params[sen_id[sensor_id]].sensor_width;
 	ls_video_params.params.height = sensor_params[sen_id[sensor_id]].sensor_height;
@@ -776,6 +781,7 @@ int lifetime_snapshot_initialize(void)
 	if (life_snap_param.width <= sensor_params[USE_SENSOR].sensor_width && life_snap_param.height <= sensor_params[USE_SENSOR].sensor_height) {
 		ls_video_params.params.width = life_snap_param.width;
 		ls_video_params.params.height = life_snap_param.height;
+		ls_video_params.params.rotation = life_snap_param.rotation;
 		ls_video_params.jpg_width = life_snap_param.width;
 		ls_video_params.jpg_height = life_snap_param.height;
 		ls_video_params.params.type = VIDEO_JPEG;
@@ -786,6 +792,7 @@ int lifetime_snapshot_initialize(void)
 									   sensor_params[USE_SENSOR].sensor_width;
 		ls_video_params.params.height = life_snap_param.height <= sensor_params[USE_SENSOR].sensor_height ? ls_video_params.params.height :
 										sensor_params[USE_SENSOR].sensor_height;
+		ls_video_params.params.rotation = life_snap_param.rotation;
 		ls_video_params.jpg_width = life_snap_param.width;
 		ls_video_params.jpg_height = life_snap_param.height;
 		ls_video_params.params.type = VIDEO_NV12;

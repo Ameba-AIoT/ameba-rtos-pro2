@@ -129,6 +129,7 @@ int ai_snapshot_initialize(void)
 		snapshot_param->type = VIDEO_JPEG;
 		snapshot_param->width = ai_snap_param.width;
 		snapshot_param->height = ai_snap_param.height;
+		snapshot_param->rotation = ai_snap_param.rotation;
 		snapshot_param->jpeg_qlevel = ai_snap_param.jpeg_qlevel;
 		snapshot_param->fps = sensor_params[USE_SENSOR].sensor_fps;
 		snapshot_param->roi.xmin = 0;

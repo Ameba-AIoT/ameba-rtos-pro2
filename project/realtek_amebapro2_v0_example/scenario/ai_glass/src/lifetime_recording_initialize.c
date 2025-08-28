@@ -686,6 +686,7 @@ int lifetime_recording_initialize(uint8_t record_filename_length, const char *fi
 	lr_video_params.width = ai_record_param->width;
 	lr_video_params.height = ai_record_param->height;
 	lr_video_params.rc_mode = ai_record_param->rc_mode;
+	lr_video_params.rotation = ai_record_param->rotation;
 	AI_GLASS_MSG("LifeTime Record Max Time = %d\r\n", lr_mp4_params.record_length);
 
 #if AUDIO_SRC==AUDIO_INTERFACE
