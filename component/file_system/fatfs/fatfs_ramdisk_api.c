@@ -13,7 +13,7 @@
 #endif
 
 ////**** Implement the basic functions for RAM FatFs ****////
-#define RAM_DISK_SIZE       (1024 * 1024 * 2)
+#define RAM_DISK_SIZE       (1024 * 1024 * 10)
 #define SECTOR_SIZE_RAM     512
 #define SECTOR_COUNT_RAM    (RAM_DISK_SIZE / SECTOR_SIZE_RAM) // File system volumes = SECTOR_SIZE_RAM * SECTOR_COUNT_RAM
 

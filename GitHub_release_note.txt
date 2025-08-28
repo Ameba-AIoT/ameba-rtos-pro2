@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: d22d5c8d264511d4889b603a1f2f53b48592409d
+* [amebapro2][ai glass] Update AI glass application code
+
 SHA-1: f11ec09d9ee47b572a91426f013df05600e84abc
 * [amebapro2][ai glass] add 12M snapshot and recording flow
 

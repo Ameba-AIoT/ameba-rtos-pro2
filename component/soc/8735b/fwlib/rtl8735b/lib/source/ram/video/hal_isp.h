@@ -1,7 +1,7 @@
 /*
  * hal_isp.h
  *
- *  Created on: 2021Å ~3â‚¬Ã«17â‚¬Ã©
+ *  Created on: 2021¦~3¤ë17¤é
  *      Author: martinhuang
  */
 
@@ -275,9 +275,9 @@ typedef struct {
 	int colot_temperature;
 
 	int y_average;
-    uint32_t white_num;
-    uint32_t rg_sum;
-    uint32_t bg_sum;
+	uint32_t white_num;
+	uint32_t rg_sum;
+	uint32_t bg_sum;
 
 	int hdr_mode;
 	int sensor_fps;
@@ -286,9 +286,9 @@ typedef struct {
 
 	u32 time_stamp;
 
-    uint32_t wdr_hist_contrast;
-    uint32_t wdr_hist_contrast_origin;
-    uint32_t reserved;
+	uint32_t wdr_hist_contrast;
+	uint32_t wdr_hist_contrast_origin;
+	uint32_t reserved;
 
 } isp_statis_meta_t;
 
@@ -330,7 +330,7 @@ typedef struct {
 
 typedef struct {
 	isp_grid_t grid;
-	uint8_t bitmap[ISP_MASK_GRID_CELLS/8];
+	uint8_t bitmap[ISP_MASK_GRID_CELLS / 8];
 
 } isp_grid_mask_entry_t;
 
@@ -384,9 +384,9 @@ struct isp_iq_cali {
 	struct isp_iq_cali_nlsc nlsc;
 } __attribute__((packed));
 
-struct isp_iq_nlsc_point_t { 
-    int32_t x; 
-    int32_t y; 
+struct isp_iq_nlsc_point_t {
+	int32_t x;
+	int32_t y;
 };
 
 struct verify_ctrl_config {

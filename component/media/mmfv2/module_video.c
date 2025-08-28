@@ -38,7 +38,7 @@
 
 #include "ftl_common_api.h"
 
-#define OSD_ENABLE 0
+#define OSD_ENABLE 1
 #define HDR_ENABLE 0
 
 int framecnt = 0;

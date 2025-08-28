@@ -22,7 +22,7 @@
 #define OTA_NN_MDL 	5
 #define OTA_CER 	6
 
-#define UPDATE_UPGRADE_PROGRESS_TO_8773   1
+#define UPDATE_UPGRADE_PROGRESS_TO_8773   0
 
 /*******************************************************************/
 

@@ -826,27 +826,27 @@ int extdisk_filesystem_init(const char *disk_tag, int vfs_type, int interface)
 
 int extdisk_filesystem_deinit(const char *disk_tag, int vfs_type, int interface)
 {
-    if (xSemaphoreTake(extdisk_mutex, portMAX_DELAY) != pdTRUE) {
-        FILE_SYS_ERR("Wait for extdisk mutex timeout\n");
-        return -1;
-    }
+	if (xSemaphoreTake(extdisk_mutex, portMAX_DELAY) != pdTRUE) {
+		FILE_SYS_ERR("Wait for extdisk mutex timeout\n");
+		return -1;
+	}
 
-    // Free JSON object if exists
-    if (filecount_object != NULL) {
-        FILE_SYS_MSG("Deinit: Clearing filecount_object\n");
-        cJSON_Delete(filecount_object);
-        filecount_object = NULL;
-    }
+	// Free JSON object if exists
+	if (filecount_object != NULL) {
+		FILE_SYS_MSG("Deinit: Clearing filecount_object\n");
+		cJSON_Delete(filecount_object);
+		filecount_object = NULL;
+	}
 
-    // Optional: unmount and unregister the VFS
-    vfs_user_unregister(disk_tag, vfs_type, interface);
+	// Optional: unmount and unregister the VFS
+	vfs_user_unregister(disk_tag, vfs_type, interface);
 
-    // Reset disk state
-    ai_glass_extdisk_done = 0;
-    memset(ai_glass_extdisk_tag, 0, MAX_TAG_LEN);
+	// Reset disk state
+	ai_glass_extdisk_done = 0;
+	memset(ai_glass_extdisk_tag, 0, MAX_TAG_LEN);
 
-    FILE_SYS_MSG("Deinit complete\n");
-    xSemaphoreGive(extdisk_mutex);
+	FILE_SYS_MSG("Deinit complete\n");
+	xSemaphoreGive(extdisk_mutex);
 	return 0;
 }
 
@@ -889,33 +889,33 @@ int extdisk_save_file_cntlist(void)
 
 int extdisk_delete_bin_files(void)
 {
-    if (!ai_glass_extdisk_done) {
-        FILE_SYS_ERR("External disk is not initialized\r\n");
-        return 0;  // Failure: disk not ready
-    }
+	if (!ai_glass_extdisk_done) {
+		FILE_SYS_ERR("External disk is not initialized\r\n");
+		return 0;  // Failure: disk not ready
+	}
 
-    DIR *dir = opendir(ai_glass_extdisk_tag);
-    if (!dir) {
-        FILE_SYS_ERR("Failed to open directory: %s\r\n", ai_glass_extdisk_tag);
-        return 0;  // Failure: can't open dir
-    }
+	DIR *dir = opendir(ai_glass_extdisk_tag);
+	if (!dir) {
+		FILE_SYS_ERR("Failed to open directory: %s\r\n", ai_glass_extdisk_tag);
+		return 0;  // Failure: can't open dir
+	}
 
-    int all_deleted = 1; // Flag to track if all deletes succeed
+	int all_deleted = 1; // Flag to track if all deletes succeed
 
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type == DT_REG) { // Regular file
-            const char *filename = entry->d_name;
-            if (check_extension(filename, ".bin")) {
-                FILE_SYS_MSG("Deleting BIN file: %s\r\n", filename);
-                if (extdisk_remove(filename) != 0) {
-                    FILE_SYS_ERR("Failed to delete file: %s\r\n", filename);
-                    all_deleted = 0;  // Mark failure but continue to try others
-                }
-            }
-        }
-    }
+	struct dirent *entry;
+	while ((entry = readdir(dir)) != NULL) {
+		if (entry->d_type == DT_REG) { // Regular file
+			const char *filename = entry->d_name;
+			if (check_extension(filename, ".bin")) {
+				FILE_SYS_MSG("Deleting BIN file: %s\r\n", filename);
+				if (extdisk_remove(filename) != 0) {
+					FILE_SYS_ERR("Failed to delete file: %s\r\n", filename);
+					all_deleted = 0;  // Mark failure but continue to try others
+				}
+			}
+		}
+	}
 
-    closedir(dir);
-    return all_deleted;  // 1 if all deleted, 0 if any failed
+	closedir(dir);
+	return all_deleted;  // 1 if all deleted, 0 if any failed
 }

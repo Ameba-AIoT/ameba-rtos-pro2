@@ -34,6 +34,8 @@ void mmf2_video_example_v1_shapshot_init(void);
 
 void mmf2_video_example_v1_snapshot_hr_init(void);
 
+void mmf2_video_example_v1_shapshot_httpfs_init(void);
+
 void mmf2_video_example_simo_init(void);
 
 void mmf2_video_example_av_init(void);

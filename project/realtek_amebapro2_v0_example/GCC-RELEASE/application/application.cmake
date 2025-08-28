@@ -838,6 +838,7 @@ list(
 	${sdk_root}/component/media/framework
 	${sdk_root}/component/soc/8735b/misc/driver
 	${sdk_root}/component/soc/8735b/misc/driver/xmodem
+	${sdk_root}/component/soc/8735b/misc/driver/mqtt
 
 	${sdk_root}/component/network/coap/include
 	

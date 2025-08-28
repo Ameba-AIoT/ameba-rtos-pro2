@@ -17,13 +17,13 @@
 
 static ai_glass_fw_version_t current_version = {
 
-    .reserve = (uint8_t) VERSION_RESERVE,
+	.reserve = (uint8_t) VERSION_RESERVE,
 
-    .major = (uint8_t) VERSION_MAJOR,
+	.major = (uint8_t) VERSION_MAJOR,
 
-    .minor = (uint8_t) VERSION_MINOR,
+	.minor = (uint8_t) VERSION_MINOR,
 
-    .patch = (uint8_t) VERSION_PATCH,
+	.patch = (uint8_t) VERSION_PATCH,
 
 };
 
@@ -31,17 +31,16 @@ static ai_glass_fw_version_t current_version = {
 //Default function
 static int default_ai_glass_fw_version_get(ai_glass_fw_version_t *out_buf)
 {
-    if (out_buf) {
-        *out_buf = current_version;
-        return AI_GLASS_GET_FW_VERSION_OKAY;
-    }
-    else {
+	if (out_buf) {
+		*out_buf = current_version;
+		return AI_GLASS_GET_FW_VERSION_OKAY;
+	} else {
 		AI_GLASS_ERR("Invalid Firmware Buffer\r\n");
-        return AI_GLASS_GET_FW_VERSION_INVALID_BUFFER;
-    }
+		return AI_GLASS_GET_FW_VERSION_INVALID_BUFFER;
+	}
 }
 
-//Users can set custom get_fw_version function through the callback function. 
+//Users can set custom get_fw_version function through the callback function.
 static void (*ai_glass_custom_get_fw_func)(ai_glass_fw_version_t *) = NULL;
 void ai_glass_set_custom_get_fw_version_func(void (*func)(ai_glass_fw_version_t *))
 {
@@ -50,13 +49,13 @@ void ai_glass_set_custom_get_fw_version_func(void (*func)(ai_glass_fw_version_t 
 
 ai_glass_fw_version_t ai_glass_get_fw_version(void)
 {
-    ai_glass_fw_version_t fw_version;
+	ai_glass_fw_version_t fw_version;
 	if (ai_glass_custom_get_fw_func) {
 		ai_glass_custom_get_fw_func(&fw_version);
 	} else {
-        //Default function
+		//Default function
 		default_ai_glass_fw_version_get(&fw_version);
 		AI_GLASS_INFO("Firmware Version: %d.%d.%d.%d\r\n", fw_version.reserve, fw_version.major, fw_version.minor, fw_version.patch);
 	}
-    return fw_version;
+	return fw_version;
 }
