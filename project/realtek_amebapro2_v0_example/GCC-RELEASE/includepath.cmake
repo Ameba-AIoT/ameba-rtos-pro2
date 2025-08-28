@@ -122,7 +122,10 @@ list (
 	"${sdk_root}/component/soc/8735b/fwlib/rtl8735b/lib/source/ram/video"
 	"${sdk_root}/component/soc/8735b/fwlib/rtl8735b/lib/source/ram/video/semihost"
 	"${sdk_root}/component/soc/8735b/cmsis/voe/rom"
-	   
+
+    "${sdk_root}/component/application/tof_sensor"
+    "${sdk_root}/component/application/tof_sensor/vl53l5cx_uld_driver/inc"
+    "${sdk_root}/component/application/tof_sensor/vl53l5cx_uld_driver/platform"
 )
 
 get_filename_component(inc_path "${inc_path_re}" ABSOLUTE)
