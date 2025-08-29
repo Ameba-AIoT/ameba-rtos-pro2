@@ -180,4 +180,12 @@ int media_update_record_time(uint16_t record_length);
 
 #define ENABLE_JPEG_EXIF 1
 
+// Bitwise on clear flash
+#define CLEAR_AI_SNAPSHOT   0x01
+#define CLEAR_LIFE_SNAPSHOT 0x02
+#define CLEAR_RECORD_PARAMS 0x04
+#define CLEAR_ALL           0xFF
+
+int media_clear_flash(uint8_t option);
+
 #endif

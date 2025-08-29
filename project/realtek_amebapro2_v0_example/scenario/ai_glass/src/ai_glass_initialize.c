@@ -2109,13 +2109,40 @@ endofsnapshot:
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_SNAPSHOT = %lu\r\n", mm_read_mediatime_ms());
 }
 
+void fCLEARMEDIAFLASH(void *arg)
+{
+    int argc = 0;
+    char *argv[MAX_ARGC] = {0};
+   
+    argc = parse_param(arg, argv);  // Typical AT command parsing
+ 
+    if (argc < 2) {
+        AI_GLASS_ERR("[ATCMD CLEAR MEDIA FLASH] Usage: AT+AIGLASSCLEARMEDIAFLASH=XX\r\n");
+        return;
+    }
+ 
+    unsigned int clear_macro = 0;
+    if (sscanf(argv[1], "%x", &clear_macro) != 1) {
+        AI_GLASS_ERR("[ATCMD CLEAR MEDIA FLASH] Invalid CLEAR ID format: %s\r\n", argv[1]);
+        return;
+    }
+ 
+    if (media_clear_flash(clear_macro) < 0) {
+        AI_GLASS_ERR("[ATCMD CLEAR MEDIA FLASH] Clear macro 0x%02X not found\r\n", clear_macro);
+        return;
+    }
+ 
+    AI_GLASS_MSG("[ATCMD CLEAR MEDIA FLASH] Clear macro 0x%02X\r\n", clear_macro);
+}
+
 log_item_t at_ai_glass_items[ ] = {
-	{"AT+AIGLASSFORMAT",    fDISKFORMAT,    {NULL, NULL}},
-	{"AT+AIGLASSGSENSOR",   fTESTGSENSOR,   {NULL, NULL}},
-	{"AT+AIGLASSMSC",       fENABLEMSC,     {NULL, NULL}},
-	{"AT+AIGLASSSETAPMODE", fENABLEAPMODE,  {NULL, NULL}},
-	{"AT+AIGLASSLFSNAP",    fLFSNAPSHOT,    {NULL, NULL}},
-	{"AT+AIGLASSSETSTAMODE", fENABLESTAMODE, {NULL, NULL}},
+	{"AT+AIGLASSFORMAT",    fDISKFORMAT,            {NULL, NULL}},
+	{"AT+AIGLASSGSENSOR",   fTESTGSENSOR,           {NULL, NULL}},
+	{"AT+AIGLASSMSC",       fENABLEMSC,             {NULL, NULL}},
+	{"AT+AIGLASSSETAPMODE", fENABLEAPMODE,          {NULL, NULL}},
+	{"AT+AIGLASSLFSNAP",    fLFSNAPSHOT,            {NULL, NULL}},
+	{"AT+AIGLASSSETSTAMODE", fENABLESTAMODE,        {NULL, NULL}},
+	{"AT+AIGLASSCLEARMEDIAFLASH", fCLEARMEDIAFLASH, {NULL, NULL}},
 };
 #endif
 void ai_glass_log_init(void)

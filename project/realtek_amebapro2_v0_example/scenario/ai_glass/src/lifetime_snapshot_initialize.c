@@ -348,8 +348,6 @@ static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint3
 		v_cfg->verify_nlsc_center[i].verify_nlsc_bcenter_x = center_x;
 		v_cfg->verify_nlsc_center[i].verify_nlsc_bcenter_y = center_y;
 	}
-	// dcache_clean_by_addr((uint32_t *)img_buf_addr0, y_len + uv_len);
-	// dcache_clean_by_addr((uint32_t *)img_buf_addr1, y_len + uv_len);
 	SCB_CleanDCache();
 }
 static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32_t data_size)
@@ -430,9 +428,10 @@ static void high_resolution_snapshot_save(char *file_path)
 #if USE_VIDEO_HR_FLOW
 	int proc_raw_idx = 0;
 	int timeout_count = 0;
-	nv12_gen_time = mm_read_mediatime_ms();
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
-	//switch to verify sequece driver
+	nv16_take_time = mm_read_mediatime_ms() - nv16_take_time;
+	//switch to verify sequence driver
+	nv12_gen_time = mm_read_mediatime_ms();
 	int sensor_id = 3;
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_SENSOR_ID, sensor_id);
 	if (init_params.v_cfg == NULL) {
@@ -561,6 +560,7 @@ static void high_resolution_snapshot_take(char *file_path)
 		goto snashot_fail;
 	}
 	// get 12M NV16 raw
+	nv16_take_time = mm_read_mediatime_ms();
 	get_raw_data = 0;
 	int timeout_count = 0;
 	raw_index = proc_raw_idx;
@@ -582,7 +582,6 @@ static void high_resolution_snapshot_take(char *file_path)
 	}
 	AI_GLASS_MSG("get 12M NV16 done time %lu\r\n", mm_read_mediatime_ms());
 	lfsnap_status = LIFESNAP_GET;
-	nv16_take_time = mm_read_mediatime_ms() - nv16_take_time;
 	return;
 snashot_fail:
 	lfsnap_status = LIFESNAP_FAIL;
@@ -686,15 +685,22 @@ video_pre_init_params_t ai_glass_pre_init_params = {0};
 int lifetime_snapshot_initialize(void)
 {
 	int ret = 0;
-	nv16_take_time = mm_read_mediatime_ms();
 	if (lfsnap_status != LIFESNAP_IDLE) {
 		ret = -2;
 		goto endoflifesnapshot;
 	}
 
 #if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_IMX471)
-	// Deinitialize fake media channel
 	memset(&init_params, 0x00, sizeof(video_pre_init_params_t));
+	// Deinitialize fake media channel
+	deinitial_media();
+	//remalloc voe heap to 45M
+	int voe_heap_size = 45 * 1024 * 1024;
+	video_set_voe_heap((int)NULL, voe_heap_size, 1);
+	AI_GLASS_INFO("\r\n voe heap size = %d\r\n", voe_heap_size);
+	AI_GLASS_INFO("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
+	// Load the AE and AWB data
+	media_get_preinit_isp_data(&init_params);
 	init_params.isp_init_enable = 1;
 	init_params.init_isp_items.init_brightness = 0;
 	init_params.init_isp_items.init_contrast = 50;
@@ -705,14 +711,6 @@ int lifetime_snapshot_initialize(void)
 	init_params.init_isp_items.init_wdr_mode = 0; //disable WDR
 	init_params.init_isp_items.init_mipi_mode = 0;
 	init_params.voe_dbg_disable = 1;
-	deinitial_media();
-	//remalloc voe heap to 45M
-	int voe_heap_size = 45 * 1024 * 1024;
-	video_set_voe_heap((int)NULL, voe_heap_size, 1);
-	AI_GLASS_INFO("\r\n voe heap size = %d\r\n", voe_heap_size);
-	AI_GLASS_INFO("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
-	// Load the AE and AWB data
-	media_get_preinit_isp_data(&init_params);
 	init_params.isp_ae_enable = 1;
 	init_params.isp_awb_enable = 1;
 	init_params.init_isp_items.init_mirrorflip = 0xf0;

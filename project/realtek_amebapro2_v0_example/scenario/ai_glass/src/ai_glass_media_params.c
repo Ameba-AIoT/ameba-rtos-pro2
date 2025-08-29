@@ -901,3 +901,33 @@ void deinitial_media(void)
 		AI_GLASS_MSG("The Last Channel has been closed\r\n");
 	}
 }
+
+int media_clear_flash(uint8_t option)
+{
+    unsigned char *clear_buf = malloc(FLASH_LIFE_SNAP_BLOCK_SIZE); // largest block
+    if (clear_buf == NULL) {
+        AI_GLASS_ERR("Fail to alloc clear buffer\r\n");
+        return MEDIA_FAIL;
+    }
+    memset(clear_buf, 0xFF, FLASH_LIFE_SNAP_BLOCK_SIZE); // all erased
+ 
+    if (sys_get_boot_sel() == 0) {
+        if (option & CLEAR_AI_SNAPSHOT) {
+            ftl_common_write(FLASH_AI_SNAP_BLOCK_BASE, clear_buf, FLASH_AI_SNAP_BLOCK_SIZE);
+            AI_GLASS_MSG("[FLASH] Cleared AI snapshot block\r\n");
+        }
+        if (option & CLEAR_LIFE_SNAPSHOT) {
+            ftl_common_write(FLASH_LIFE_SNAP_BLOCK_BASE, clear_buf, FLASH_LIFE_SNAP_BLOCK_SIZE);
+            AI_GLASS_MSG("[FLASH] Cleared lifetime snapshot block\r\n");
+        }
+        if (option & CLEAR_RECORD_PARAMS) {
+            ftl_common_write(FLASH_REC_BLOCK_BASE, clear_buf, FLASH_REC_BLOCK_SIZE);
+            AI_GLASS_MSG("[FLASH] Cleared record params block\r\n");
+        }
+    } else {
+        AI_GLASS_MSG("Failed to clear media flash\r\n");
+    }
+ 
+    free(clear_buf);
+    return MEDIA_OK;
+}
