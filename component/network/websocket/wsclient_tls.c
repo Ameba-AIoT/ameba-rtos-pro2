@@ -21,6 +21,8 @@ struct wss_tls {
 	mbedtls_net_context socket;
 };
 
+#define MBEDTLS_SSL_MAX_CONTENT_LEN                16384
+
 static void *my_calloc(size_t nelements, size_t elementSize)
 {
 	size_t size;
