@@ -1268,7 +1268,6 @@ lifetimesnapshot:
 					extdisk_save_file_cntlist();
 					AI_GLASS_MSG("Extdisk save file countlist done = %lu\r\n", mm_read_mediatime_ms());
 					status = AI_GLASS_CMD_COMPLETE;
-					critical_process_started = 0;
 					uart_resp_snapshot(param, status);
 				} else {
 					status = AI_GLASS_PROC_FAIL;
@@ -1279,6 +1278,7 @@ lifetimesnapshot:
 				while (lifetime_snapshot_deinitialize()) {
 					vTaskDelay(1);
 				}
+				critical_process_started = 0;
 				AI_GLASS_MSG("lifetime snapshot deinit done = %lu\r\n", mm_read_mediatime_ms());
 			} else if (ret == -2) {
 				status = AI_GLASS_BUSY;
