@@ -19,7 +19,7 @@
 #include "ai_glass_initialize.h"
 
 #define USE_HTTPS                   1
-#define DELETE_FILE_AFTER_UPLOAD    1
+#define DELETE_FILE_AFTER_UPLOAD    0
 #define HTTP_PORT                   8080 //80
 #define HTTPS_PORT                  8080 //443
 
@@ -767,14 +767,14 @@ static void media_getfile_cb(struct httpd_conn *conn)
 				WLAN_SCEN_MSG("Http send %s completed successfully\r\n", filename);
 
 				// DELETE FILE MECHANISM HAS CHANGED
-				// if (delete_file_after_upload) {
-				// 	// vTaskDelay(2000);
-				// 	extdisk_remove(filename);
-				// 	extdisk_save_file_cntlist();
-				// 	WLAN_SCEN_MSG("Delete file %s\r\n", filename);
-				// } else {
-				// 	WLAN_SCEN_MSG("Keep file %s\r\n", filename);
-				// }
+				if (delete_file_after_upload) {
+					// vTaskDelay(2000);
+					extdisk_remove(filename);
+					extdisk_save_file_cntlist();
+					WLAN_SCEN_MSG("Delete file %s\r\n", filename);
+				} else {
+					WLAN_SCEN_MSG("Keep file %s\r\n", filename);
+				}
 			} else {
 				WLAN_SCEN_WARN("Http send %s fail, ret = %lx\r\n", filename, notifyValue);
 			}
