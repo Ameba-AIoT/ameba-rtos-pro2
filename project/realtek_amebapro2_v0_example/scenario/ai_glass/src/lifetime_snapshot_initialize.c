@@ -682,7 +682,7 @@ closebuff:
 }
 
 video_pre_init_params_t ai_glass_pre_init_params = {0};
-int lifetime_snapshot_initialize(void)
+int lifetime_snapshot_initialize(isp_info_sync_t *isp_info)
 {
 	int ret = 0;
 	if (lfsnap_status != LIFESNAP_IDLE) {
@@ -714,6 +714,19 @@ int lifetime_snapshot_initialize(void)
 	init_params.isp_ae_enable = 1;
 	init_params.isp_awb_enable = 1;
 	init_params.init_isp_items.init_mirrorflip = 0xf0;
+	//sync isp info
+	if (isp_info->isp_exposure_time != 0) {
+		init_params.isp_ae_init_exposure = isp_info->isp_exposure_time;
+	}
+	if (isp_info->isp_exposure_gain != 0) {
+		init_params.isp_ae_init_gain = (uint32_t)isp_info->isp_exposure_gain;
+	}
+	if (isp_info->isp_red_gain != 0) {
+		init_params.isp_awb_init_rgain = (uint32_t)isp_info->isp_red_gain;
+	}
+	if (isp_info->isp_blue_gain != 0) {
+		init_params.isp_awb_init_bgain = (uint32_t)isp_info->isp_blue_gain;
+	}
 	// get 12M raw
 	int sensor_id = 2;
 	init_params.isp_init_raw = 1;
@@ -799,6 +812,19 @@ int lifetime_snapshot_initialize(void)
 	}
 
 	video_pre_init_params_t ai_glass_pre_init_params = {0};
+	//sync isp info
+	if (isp_info->isp_exposure_time != 0) {
+		ai_glass_pre_init_params.isp_ae_init_exposure = isp_info->isp_exposure_time;
+	}
+	if (isp_info->isp_exposure_gain != 0) {
+		ai_glass_pre_init_params.isp_ae_init_gain = (uint32_t)isp_info->isp_exposure_gain;
+	}
+	if (isp_info->isp_red_gain != 0) {
+		ai_glass_pre_init_params.isp_awb_init_rgain = (uint32_t)isp_info->isp_red_gain;
+	}
+	if (isp_info->isp_blue_gain != 0) {
+		ai_glass_pre_init_params.isp_awb_init_bgain = (uint32_t)isp_info->isp_blue_gain;
+	}
 	ls_video_params.params.stream_id = MAIN_STREAM_ID;
 	ls_video_params.params.fps = 5;
 	ls_video_params.params.gop = 5;

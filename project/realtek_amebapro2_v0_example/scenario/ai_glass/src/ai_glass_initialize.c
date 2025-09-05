@@ -213,6 +213,10 @@ typedef struct snapshot_pkt_s {
 	uint16_t    RESIZE_H;
 	uint8_t     lifetime_file_name_len;
 	char        lifetime_file_name[49];
+	uint32_t    isp_exposure_time;
+	uint16_t    isp_exposure_gain;
+	uint16_t    isp_red_gain;
+	uint16_t    isp_blue_gain;
 } snapshot_pkt_t;
 
 static void parser_snapshot_pkt2param(ai_glass_snapshot_param_t *snap_buf, uint8_t *raw_buf)
@@ -238,6 +242,10 @@ static void parser_snapshot_pkt2param(ai_glass_snapshot_param_t *snap_buf, uint8
 		
 		memcpy(aisnap_buf.lifetime_file_name, &raw_buf[24], aisnap_buf.lifetime_file_name_len);
 
+		aisnap_buf.isp_exposure_time = raw_buf[72] | (raw_buf[73] << 8) | (raw_buf[74] << 16) | (raw_buf[75] << 24);
+		aisnap_buf.isp_exposure_gain = raw_buf[77] | (raw_buf[78] << 8) | (raw_buf[79] << 16) | (raw_buf[80] << 24);
+		aisnap_buf.isp_red_gain = raw_buf[81] | (raw_buf[82] << 8) | (raw_buf[83] << 16);
+		aisnap_buf.isp_blue_gain = raw_buf[84] | (raw_buf[85] << 8) | (raw_buf[86] << 16);
 
 		AI_GLASS_MSG("AI_snapshot_parameter\r\n");
 
@@ -252,7 +260,11 @@ static void parser_snapshot_pkt2param(ai_glass_snapshot_param_t *snap_buf, uint8
 		AI_GLASS_MSG("RESIZE_W = %u\r\n", aisnap_buf.RESIZE_W);
 		AI_GLASS_MSG("RESIZE_H = %u\r\n", aisnap_buf.RESIZE_H);
 		AI_GLASS_MSG("LF_FILENAME_LENGTH = %u\r\n", aisnap_buf.lifetime_file_name_len);
-		AI_GLASS_MSG("LF_FILENAME = %s\r\n", aisnap_buf.lifetime_file_name);	
+		AI_GLASS_MSG("LF_FILENAME = %s\r\n", aisnap_buf.lifetime_file_name);
+		AI_GLASS_MSG("isp_exposure_time = %lu\r\n", aisnap_buf.isp_exposure_time);
+		AI_GLASS_MSG("isp_exposure_gain = %u\r\n", aisnap_buf.isp_exposure_gain);
+		AI_GLASS_MSG("isp_red_gain = %u\r\n", aisnap_buf.isp_red_gain);
+		AI_GLASS_MSG("isp_blue_gain = %u\r\n", aisnap_buf.isp_blue_gain);
 
 		snap_buf->width = aisnap_buf.RESIZE_W;
 		snap_buf->height = aisnap_buf.RESIZE_H;
@@ -266,6 +278,10 @@ static void parser_snapshot_pkt2param(ai_glass_snapshot_param_t *snap_buf, uint8
 		memcpy(snap_buf->lifetime_file_name,
        		aisnap_buf.lifetime_file_name,
        		sizeof(snap_buf->lifetime_file_name));
+		snap_buf->isp_exposure_time = aisnap_buf.isp_exposure_time;
+		snap_buf->isp_exposure_gain = aisnap_buf.isp_exposure_gain;
+		snap_buf->isp_red_gain = aisnap_buf.isp_red_gain;
+		snap_buf->isp_blue_gain = aisnap_buf.isp_blue_gain;
 	}
 }
 
@@ -1166,6 +1182,7 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 {
 	uint8_t status = AI_GLASS_CMD_COMPLETE;
 	ai_glass_snapshot_param_t ai_snap_params = {0};
+	isp_info_sync_t isp_info = {0};
 	AI_GLASS_MSG("get UART_RX_OPC_CMD_SNAPSHOT = %lu\r\n", mm_read_mediatime_ms());
 	if (xSemaphoreTake(video_proc_sema, 0) != pdTRUE) {
 		status = AI_GLASS_BUSY;
@@ -1217,7 +1234,29 @@ lifetimesnapshot:
 			ai_glass_init_external_disk();
 			AI_GLASS_MSG("Process LIFETIME SNAPSHOT\r\n");
 
-			int ret = lifetime_snapshot_initialize();
+			if (dual_snapshot != 1) {
+				AI_GLASS_MSG("Received isp info from LF snapshot param\r\n");
+				isp_info.isp_exposure_time = snapshot_param[49] | (snapshot_param[50] << 8) | (snapshot_param[51] << 16) | (snapshot_param[52] << 24);
+				isp_info.isp_exposure_gain = snapshot_param[54] | (snapshot_param[55] << 8) | (snapshot_param[56] << 16) | (snapshot_param[57] << 24);
+				isp_info.isp_red_gain = snapshot_param[58] | (snapshot_param[59] << 8) | (snapshot_param[60] << 16);
+				isp_info.isp_blue_gain = snapshot_param[61] | (snapshot_param[62] << 8) | (snapshot_param[63] << 16);
+				AI_GLASS_INFO("isp_exposure_time = %u\r\n", isp_info.isp_exposure_time);
+				AI_GLASS_INFO("isp_exposure_gain = %u\r\n", isp_info.isp_exposure_gain);
+				AI_GLASS_INFO("isp_red_gain = %u\r\n", isp_info.isp_red_gain);
+				AI_GLASS_INFO("isp_blue_gain = %u\r\n", isp_info.isp_blue_gain);
+			} else {
+				// AI+Lifetime snapshot, store the ISP settings from AI snapshot params for use in lifetime snapshot
+				AI_GLASS_MSG("Received isp info from AI snapshot param\r\n");
+				isp_info.isp_exposure_time = ai_snap_params.isp_exposure_time;
+				isp_info.isp_exposure_gain = ai_snap_params.isp_exposure_gain;
+				isp_info.isp_red_gain = ai_snap_params.isp_red_gain;
+				isp_info.isp_blue_gain = ai_snap_params.isp_blue_gain;
+				AI_GLASS_INFO("isp_exposure_time = %u\r\n", isp_info.isp_exposure_time);
+				AI_GLASS_INFO("isp_exposure_gain = %u\r\n", isp_info.isp_exposure_gain);
+				AI_GLASS_INFO("isp_red_gain = %u\r\n", isp_info.isp_red_gain);
+				AI_GLASS_INFO("isp_blue_gain = %u\r\n", isp_info.isp_blue_gain);
+			}
+			int ret = lifetime_snapshot_initialize(&isp_info);
 			if (ret == 0) {
 				status = AI_GLASS_DEVICE_WORKING_IN_PROG; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
 				uart_resp_snapshot(param, status);
@@ -2060,6 +2099,7 @@ void fENABLESTAMODE(void *arg)
 void fLFSNAPSHOT(void *arg)
 {
 	uint8_t status = AI_GLASS_CMD_COMPLETE;
+	isp_info_sync_t isp_info = {0};
 	if (xSemaphoreTake(video_proc_sema, 0) != pdTRUE) {
 		AI_GLASS_WARN("AI glass is snapshot or record, current snapshot busy fail\r\n");
 		goto endofsnapshot;
@@ -2068,7 +2108,7 @@ void fLFSNAPSHOT(void *arg)
 	ai_glass_init_external_disk();
 	AI_GLASS_MSG("Process LIFETIME SNAPSHOT\r\n");
 
-	int ret = lifetime_snapshot_initialize();
+	int ret = lifetime_snapshot_initialize(&isp_info);
 	if (ret == 0) {
 		char temp_record_filename_buffer[160] = {0};
 		uint8_t lifetime_snap_name[160] = {0};

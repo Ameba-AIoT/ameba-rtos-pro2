@@ -93,7 +93,18 @@ typedef struct ai_glass_snapshot_param_s {
 	uint8_t     rotation;
 	uint8_t     lifetime_file_name_len;
 	char        lifetime_file_name[49];
+	uint32_t    isp_exposure_time;
+	uint16_t    isp_exposure_gain;
+	uint16_t    isp_red_gain;
+	uint16_t    isp_blue_gain;
 } ai_glass_snapshot_param_t;
+
+typedef struct isp_info_sync_s {
+	uint32_t isp_exposure_time;
+	uint16_t isp_exposure_gain;
+	uint16_t isp_red_gain;
+	uint16_t isp_blue_gain;
+} isp_info_sync_t;
 
 #define MAX_LIFESNAP_WIDTH          sensor_params[USE_SENSOR].sensor_width
 #define MAX_LIFESNAP_HEIGHT         sensor_params[USE_SENSOR].sensor_height
@@ -162,7 +173,7 @@ int ai_snapshot_take(const char *file_name);
 int ai_snapshot_deinitialize(void);
 
 // life snapshot
-int lifetime_snapshot_initialize(void);
+int lifetime_snapshot_initialize(isp_info_sync_t *isp_info);
 int lifetime_snapshot_take(const char *file_name);
 int lifetime_highres_save(const char *file_name);
 int lifetime_snapshot_deinitialize(void);
