@@ -44,6 +44,7 @@ else()
 
 endif()
 
+#MMF_MODULES
 list(
     APPEND scn_sources
     ${sdk_root}/component/media/mmfv2/module_video.c
@@ -54,6 +55,14 @@ list(
     ${sdk_root}/component/media/mmfv2/module_filesaver.c
 )
 
+#NN module
+list(
+    APPEND app_sources
+
+    ${sdk_root}/component/media/mmfv2/module_vipnn.c
+)
+
+#GYROSENSOR
 list(
     APPEND scn_sources
     ${CMAKE_CURRENT_LIST_DIR}/src/gyrosensor/gyrosensor_api.c
@@ -125,6 +134,42 @@ list(
 	librtsremosaic
 )
 
+#AINR
+list(
+	APPEND app_sources
+	${prj_root}/src/test_model/ainr/ainr.c
+	${prj_root}/src/test_model/ainr/ulaw_encode_lookup.S
+	${prj_root}/src/test_model/ainr/ulaw_decode_lookup.S
+)
+
+#NN_UTILS
+list(
+    APPEND scn_sources
+	${prj_root}/src/test_model/nn_utils/sigmoid.c
+	${prj_root}/src/test_model/nn_utils/quantize.c
+	${prj_root}/src/test_model/nn_utils/iou.c
+	${prj_root}/src/test_model/nn_utils/nms.c
+	${prj_root}/src/test_model/nn_utils/tensor.c
+	${prj_root}/src/test_model/nn_utils/class_name.c
+
+	${prj_root}/src/test_model/roi_delta_qp/roi_delta_qp.c   
+    ${prj_root}/src/test_model/nnlite/nnlite_api.c
+)
+list(
+	APPEND scn_inc_path
+	${prj_root}/src/test_model/ainr
+	${prj_root}/src/test_model/nnlite
+    ${prj_root}/src/test_model/svm
+	${prj_root}/src/test_model
+	${prj_root}/src
+	${prj_root}/src/${viplite}/sdk/inc
+	${prj_root}/src/${viplite}/driver/inc
+	${prj_root}/src/${viplite}/hal/inc
+	${prj_root}/src/${viplite}/hal/user
+	${prj_root}/src/${viplite}/hal/user/freeRTOS
+	${prj_root}/src/${viplite}/include
+	${prj_root}/src/${viplite}/include/nbg_linker
+)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${function_wrapper}" CACHE INTERNAL "")
 
 

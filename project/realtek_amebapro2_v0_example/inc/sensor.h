@@ -81,6 +81,7 @@ struct sensor_params_t {
 #define SENSOR_IMX681_12M_SEQ 0x3A  //  |   v    |   -    |   v    |   -    |
 #define SENSOR_FIXP_5M        0x3B  //  |   v    |   -    |   -    |   -    |
 #define SENSOR_FIXP_2K        0x3C  //  |   v    |   -    |   -    |   -    |
+#define SENSOR_SC5356_2M      0x3D  //  |   v    |   v    |   v    |   -    |
 
 static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_DUMMY]        = {1920, 1080, 30},
@@ -140,10 +141,11 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_IMX471_12M]       = {4032, 3024, 5},
 	[SENSOR_IMX471_12M_SEQ]   = {2032, 3024, 5}, //width = 2016 + 16(overlap)
 	[SENSOR_IMX681]       = {2000, 1500, 30},
-	[SENSOR_IMX681_12M]       = {4016, 3008, 4},
-	[SENSOR_IMX681_12M_SEQ]   = {2032, 3008, 4}, //width = 2008 + 24(overlap)
+	[SENSOR_IMX681_12M]       = {4016, 3012, 4},
+	[SENSOR_IMX681_12M_SEQ]   = {2032, 3012, 4}, //width = 2008 + 24(overlap)
 	[SENSOR_FIXP_5M]        = {2592, 1944, 30}, //fix pattern
 	[SENSOR_FIXP_2K]        = {2560, 1440, 30},
+	[SENSOR_SC5356_2M]       = {1088, 1944, 30},
 };
 
 #define SENSOR_MAX         5

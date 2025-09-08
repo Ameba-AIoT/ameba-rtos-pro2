@@ -20,6 +20,7 @@
 #include "isp_ctrl_api.h"
 #include "avcodec.h"
 #include "librtsremosaic.h"
+#include <ainr.h>
 
 // Definition of LIFE SNAPSHOT STATUS
 #define LIFESNAP_IDLE   0x00
@@ -38,6 +39,7 @@
 
 #define SNAPSHOT_12M_QLEVEL     91 // can be 0~100, higher means higher quality
 #define BURST_MODE_MAX_COUNT   1 // when set to 1, disable burst mode. for DDR 128M, maximum can set to 2
+#define ENABLE_AINR 		   0 // enable AINR for high res snapshot
 static int raw_index = 0;
 //set output resolution to high resolution
 #define OUT_IMG_WIDTH sensor_params[sen_id[2]].sensor_width
@@ -91,6 +93,7 @@ static uint32_t raw_image_len = 0;
 static int image_count = 0;
 static uint8_t *hr_nv12_image = NULL;
 static video_pre_init_params_t init_params = {0};
+static ainr_ctx_t *ainr_ctx = NULL;
 
 // Hardware 12M snapshot
 static uint8_t *jpeg_nv12_addr = NULL;
@@ -100,8 +103,8 @@ static SemaphoreHandle_t jpeg_get_sema = NULL;
 #if defined(ENABLE_META_INFO)
 static video_meta_t metadata;
 static ExifParams param = {
-	.make = "Realtek",                        // Manufacturer (e.g., "Realtek")
-	.model = "Rtl8735b",                     // Camera model (e.g., "Rtl8735b")
+	.make = "Realtek",                      // Manufacturer (e.g., "Realtek")
+	.model = "Rtl8735b",                    // Camera model (e.g., "Rtl8735b")
 	.datetime = "2025:07:22 15:16:17",      // Date and time of capture (EXIF format: "YYYY:MM:DD HH:MM:SS")
 	.exposure_time = 1.0 / 500.0,           // Exposure time (e.g., 1/500 second ?? 0.002)
 	.fnumber = 2.8,                         // Aperture (e.g., f/2.8)
@@ -110,8 +113,8 @@ static ExifParams param = {
 	.iso = 200,                             // ISO value (e.g., ISO 200)
 	.gps_latitude = 25.0701,                // Latitude (e.g., 25.0701 for 25?X 4' 12" North)
 	.gps_longitude = 121.568,               // Longitude (e.g., 121.568 for 121?X 34' 5" East)
-	.gps_altitude = 43.2,                  // Altitude in meters (e.g., 43.2 meters above sea level)
-	.has_gps = 1                             // GPS information present (1 = true, 0 = false)
+	.gps_altitude = 43.2,                   // Altitude in meters (e.g., 43.2 meters above sea level)
+	.has_gps = 1                            // GPS information present (1 = true, 0 = false)
 };
 
 static void video_jpeg_exif(video_meta_t *m_parm)
@@ -177,13 +180,12 @@ static int jpeg_encode_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
 	if (lfsnap_status == LIFESNAP_GET) {
-		// int ret = 0;
-		init_params.isp_init_raw = 0;
-		init_params.isp_raw_mode_tnr_dis = 0;
-		init_params.dyn_iq_mode = 0;
-		init_params.dn_init_enable = 0;
-		init_params.dn_init_mode = 0;
-		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
+		// init_params.isp_init_raw = 0;
+		// init_params.isp_raw_mode_tnr_dis = 0;
+		// init_params.dyn_iq_mode = 0;
+		// init_params.dn_init_enable = 0;
+		// init_params.dn_init_mode = 0;
+		// mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
 		AI_GLASS_MSG("get liftime snapshot frame time %lu\r\n", mm_read_mediatime_ms());
 		AI_GLASS_MSG("file_path:%s  data_addr:%ld  data_size:%ld \r\n", file_path, data_addr, data_size);
 		AI_GLASS_MSG("get liftime snapshot frame encode done time %lu\r\n", mm_read_mediatime_ms());
@@ -289,7 +291,7 @@ static void *alloc_split_raw_item(splited_raw_item_t *splited_raw, uint32_t spli
 	uint16_t align_bit = 5;
 	int align_size = 1 << align_bit;
 	uint32_t split_raw_size_align = (split_raw_size + align_size - 1) & ~(align_size - 1);
-	uint32_t buffer_size = split_raw_size_align * 2 + align_size;
+	uint32_t buffer_size = split_raw_size_align * SPLIT_RAW_NUM + align_size;
 
 	splited_raw->virt_addr = malloc(buffer_size);
 	if (!splited_raw->virt_addr) {
@@ -352,6 +354,26 @@ static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint3
 }
 static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
+#if ENABLE_AINR && (USE_SENSOR == SENSOR_IMX681)
+	if(init_params.isp_ae_init_gain > (256 * 85 / 10)) {
+		// IMX681 AINR flow for exposure gain > 8.5x
+		if (ainr_ctx == NULL) {
+			ainr_ctx = ainr_init();
+		}
+		if(ainr_ctx) {
+			uint8_t *ainr_raw_image = splited_raw_image[raw_index].virt_addr;
+			uint32_t ainr_raw_image_size = data_size;
+			if (ainr_process_frame(ainr_ctx, (const void *)data_addr, ainr_raw_image, ainr_raw_image_size, 256) != OK) {
+				printf("ainr_process_frame() failed.\r\n");
+				return;
+			}
+			pack_bayer_to_planar((uint8_t *)data_addr, (const uint16_t *)ainr_raw_image, ainr_raw_image_size);
+		} else {
+			printf("ainr_init() failed.\r\n");
+			return;
+		}
+	}
+#endif
 	raw_image_len = data_size;
 	//split 12M raw to 2 * 6M raw
 	uint8_t *tiled_raws[2];
@@ -437,20 +459,6 @@ static void high_resolution_snapshot_save(char *file_path)
 	if (init_params.v_cfg == NULL) {
 		init_params.v_cfg = malloc(sizeof(struct verify_ctrl_config));
 	}
-#if USE_SENSOR == SENSOR_IMX471
-	uint8_t zoom_coef[ISP_ZOOM_FILTER_COEF_NUM] = {
-		0, 0, 1, 1, 3, 5, 9, 14, 21, 30,
-		40, 52, 65, 79, 92, 105, 116, 125, 131, 135
-	};
-	init_params.zoom_coef = zoom_coef;
-#elif USE_SENSOR == SENSOR_IMX681
-	uint8_t zoom_coef[ISP_ZOOM_FILTER_COEF_NUM] = {
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		0, 0, 1, 1, 1, 1, 255, 255, 255, 255
-	};
-	init_params.zoom_coef = zoom_coef;
-#endif
-	// hr_nv12_image = malloc(OUT_IMG_WIDTH * OUT_IMG_HEIGHT * 3 / 2);
 	if (!hr_nv12_image) {
 		AI_GLASS_ERR("hr_nv12_image malloc fail\r\n");
 		AI_GLASS_ERR("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
@@ -500,7 +508,7 @@ static void high_resolution_snapshot_save(char *file_path)
 		free(init_params.v_cfg);
 		init_params.v_cfg = NULL;
 	}
-	init_params.zoom_coef = NULL;
+	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params); //revert verify setting
 	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
 		free_split_raw_item(&(splited_raw_image[i]));
 	}
@@ -595,6 +603,9 @@ snashot_fail:
 	}
 	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
 		free_split_raw_item(&(splited_raw_image[i]));
+	}
+	if(ainr_ctx) {
+		ainr_deinit(ainr_ctx);
 	}
 	lifetime_snapshot_deinitialize();
 #endif
@@ -708,7 +719,7 @@ int lifetime_snapshot_initialize(isp_info_sync_t *isp_info)
 	init_params.init_isp_items.init_hdr_mode = 0;
 	init_params.init_isp_items.init_mirrorflip = 0xf0;
 	init_params.init_isp_items.init_saturation = 50;
-	init_params.init_isp_items.init_wdr_mode = 0; //disable WDR
+	init_params.init_isp_items.init_wdr_mode = 0; // disable WDR for 12M snapshot
 	init_params.init_isp_items.init_mipi_mode = 0;
 	init_params.voe_dbg_disable = 1;
 	init_params.isp_ae_enable = 1;
@@ -959,7 +970,10 @@ int lifetime_snapshot_deinitialize(void)
 			siso_delete(ls_siso_snapshot_filesaver);
 			ls_siso_snapshot_filesaver = NULL;
 		}
-
+		//AINR
+		if(ainr_ctx) {
+			ainr_deinit(ainr_ctx);
+		}
 		//Close module
 		if (ls_snapshot_ctx) {
 			ls_snapshot_ctx = mm_module_close(ls_snapshot_ctx);
