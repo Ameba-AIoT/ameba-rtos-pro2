@@ -583,6 +583,7 @@ extern void mp4_send_response_callback(void *parm);
 static int lr_mp4_end_cb(void *parm)
 {
 	AI_GLASS_INFO("Record end\r\n");
+	extdisk_save_file_cntlist();
 #if ENABLE_GET_GSENSOR_INFO
 #if GSENSOR_RECORD_FAST
 	if (exdisk_gyro_status != GYRO_SAVE_STOP) {

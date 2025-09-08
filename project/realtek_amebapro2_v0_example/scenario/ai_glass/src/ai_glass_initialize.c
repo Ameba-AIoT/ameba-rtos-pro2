@@ -1477,7 +1477,6 @@ static void ai_glass_record_start(uartcmdpacket_t *param)
 			int ret = lifetime_recording_initialize(record_filename_length, (const char *)filename_str);
 			// Save filelist to EMMC
 			if (send_response_timer != NULL && ret == 0) {
-				extdisk_save_file_cntlist();
 				if (xSemaphoreTake(send_response_timermutex, portMAX_DELAY) == pdTRUE) {
 					if (xTimerStart(send_response_timer, 0) != pdPASS) {
 						record_start_status = AI_GLASS_PROC_FAIL;
