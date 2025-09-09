@@ -1010,6 +1010,7 @@ static void ai_glass_get_power_down(uartcmdpacket_t *param)
 {
 	uint8_t result = AI_GLASS_CMD_COMPLETE;
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_POWER_DOWN %lu\r\n", mm_read_mediatime_ms());
+	vTaskDelay(pdMS_TO_TICKS(1000));
 	// Wait until the video is down
 	if (xSemaphoreTake(video_proc_sema, POWER_DOWN_TIMEOUT) != pdTRUE) {
 		AI_GLASS_WARN("AI glass is snapshot or record, power down fail %lu\r\n", mm_read_mediatime_ms());
@@ -1019,6 +1020,7 @@ static void ai_glass_get_power_down(uartcmdpacket_t *param)
 	}
 
 	if (critical_process_started == 1) {
+		AI_GLASS_WARN("AI glass is busy performing OTA, AI+Lifetime snapshot or replying to GET_SD_INFO, power down failed %lu\r\n", mm_read_mediatime_ms());
 		result = AI_GLASS_BUSY;
 		uart_resp_get_power_down(param, result);
 		goto endofpowerdown;
@@ -1590,6 +1592,7 @@ static void ai_glass_delete_all_file(uartcmdpacket_t *param)
 static void ai_glass_get_sd_info(uartcmdpacket_t *param)
 {
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_SD_INFO %lu\r\n", mm_read_mediatime_ms());
+	critical_process_started = 1;
 	ai_glass_init_external_disk();
 	uint64_t device_used_bytes = fatfs_get_used_space_byte();
 	uint64_t device_total_bytes = device_used_bytes + fatfs_get_free_space_byte();
@@ -1597,6 +1600,7 @@ static void ai_glass_get_sd_info(uartcmdpacket_t *param)
 	uint32_t device_total_Kbytes = (uint32_t)(device_total_bytes / 1024);
 
 	uart_resp_get_sd_info(param, device_total_Kbytes, device_used_Kbytes);
+	critical_process_started = 0;
 	AI_GLASS_MSG("Get device memory: %lu/%luKB\r\n", device_used_Kbytes, device_total_Kbytes);
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_GET_SD_INFO %lu\r\n", mm_read_mediatime_ms());
 }
