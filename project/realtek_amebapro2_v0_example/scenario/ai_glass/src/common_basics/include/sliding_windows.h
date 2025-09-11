@@ -9,7 +9,7 @@
  ******************************************************************************/
 #define MAX_PAYLOAD_SIZE        1024
 #define ACK_QUEUE_LENGTH        10
-#define PAYLOAD_QUEUE_LENGTH    10
+#define PAYLOAD_QUEUE_LENGTH    50
 #define MAX_WINDOW_SIZE         8
 #define MIN_WINDOW_SIZE         1
 #define TIMEOUT_PERIOD          1000 // milliseconds
