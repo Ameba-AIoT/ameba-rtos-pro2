@@ -269,10 +269,10 @@ static void parser_snapshot_pkt2param(ai_glass_snapshot_param_t *snap_buf, uint8
 		snap_buf->width = aisnap_buf.RESIZE_W;
 		snap_buf->height = aisnap_buf.RESIZE_H;
 		snap_buf->jpeg_qlevel = aisnap_buf.q_vlaue;
-		snap_buf->roi.xmin = (uint32_t)(aisnap_buf.ROIX_TL * sensor_params[USE_SENSOR].sensor_width);
-		snap_buf->roi.ymin = (uint32_t)(aisnap_buf.ROIY_TL * sensor_params[USE_SENSOR].sensor_height);
-		snap_buf->roi.xmax = (uint32_t)(aisnap_buf.ROIX_BR * sensor_params[USE_SENSOR].sensor_width);
-		snap_buf->roi.ymax = (uint32_t)(aisnap_buf.ROIY_BR * sensor_params[USE_SENSOR].sensor_height);
+		snap_buf->roi.xmin = (uint32_t)(aisnap_buf.ROIX_TL * sensor_params[current_sensor_id].sensor_width);
+		snap_buf->roi.ymin = (uint32_t)(aisnap_buf.ROIY_TL * sensor_params[current_sensor_id].sensor_height);
+		snap_buf->roi.xmax = (uint32_t)(aisnap_buf.ROIX_BR * sensor_params[current_sensor_id].sensor_width);
+		snap_buf->roi.ymax = (uint32_t)(aisnap_buf.ROIY_BR * sensor_params[current_sensor_id].sensor_height);
 		snap_buf->status = aisnap_buf.status;
 		snap_buf->lifetime_file_name_len = aisnap_buf.lifetime_file_name_len;
 		memcpy(snap_buf->lifetime_file_name,
@@ -2178,6 +2178,42 @@ void fCLEARMEDIAFLASH(void *arg)
     AI_GLASS_MSG("[ATCMD CLEAR MEDIA FLASH] Clear macro 0x%02X\r\n", clear_macro);
 }
 
+void fCHANGESENSOR(void *arg)
+{
+    int argc = 0;
+    char *argv[MAX_ARGC] = {0};
+	AI_GLASS_MSG("be4 switch Current Sensor ID: %u\n", current_sensor_id);
+    argc = parse_param(arg, argv);  // Typical AT command parsing
+
+    if (argc < 2) {
+        AI_GLASS_ERR("[ATCMD SENSOR] Usage: AT+AIGLASSCHANGESENSOR=XX\r\n");
+        return;
+    }
+	int sensor_index = 0;
+    unsigned int sensor_macro = 0;
+    if (sscanf(argv[1], "%x", &sensor_macro) != 1) {
+        AI_GLASS_ERR("[ATCMD SENSOR] Invalid sensor ID format: %s\r\n", argv[1]);
+        return;
+    }
+	if ((sensor_macro == SENSOR_SC5356_2M) || (sensor_macro == SENSOR_SC5356)) {
+		// Find the index for this macro
+		sensor_index = get_sensor_index_by_id((unsigned char)sensor_macro);
+		AI_GLASS_MSG("[ATCMD SENSOR] Sensor macro 0x%02X found at index %d\r\n", sensor_macro, sensor_index);
+
+		// Call your reinit function with sensor index
+		reinit_sensor(sensor_index);
+
+		AI_GLASS_MSG("Current Sensor ID: %u\n", current_sensor_id);
+		if (sensor_index < 0) {
+			AI_GLASS_ERR("[ATCMD SENSOR] Sensor macro 0x%02X not found\r\n", sensor_macro);
+			return;
+    	}
+	} else {
+		sensor_index = -1;
+	}
+    
+}
+
 log_item_t at_ai_glass_items[ ] = {
 	{"AT+AIGLASSFORMAT",    fDISKFORMAT,            {NULL, NULL}},
 	{"AT+AIGLASSGSENSOR",   fTESTGSENSOR,           {NULL, NULL}},
@@ -2186,6 +2222,7 @@ log_item_t at_ai_glass_items[ ] = {
 	{"AT+AIGLASSLFSNAP",    fLFSNAPSHOT,            {NULL, NULL}},
 	{"AT+AIGLASSSETSTAMODE", fENABLESTAMODE,        {NULL, NULL}},
 	{"AT+AIGLASSCLEARMEDIAFLASH", fCLEARMEDIAFLASH, {NULL, NULL}},
+	{"AT+AIGLASSCHANGESENSOR", fCHANGESENSOR,       {NULL, NULL}},
 };
 #endif
 void ai_glass_log_init(void)

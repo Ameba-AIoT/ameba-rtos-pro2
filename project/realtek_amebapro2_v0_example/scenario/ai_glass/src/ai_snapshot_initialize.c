@@ -131,7 +131,7 @@ int ai_snapshot_initialize(void)
 		snapshot_param->height = ai_snap_param.height;
 		snapshot_param->rotation = ai_snap_param.rotation;
 		snapshot_param->jpeg_qlevel = ai_snap_param.jpeg_qlevel;
-		snapshot_param->fps = sensor_params[USE_SENSOR].sensor_fps;
+		snapshot_param->fps = sensor_params[current_sensor_id].sensor_fps;
 		snapshot_param->roi.xmin = 0;
 		snapshot_param->roi.ymin = 0;
 		snapshot_param->roi.xmax = 0;

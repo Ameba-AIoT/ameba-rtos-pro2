@@ -121,7 +121,7 @@ static void video_jpeg_exif(video_meta_t *m_parm)
 {
 	int ret = 0;
 
-	if(USE_SENSOR == SENSOR_IMX681 || USE_SENSOR == SENSOR_IMX471) {
+	if(current_sensor_id == SENSOR_IMX681 || current_sensor_id == SENSOR_IMX471) {
 		isp_get_exposure_time(&ret);
 		param.exposure_time = ((float)ret / 1000000.f); // convert to s
 		isp_get_ae_gain(&ret);
@@ -354,36 +354,43 @@ static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint3
 }
 static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
-#if ENABLE_AINR && (USE_SENSOR == SENSOR_IMX681)
-	if(init_params.isp_ae_init_gain > (256 * 85 / 10)) {
-		// IMX681 AINR flow for exposure gain > 8.5x
-		if (ainr_ctx == NULL) {
-			ainr_ctx = ainr_init();
-		}
-		if(ainr_ctx) {
-			uint8_t *ainr_raw_image = splited_raw_image[raw_index].virt_addr;
-			uint32_t ainr_raw_image_size = data_size;
-			if (ainr_process_frame(ainr_ctx, (const void *)data_addr, ainr_raw_image, ainr_raw_image_size, 256) != OK) {
-				printf("ainr_process_frame() failed.\r\n");
+// #if ENABLE_AINR && (USE_SENSOR == SENSOR_IMX681)
+	if(current_sensor_id == SENSOR_IMX681) {
+		if(init_params.isp_ae_init_gain > (256 * 85 / 10)) {
+			// IMX681 AINR flow for exposure gain > 8.5x
+			if (ainr_ctx == NULL) {
+				ainr_ctx = ainr_init();
+			}
+			if(ainr_ctx) {
+				uint8_t *ainr_raw_image = splited_raw_image[raw_index].virt_addr;
+				uint32_t ainr_raw_image_size = data_size;
+				if (ainr_process_frame(ainr_ctx, (const void *)data_addr, ainr_raw_image, ainr_raw_image_size, 256) != OK) {
+					printf("ainr_process_frame() failed.\r\n");
+					return;
+				}
+				pack_bayer_to_planar((uint8_t *)data_addr, (const uint16_t *)ainr_raw_image, ainr_raw_image_size);
+			} else {
+				printf("ainr_init() failed.\r\n");
 				return;
 			}
-			pack_bayer_to_planar((uint8_t *)data_addr, (const uint16_t *)ainr_raw_image, ainr_raw_image_size);
-		} else {
-			printf("ainr_init() failed.\r\n");
-			return;
 		}
 	}
-#endif
+// #endif
 	raw_image_len = data_size;
 	//split 12M raw to 2 * 6M raw
 	uint8_t *tiled_raws[2];
 	tiled_raws[0] = splited_raw_image[raw_index].phy_addr[0];
 	tiled_raws[1] = splited_raw_image[raw_index].phy_addr[1];
-#if USE_SENSOR == SENSOR_IMX681
-	cap_raw_tiling_with_remosaic((uint8_t *)data_addr, tiled_raws, ls_video_params.jpg_width, ls_video_params.jpg_height, OUT_IMG_OVERLAP_WIDTH, REMOSAIC_DISABLE, REMOSAIC_DIRECT_MODE, GR);
-#else
-	cap_raw_tiling_with_remosaic((uint8_t *)data_addr, tiled_raws, ls_video_params.jpg_width, ls_video_params.jpg_height, OUT_IMG_OVERLAP_WIDTH, REMOSAIC_ENABLE, REMOSAIC_DETECT_MODE, GR);
-#endif
+// #if USE_SENSOR == SENSOR_IMX681
+// 	cap_raw_tiling_with_remosaic((uint8_t *)data_addr, tiled_raws, ls_video_params.jpg_width, ls_video_params.jpg_height, OUT_IMG_OVERLAP_WIDTH, REMOSAIC_DISABLE, REMOSAIC_DIRECT_MODE, GR);
+// #else
+// 	cap_raw_tiling_with_remosaic((uint8_t *)data_addr, tiled_raws, ls_video_params.jpg_width, ls_video_params.jpg_height, OUT_IMG_OVERLAP_WIDTH, REMOSAIC_ENABLE, REMOSAIC_DETECT_MODE, GR);
+// #endif
+	if(current_sensor_id == SENSOR_IMX681) {
+		cap_raw_tiling_with_remosaic((uint8_t *)data_addr, tiled_raws, ls_video_params.jpg_width, ls_video_params.jpg_height, OUT_IMG_OVERLAP_WIDTH, REMOSAIC_DISABLE, REMOSAIC_DIRECT_MODE, GR);
+	} else{
+		cap_raw_tiling_with_remosaic((uint8_t *)data_addr, tiled_raws, ls_video_params.jpg_width, ls_video_params.jpg_height, OUT_IMG_OVERLAP_WIDTH, REMOSAIC_ENABLE, REMOSAIC_DETECT_MODE, GR);
+	}
 	AI_GLASS_INFO("img_left: %x\n\r", splited_raw_image[raw_index].phy_addr[0]);
 	AI_GLASS_INFO("img_right: %x\n\r", splited_raw_image[raw_index].phy_addr[1]);
 	get_raw_data = 1;
@@ -701,190 +708,193 @@ int lifetime_snapshot_initialize(isp_info_sync_t *isp_info)
 		goto endoflifesnapshot;
 	}
 
-#if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_IMX471)
-	memset(&init_params, 0x00, sizeof(video_pre_init_params_t));
-	// Deinitialize fake media channel
-	deinitial_media();
-	//remalloc voe heap to 45M
-	int voe_heap_size = 45 * 1024 * 1024;
-	video_set_voe_heap((int)NULL, voe_heap_size, 1);
-	AI_GLASS_INFO("\r\n voe heap size = %d\r\n", voe_heap_size);
-	AI_GLASS_INFO("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
-	// Load the AE and AWB data
-	media_get_preinit_isp_data(&init_params);
-	init_params.isp_init_enable = 1;
-	init_params.init_isp_items.init_brightness = 0;
-	init_params.init_isp_items.init_contrast = 50;
-	init_params.init_isp_items.init_flicker = 2;
-	init_params.init_isp_items.init_hdr_mode = 0;
-	init_params.init_isp_items.init_mirrorflip = 0xf0;
-	init_params.init_isp_items.init_saturation = 50;
-	init_params.init_isp_items.init_wdr_mode = 0; // disable WDR for 12M snapshot
-	init_params.init_isp_items.init_mipi_mode = 0;
-	init_params.voe_dbg_disable = 1;
-	init_params.isp_ae_enable = 1;
-	init_params.isp_awb_enable = 1;
-	init_params.init_isp_items.init_mirrorflip = 0xf0;
-	//sync isp info
-	if (isp_info->isp_exposure_time != 0) {
-		init_params.isp_ae_init_exposure = isp_info->isp_exposure_time;
-	}
-	if (isp_info->isp_exposure_gain != 0) {
-		init_params.isp_ae_init_gain = (uint32_t)isp_info->isp_exposure_gain;
-	}
-	if (isp_info->isp_red_gain != 0) {
-		init_params.isp_awb_init_rgain = (uint32_t)isp_info->isp_red_gain;
-	}
-	if (isp_info->isp_blue_gain != 0) {
-		init_params.isp_awb_init_bgain = (uint32_t)isp_info->isp_blue_gain;
-	}
-	// get 12M raw
-	int sensor_id = 2;
-	init_params.isp_init_raw = 1;
-	init_params.isp_raw_mode_tnr_dis = 1;
-	init_params.video_drop_enable = 0;
-	init_params.dyn_iq_mode = 0;
-	ls_video_params.params.stream_id = JPEG_CHANNEL;
-	ls_video_params.params.rotation = SNAPSHOT_12M_ROTATION;
-	ls_video_params.params.type = VIDEO_NV16;
-	ls_video_params.params.width = sensor_params[sen_id[sensor_id]].sensor_width;
-	ls_video_params.params.height = sensor_params[sen_id[sensor_id]].sensor_height;
-	ls_video_params.params.fps = sensor_params[sen_id[sensor_id]].sensor_fps;
-	ls_video_params.params.out_mode = 2; //set to contiuous mode
-	ls_video_params.params.use_static_addr = 1;
-	ls_video_params.jpg_width = sensor_params[sen_id[sensor_id]].sensor_width;
-	ls_video_params.jpg_height = sensor_params[sen_id[sensor_id]].sensor_height;
-	ls_video_params.jpg_qlevel = SNAPSHOT_12M_QLEVEL;  //life_snap_param.jpeg_qlevel * 10
-	ls_video_params.is_high_res = 1;
-	ls_video_params.params.direct_output = 0;
-	ls_video_params.params.ext_fmt = 0;
+// #if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_IMX471)
+	if ((current_sensor_id == SENSOR_IMX681) || (current_sensor_id == SENSOR_IMX471)) {
+		memset(&init_params, 0x00, sizeof(video_pre_init_params_t));
+		// Deinitialize fake media channel
+		deinitial_media();
+		//remalloc voe heap to 45M
+		int voe_heap_size = 45 * 1024 * 1024;
+		video_set_voe_heap((int)NULL, voe_heap_size, 1);
+		AI_GLASS_INFO("\r\n voe heap size = %d\r\n", voe_heap_size);
+		AI_GLASS_INFO("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
+		// Load the AE and AWB data
+		media_get_preinit_isp_data(&init_params);
+		init_params.isp_init_enable = 1;
+		init_params.init_isp_items.init_brightness = 0;
+		init_params.init_isp_items.init_contrast = 50;
+		init_params.init_isp_items.init_flicker = 2;
+		init_params.init_isp_items.init_hdr_mode = 0;
+		init_params.init_isp_items.init_mirrorflip = 0xf0;
+		init_params.init_isp_items.init_saturation = 50;
+		init_params.init_isp_items.init_wdr_mode = 0; // disable WDR for 12M snapshot
+		init_params.init_isp_items.init_mipi_mode = 0;
+		init_params.voe_dbg_disable = 1;
+		init_params.isp_ae_enable = 1;
+		init_params.isp_awb_enable = 1;
+		init_params.init_isp_items.init_mirrorflip = 0xf0;
+		//sync isp info
+		if (isp_info->isp_exposure_time != 0) {
+			init_params.isp_ae_init_exposure = isp_info->isp_exposure_time;
+		}
+		if (isp_info->isp_exposure_gain != 0) {
+			init_params.isp_ae_init_gain = (uint32_t)isp_info->isp_exposure_gain;
+		}
+		if (isp_info->isp_red_gain != 0) {
+			init_params.isp_awb_init_rgain = (uint32_t)isp_info->isp_red_gain;
+		}
+		if (isp_info->isp_blue_gain != 0) {
+			init_params.isp_awb_init_bgain = (uint32_t)isp_info->isp_blue_gain;
+		}
+		// get 12M raw
+		int sensor_id = 2;
+		init_params.isp_init_raw = 1;
+		init_params.isp_raw_mode_tnr_dis = 1;
+		init_params.video_drop_enable = 0;
+		init_params.dyn_iq_mode = 0;
+		ls_video_params.params.stream_id = JPEG_CHANNEL;
+		ls_video_params.params.rotation = SNAPSHOT_12M_ROTATION;
+		ls_video_params.params.type = VIDEO_NV16;
+		ls_video_params.params.width = sensor_params[sen_id[sensor_id]].sensor_width;
+		ls_video_params.params.height = sensor_params[sen_id[sensor_id]].sensor_height;
+		ls_video_params.params.fps = sensor_params[sen_id[sensor_id]].sensor_fps;
+		ls_video_params.params.out_mode = 2; //set to contiuous mode
+		ls_video_params.params.use_static_addr = 1;
+		ls_video_params.jpg_width = sensor_params[sen_id[sensor_id]].sensor_width;
+		ls_video_params.jpg_height = sensor_params[sen_id[sensor_id]].sensor_height;
+		ls_video_params.jpg_qlevel = SNAPSHOT_12M_QLEVEL;  //life_snap_param.jpeg_qlevel * 10
+		ls_video_params.is_high_res = 1;
+		ls_video_params.params.direct_output = 0;
+		ls_video_params.params.ext_fmt = 0;
 #if defined(ENABLE_META_INFO)
-	ls_video_params.params.meta_enable = 1; // enable exif meta data
+		ls_video_params.params.meta_enable = 1; // enable exif meta data
 #endif
-	ls_snapshot_ctx = mm_module_open(&video_module);
-	if (ls_snapshot_ctx) {
-		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_SENSOR_ID, sensor_id);
-		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
-		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
-		mm_module_ctrl(ls_snapshot_ctx, MM_CMD_SET_QUEUE_LEN, ls_video_params.params.fps);//Default 30
-		mm_module_ctrl(ls_snapshot_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
-	} else {
-		AI_GLASS_ERR("video open fail\n\r");
-		ret = -1;
-		goto endoflifesnapshot;
-	}
-	ls_filesaver_ctx = mm_module_open(&filesaver_module);
-	if (ls_filesaver_ctx) {
-		mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_TYPE_HANDLER, (int)save_high_resolution_raw);
-	} else {
-		AI_GLASS_ERR("filesaver open fail\n\r");
-		ret = -1;
-		goto endoflifesnapshot;
-	}
+		ls_snapshot_ctx = mm_module_open(&video_module);
+		if (ls_snapshot_ctx) {
+			mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_SENSOR_ID, sensor_id);
+			mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
+			mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
+			mm_module_ctrl(ls_snapshot_ctx, MM_CMD_SET_QUEUE_LEN, ls_video_params.params.fps);//Default 30
+			mm_module_ctrl(ls_snapshot_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
+		} else {
+			AI_GLASS_ERR("video open fail\n\r");
+			ret = -1;
+			goto endoflifesnapshot;
+		}
+		ls_filesaver_ctx = mm_module_open(&filesaver_module);
+		if (ls_filesaver_ctx) {
+			mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_TYPE_HANDLER, (int)save_high_resolution_raw);
+		} else {
+			AI_GLASS_ERR("filesaver open fail\n\r");
+			ret = -1;
+			goto endoflifesnapshot;
+		}
 
-	ls_siso_snapshot_filesaver = siso_create();
-	if (ls_siso_snapshot_filesaver) {
+		ls_siso_snapshot_filesaver = siso_create();
+		if (ls_siso_snapshot_filesaver) {
 #if defined(configENABLE_TRUSTZONE) && (configENABLE_TRUSTZONE == 1)
-		siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_SET_SECURE_CONTEXT, 1, 0);
+			siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_SET_SECURE_CONTEXT, 1, 0);
 #endif
-		siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_ADD_INPUT, (uint32_t)ls_snapshot_ctx, 0);
-		siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_ADD_OUTPUT, (uint32_t)ls_filesaver_ctx, 0);
-		siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_SET_TASKPRIORITY, LIFE_SNAP_PRIORITY, 0);
-		siso_start(ls_siso_snapshot_filesaver);
+			siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_ADD_INPUT, (uint32_t)ls_snapshot_ctx, 0);
+			siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_ADD_OUTPUT, (uint32_t)ls_filesaver_ctx, 0);
+			siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_SET_TASKPRIORITY, LIFE_SNAP_PRIORITY, 0);
+			siso_start(ls_siso_snapshot_filesaver);
+		} else {
+			AI_GLASS_ERR("siso_array_filesaver open fail\n\r");
+			ret = -1;
+			goto endoflifesnapshot;
+		}
+// #else
 	} else {
-		AI_GLASS_ERR("siso_array_filesaver open fail\n\r");
-		ret = -1;
-		goto endoflifesnapshot;
-	}
-#else
-	ai_glass_snapshot_param_t life_snap_param;
-	memset(&life_snap_param, 0x00, sizeof(ai_glass_snapshot_param_t));
-	media_get_life_snapshot_params(&life_snap_param);
-	if (life_snap_param.width <= sensor_params[USE_SENSOR].sensor_width && life_snap_param.height <= sensor_params[USE_SENSOR].sensor_height) {
-		ls_video_params.params.width = life_snap_param.width;
-		ls_video_params.params.height = life_snap_param.height;
-		ls_video_params.params.rotation = life_snap_param.rotation;
-		ls_video_params.jpg_width = life_snap_param.width;
-		ls_video_params.jpg_height = life_snap_param.height;
-		ls_video_params.params.type = VIDEO_JPEG;
-		ls_video_params.params.jpeg_qlevel = life_snap_param.jpeg_qlevel;
-		ls_video_params.need_sw_encode = 0;
-	} else {
-		ls_video_params.params.width = life_snap_param.width <= sensor_params[USE_SENSOR].sensor_width ? ls_video_params.params.width :
-									   sensor_params[USE_SENSOR].sensor_width;
-		ls_video_params.params.height = life_snap_param.height <= sensor_params[USE_SENSOR].sensor_height ? ls_video_params.params.height :
-										sensor_params[USE_SENSOR].sensor_height;
-		ls_video_params.params.rotation = life_snap_param.rotation;
-		ls_video_params.jpg_width = life_snap_param.width;
-		ls_video_params.jpg_height = life_snap_param.height;
-		ls_video_params.params.type = VIDEO_NV12;
-		ls_video_params.jpg_qlevel = life_snap_param.jpeg_qlevel * 10;
-		ls_video_params.need_sw_encode = 1;
-	}
+		ai_glass_snapshot_param_t life_snap_param;
+		memset(&life_snap_param, 0x00, sizeof(ai_glass_snapshot_param_t));
+		media_get_life_snapshot_params(&life_snap_param);
+		if (life_snap_param.width <= sensor_params[USE_SENSOR].sensor_width && life_snap_param.height <= sensor_params[USE_SENSOR].sensor_height) {
+			ls_video_params.params.width = life_snap_param.width;
+			ls_video_params.params.height = life_snap_param.height;
+			ls_video_params.params.rotation = life_snap_param.rotation;
+			ls_video_params.jpg_width = life_snap_param.width;
+			ls_video_params.jpg_height = life_snap_param.height;
+			ls_video_params.params.type = VIDEO_JPEG;
+			ls_video_params.params.jpeg_qlevel = life_snap_param.jpeg_qlevel;
+			ls_video_params.need_sw_encode = 0;
+		} else {
+			ls_video_params.params.width = life_snap_param.width <= sensor_params[USE_SENSOR].sensor_width ? ls_video_params.params.width :
+										sensor_params[USE_SENSOR].sensor_width;
+			ls_video_params.params.height = life_snap_param.height <= sensor_params[USE_SENSOR].sensor_height ? ls_video_params.params.height :
+											sensor_params[USE_SENSOR].sensor_height;
+			ls_video_params.params.rotation = life_snap_param.rotation;
+			ls_video_params.jpg_width = life_snap_param.width;
+			ls_video_params.jpg_height = life_snap_param.height;
+			ls_video_params.params.type = VIDEO_NV12;
+			ls_video_params.jpg_qlevel = life_snap_param.jpeg_qlevel * 10;
+			ls_video_params.need_sw_encode = 1;
+		}
 
-	video_pre_init_params_t ai_glass_pre_init_params = {0};
-	//sync isp info
-	if (isp_info->isp_exposure_time != 0) {
-		ai_glass_pre_init_params.isp_ae_init_exposure = isp_info->isp_exposure_time;
-	}
-	if (isp_info->isp_exposure_gain != 0) {
-		ai_glass_pre_init_params.isp_ae_init_gain = (uint32_t)isp_info->isp_exposure_gain;
-	}
-	if (isp_info->isp_red_gain != 0) {
-		ai_glass_pre_init_params.isp_awb_init_rgain = (uint32_t)isp_info->isp_red_gain;
-	}
-	if (isp_info->isp_blue_gain != 0) {
-		ai_glass_pre_init_params.isp_awb_init_bgain = (uint32_t)isp_info->isp_blue_gain;
-	}
-	ls_video_params.params.stream_id = MAIN_STREAM_ID;
-	ls_video_params.params.fps = 5;
-	ls_video_params.params.gop = 5;
-	ls_video_params.params.use_static_addr = 1;
+		video_pre_init_params_t ai_glass_pre_init_params = {0};
+		//sync isp info
+		if (isp_info->isp_exposure_time != 0) {
+			ai_glass_pre_init_params.isp_ae_init_exposure = isp_info->isp_exposure_time;
+		}
+		if (isp_info->isp_exposure_gain != 0) {
+			ai_glass_pre_init_params.isp_ae_init_gain = (uint32_t)isp_info->isp_exposure_gain;
+		}
+		if (isp_info->isp_red_gain != 0) {
+			ai_glass_pre_init_params.isp_awb_init_rgain = (uint32_t)isp_info->isp_red_gain;
+		}
+		if (isp_info->isp_blue_gain != 0) {
+			ai_glass_pre_init_params.isp_awb_init_bgain = (uint32_t)isp_info->isp_blue_gain;
+		}
+		ls_video_params.params.stream_id = MAIN_STREAM_ID;
+		ls_video_params.params.fps = 5;
+		ls_video_params.params.gop = 5;
+		ls_video_params.params.use_static_addr = 1;
 #if defined(ENABLE_META_INFO)
-	ls_video_params.params.meta_enable = 1;
+		ls_video_params.params.meta_enable = 1;
 #endif
-	ls_snapshot_ctx = mm_module_open(&video_module);
-	if (ls_snapshot_ctx) {
-		media_get_preinit_isp_data(&ai_glass_pre_init_params);
-		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&ai_glass_pre_init_params);
+		ls_snapshot_ctx = mm_module_open(&video_module);
+		if (ls_snapshot_ctx) {
+			media_get_preinit_isp_data(&ai_glass_pre_init_params);
+			mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&ai_glass_pre_init_params);
 
-		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
-		mm_module_ctrl(ls_snapshot_ctx, MM_CMD_SET_QUEUE_LEN, 2);//Default 30
-		mm_module_ctrl(ls_snapshot_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
+			mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
+			mm_module_ctrl(ls_snapshot_ctx, MM_CMD_SET_QUEUE_LEN, 2);//Default 30
+			mm_module_ctrl(ls_snapshot_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
 	#if defined(ENABLE_META_INFO)
-		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_META_CB, (int)video_meta_cb);
+			mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_META_CB, (int)video_meta_cb);
 	#endif
-	} else {
-		AI_GLASS_ERR("video open fail\n\r");
-		ret = -1;
-		goto endoflifesnapshot;
-	}
+		} else {
+			AI_GLASS_ERR("video open fail\n\r");
+			ret = -1;
+			goto endoflifesnapshot;
+		}
 
-	ls_filesaver_ctx = mm_module_open(&filesaver_module);
-	if (ls_filesaver_ctx) {
-		mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_TYPE_HANDLER, (int)lifetime_normal_snapshot_file_save);
-	} else {
-		AI_GLASS_ERR("filesaver open fail\n\r");
-		ret = -1;
-		goto endoflifesnapshot;
-	}
+		ls_filesaver_ctx = mm_module_open(&filesaver_module);
+		if (ls_filesaver_ctx) {
+			mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_TYPE_HANDLER, (int)lifetime_normal_snapshot_file_save);
+		} else {
+			AI_GLASS_ERR("filesaver open fail\n\r");
+			ret = -1;
+			goto endoflifesnapshot;
+		}
 
-	ls_siso_snapshot_filesaver = siso_create();
-	if (ls_siso_snapshot_filesaver) {
+		ls_siso_snapshot_filesaver = siso_create();
+		if (ls_siso_snapshot_filesaver) {
 #if defined(configENABLE_TRUSTZONE) && (configENABLE_TRUSTZONE == 1)
-		siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_SET_SECURE_CONTEXT, 1, 0);
+			siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_SET_SECURE_CONTEXT, 1, 0);
 #endif
-		siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_ADD_INPUT, (uint32_t)ls_snapshot_ctx, 0);
-		siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_ADD_OUTPUT, (uint32_t)ls_filesaver_ctx, 0);
-		siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_SET_TASKPRIORITY, LIFE_SNAP_PRIORITY, 0);
-		siso_start(ls_siso_snapshot_filesaver);
-	} else {
-		AI_GLASS_ERR("siso_array_filesaver open fail\n\r");
-		ret = -1;
-		goto endoflifesnapshot;
+			siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_ADD_INPUT, (uint32_t)ls_snapshot_ctx, 0);
+			siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_ADD_OUTPUT, (uint32_t)ls_filesaver_ctx, 0);
+			siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_SET_TASKPRIORITY, LIFE_SNAP_PRIORITY, 0);
+			siso_start(ls_siso_snapshot_filesaver);
+		} else {
+			AI_GLASS_ERR("siso_array_filesaver open fail\n\r");
+			ret = -1;
+			goto endoflifesnapshot;
+		}
+		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, ls_video_params.params.stream_id);	// start channel 0
+// #endif
 	}
-	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, ls_video_params.params.stream_id);	// start channel 0
-#endif
 	lfsnap_status = LIFESNAP_START;
 	return ret;
 endoflifesnapshot:
@@ -898,34 +908,37 @@ int lifetime_snapshot_take(const char *file_name)
 	if (lfsnap_status == LIFESNAP_START) {
 		AI_GLASS_MSG("================life_snapshot_take========================== %lu\r\n", mm_read_mediatime_ms());
 		AI_GLASS_INFO("Sanpshot start\r\n");
-#if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_IMX471)
-		AI_GLASS_INFO("Sanpshot start 12M flow\r\n");
-		snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s", file_name);
-		AI_GLASS_MSG("life_snapshot_take %s\r\n", snapshot_name);
-		mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_SAVE_FILE_PATH, (int)snapshot_name);
-		lfsnap_status = LIFESNAP_TAKE;
-		high_resolution_snapshot_take(snapshot_name);
-		if (lfsnap_status == LIFESNAP_GET) {
-			AI_GLASS_INFO("Get 12M NV16 done\r\n");
+// #if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_IMX471)
+		if ((current_sensor_id == SENSOR_IMX681) || (current_sensor_id == SENSOR_IMX471)) {
+			AI_GLASS_INFO("Sanpshot start 12M flow\r\n");
+			snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s", file_name);
+			AI_GLASS_MSG("life_snapshot_take %s\r\n", snapshot_name);
+			mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_SAVE_FILE_PATH, (int)snapshot_name);
+			lfsnap_status = LIFESNAP_TAKE;
+			high_resolution_snapshot_take(snapshot_name);
+			if (lfsnap_status == LIFESNAP_GET) {
+				AI_GLASS_INFO("Get 12M NV16 done\r\n");
+				return 0;
+			}
+// #else
+		} else {
+			AI_GLASS_INFO("Sanpshot start not 12M flow\r\n");
+			snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s", file_name);
+			AI_GLASS_MSG("life_snapshot_take %s\r\n", snapshot_name);
+			mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_SAVE_FILE_PATH, (int)snapshot_name);
+			lfsnap_status = LIFESNAP_TAKE;
+			if (ls_video_params.need_sw_encode) {
+				mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_YUV, 1); // one shot with NV12
+			} else {
+				mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SNAPSHOT, 1); // one shot with JPEG
+			}
+			while (lfsnap_status == LIFESNAP_TAKE) {
+				vTaskDelay(1);
+			}
+			AI_GLASS_INFO("Life snapshot done\r\n");
 			return 0;
 		}
-#else
-		AI_GLASS_INFO("Sanpshot start not 12M flow\r\n");
-		snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s", file_name);
-		AI_GLASS_MSG("life_snapshot_take %s\r\n", snapshot_name);
-		mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_SAVE_FILE_PATH, (int)snapshot_name);
-		lfsnap_status = LIFESNAP_TAKE;
-		if (ls_video_params.need_sw_encode) {
-			mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_YUV, 1); // one shot with NV12
-		} else {
-			mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SNAPSHOT, 1); // one shot with JPEG
-		}
-		while (lfsnap_status == LIFESNAP_TAKE) {
-			vTaskDelay(1);
-		}
-		AI_GLASS_INFO("Life snapshot done\r\n");
-		return 0;
-#endif
+// #endif
 
 	}
 	return -1;
@@ -933,23 +946,26 @@ int lifetime_snapshot_take(const char *file_name)
 
 int lifetime_highres_save(const char *file_name)
 {
-#if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_IMX471)
-	if (lfsnap_status == LIFESNAP_GET) {
-		AI_GLASS_MSG("================highres_save========================== %lu\r\n", mm_read_mediatime_ms());
-		AI_GLASS_INFO("High res save\r\n");
-		high_resolution_snapshot_save((char *)file_name);
-		if (lfsnap_status == LIFESNAP_FAIL) {
-			AI_GLASS_INFO("Life snapshot save failed\r\n");
-			return -1;
-		}
+// #if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_IMX471)
+	if ((current_sensor_id == SENSOR_IMX681) || (current_sensor_id == SENSOR_IMX471)) {
+		if (lfsnap_status == LIFESNAP_GET) {
+			AI_GLASS_MSG("================highres_save========================== %lu\r\n", mm_read_mediatime_ms());
+			AI_GLASS_INFO("High res save\r\n");
+			high_resolution_snapshot_save((char *)file_name);
+			if (lfsnap_status == LIFESNAP_FAIL) {
+				AI_GLASS_INFO("Life snapshot save failed\r\n");
+				return -1;
+			}
 
-		AI_GLASS_INFO("Life snapshot save done\r\n");
+			AI_GLASS_INFO("Life snapshot save done\r\n");
+			return 0;
+		}
+		return -1;
+// #else
+	} else {
 		return 0;
 	}
-	return -1;
-#else
-	return 0;
-#endif
+// #endif
 }
 
 int lifetime_snapshot_deinitialize(void)

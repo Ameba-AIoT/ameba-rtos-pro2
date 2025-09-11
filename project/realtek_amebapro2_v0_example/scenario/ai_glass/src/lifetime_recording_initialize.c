@@ -760,7 +760,9 @@ int lifetime_recording_initialize(uint8_t record_filename_length, const char *fi
 	if (lr_video_ctx) {
 		media_get_preinit_isp_data(&ai_glass_pre_init_params);
 		mm_module_ctrl(lr_video_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&ai_glass_pre_init_params);
-
+		if(sensor_idx != -1) {
+			mm_module_ctrl(lr_video_ctx, CMD_VIDEO_SET_SENSOR_ID, sensor_idx);
+		}
 		mm_module_ctrl(lr_video_ctx, CMD_VIDEO_SET_PARAMS, (int)&lr_video_params);
 		mm_module_ctrl(lr_video_ctx, MM_CMD_SET_QUEUE_LEN, lr_video_params.fps * 10); //Add the queue buffer to avoid to lost data.
 		mm_module_ctrl(lr_video_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
@@ -867,4 +869,8 @@ void lifetime_recording_deinitialize(void)
 	lr_video_ctx = NULL;
 
 	current_state = STATE_IDLE;
+	
+	if(sensor_idx != -1) {
+		sensor_idx = -1;
+	}
 }

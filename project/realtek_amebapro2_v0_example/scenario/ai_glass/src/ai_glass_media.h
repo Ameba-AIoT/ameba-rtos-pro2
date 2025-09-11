@@ -151,6 +151,15 @@ typedef struct isp_info_sync_s {
 #define DEFAULT_LIFESNAP_MAXQP      0
 #define DEFAULT_LIFESNAP_ROTATION   0 // 0: no rotate, 1: 90 degree CCW, 2: 90 degree CW, 3: 180 degree
 
+// Declare the current sensor id (defined in .c)
+extern unsigned char current_sensor_id;
+extern int sensor_idx;
+
+// Function sensor declarations
+int get_sensor_index_by_id(unsigned char sensor_id_macro);
+void reinit_sensor(int sensor_id);
+int media_clear_flash(uint8_t option);
+
 // Function for media
 int media_update_record_params(const ai_glass_record_param_t *params);
 int media_update_ai_snapshot_params(const ai_glass_snapshot_param_t *params);
@@ -196,7 +205,5 @@ int media_update_record_time(uint16_t record_length);
 #define CLEAR_LIFE_SNAPSHOT 0x02
 #define CLEAR_RECORD_PARAMS 0x04
 #define CLEAR_ALL           0xFF
-
-int media_clear_flash(uint8_t option);
 
 #endif

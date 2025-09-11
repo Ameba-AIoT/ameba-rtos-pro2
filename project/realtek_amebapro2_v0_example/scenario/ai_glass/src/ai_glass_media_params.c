@@ -66,6 +66,9 @@
     ((value) >= MIN_LIFESNAP_HEIGHT && \
      (value) <= MAX_LIFESNAP_HEIGHT)
 
+unsigned char current_sensor_id = USE_SENSOR;  // Default sensor
+int sensor_idx = -1;
+
 static ai_glass_record_param_t record_params = {
 	.type = DEFAULT_RECORD_TYPE,
 	.width = DEFAULT_RECORD_WIDTH,
@@ -900,6 +903,38 @@ void deinitial_media(void)
 	} else {
 		AI_GLASS_MSG("The Last Channel has been closed\r\n");
 	}
+}
+
+// Get index in the ai_sen_id array from a sensor macro ID (like SENSOR_F37)
+int get_sensor_index_by_id(unsigned char sensor_id_macro) {
+    for (int i = 0; i < SENSOR_MAX; i++) {
+        if (sen_id[i] == sensor_id_macro) {
+            return i;  // Found, return index
+        }
+    }
+    return -1; // Not found
+}
+
+void reinit_sensor(int sensor_index)
+{
+	sensor_idx = sensor_index;
+    // Update current sensor ID
+    current_sensor_id = sen_id[sensor_index];
+
+    // Update RAM structures for record/life snapshot params
+    record_params.width  = sensor_params[current_sensor_id].sensor_width;
+    record_params.height = sensor_params[current_sensor_id].sensor_height;
+    record_params.fps    = sensor_params[current_sensor_id].sensor_fps;
+    record_params.gop    = sensor_params[current_sensor_id].sensor_fps;
+
+    life_snapshot_params.width  = sensor_params[current_sensor_id].sensor_width;
+    life_snapshot_params.height = sensor_params[current_sensor_id].sensor_height;
+
+    // Write updated params to flash
+    media_update_record_params_to_flash(&record_params);
+    media_update_life_snapshot_params_to_flash(&life_snapshot_params);
+
+    AI_GLASS_MSG("====== Sensor switch done ======\n");
 }
 
 int media_clear_flash(uint8_t option)
