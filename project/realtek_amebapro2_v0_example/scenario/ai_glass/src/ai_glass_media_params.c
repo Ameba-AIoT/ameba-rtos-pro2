@@ -301,7 +301,7 @@ static int ai_snapshot_update_if_valid(ai_glass_snapshot_param_t *ori_params, co
 		}
 	}
 
-	if (params->roi.xmax <= sensor_params[USE_SENSOR].sensor_width && params->roi.ymax <= sensor_params[USE_SENSOR].sensor_height &&
+	if (params->roi.xmax <= sensor_params[current_sensor_id].sensor_width && params->roi.ymax <= sensor_params[current_sensor_id].sensor_height &&
 		params->roi.xmax > params->roi.xmin && params->roi.ymax > params->roi.ymin) {
 		if (ori_params->width >= (params->roi.xmax - params->roi.xmin) && ori_params->height >= (params->roi.ymax - params->roi.ymin)) {
 			need_update = 1;
@@ -338,8 +338,8 @@ static int life_snapshot_update_if_valid(ai_glass_snapshot_param_t *ori_params, 
 		ori_params->width = params->width;
 		ori_params->height = params->height;
 
-		uint32_t life_time_width = ((params->width > sensor_params[USE_SENSOR].sensor_width) ? sensor_params[USE_SENSOR].sensor_width : params->width);
-		uint32_t life_time_height = ((params->height > sensor_params[USE_SENSOR].sensor_height) ? sensor_params[USE_SENSOR].sensor_height : params->height);
+		uint32_t life_time_width = ((params->width > sensor_params[current_sensor_id].sensor_width) ? sensor_params[current_sensor_id].sensor_width : params->width);
+		uint32_t life_time_height = ((params->height > sensor_params[current_sensor_id].sensor_height) ? sensor_params[current_sensor_id].sensor_height : params->height);
 		if ((ori_params->roi.xmax - ori_params->roi.xmin) < life_time_width) {
 			ori_params->roi.xmax = params->width;
 			ori_params->roi.xmin = 0;
@@ -350,10 +350,10 @@ static int life_snapshot_update_if_valid(ai_glass_snapshot_param_t *ori_params, 
 		}
 	}
 
-	if (params->roi.xmax <= sensor_params[USE_SENSOR].sensor_width && params->roi.ymax <= sensor_params[USE_SENSOR].sensor_height &&
+	if (params->roi.xmax <= sensor_params[current_sensor_id].sensor_width && params->roi.ymax <= sensor_params[current_sensor_id].sensor_height &&
 		params->roi.xmax > params->roi.xmin && params->roi.ymax > params->roi.ymin) {
-		uint32_t life_time_width = ((ori_params->width > sensor_params[USE_SENSOR].sensor_width) ? sensor_params[USE_SENSOR].sensor_width : ori_params->width);
-		uint32_t life_time_height = ((ori_params->height > sensor_params[USE_SENSOR].sensor_height) ? sensor_params[USE_SENSOR].sensor_height : ori_params->height);
+		uint32_t life_time_width = ((ori_params->width > sensor_params[current_sensor_id].sensor_width) ? sensor_params[current_sensor_id].sensor_width : ori_params->width);
+		uint32_t life_time_height = ((ori_params->height > sensor_params[current_sensor_id].sensor_height) ? sensor_params[current_sensor_id].sensor_height : ori_params->height);
 		if (life_time_width >= (params->roi.xmax - params->roi.xmin) && life_time_height >= (params->roi.ymax - params->roi.ymin)) {
 			need_update = 1;
 			ori_params->roi.xmax = params->roi.xmax;
@@ -821,9 +821,9 @@ void initial_media_parameters(void)
 		}
 	} else {
 		AI_GLASS_MSG("==================fcs off==============\r\n");
-		voe_heap_size = video_voe_presetting(1, 176, 144, 1024 * 1024, 0, 1, sensor_params[USE_SENSOR].sensor_width, sensor_params[USE_SENSOR].sensor_height,
+		voe_heap_size = video_voe_presetting(1, 176, 144, 1024 * 1024, 0, 1, sensor_params[current_sensor_id].sensor_width, sensor_params[current_sensor_id].sensor_height,
 											 MAX_RECORD_BPS, 1, 0,
-											 sensor_params[USE_SENSOR].sensor_width, sensor_params[USE_SENSOR].sensor_height, 0, 1, 0, 0, 0);
+											 sensor_params[current_sensor_id].sensor_width, sensor_params[current_sensor_id].sensor_height, 0, 1, 0, 0, 0);
 		video_fake_params.bps = isp_fcs_info->video_params[OPEN_STREAM].bps;
 		video_fake_params.width = isp_fcs_info->video_params[OPEN_STREAM].width;
 		video_fake_params.height = isp_fcs_info->video_params[OPEN_STREAM].height;
@@ -875,12 +875,12 @@ void initial_media_parameters(void)
 
 	if (media_get_record_params_from_flash(&temp_record_parames) == MEDIA_OK) {
 		AI_GLASS_INFO("Get Record Parameters From Flash Success\r\n");
-		record_data_update_if_valid(&record_params, &temp_record_parames);
+		record_data_update_if_valid(&temp_record_parames, &record_params);
 	}
 	media_update_record_params_to_flash(&record_params);
 	if (media_get_ai_snapshot_params_from_flash(&temp_ai_snap_parames) == MEDIA_OK) {
 		AI_GLASS_INFO("Get AI Snapshot Parameters From Flash Success\r\n");
-		ai_snapshot_update_if_valid(&ai_snapshot_params, &temp_ai_snap_parames);
+		ai_snapshot_update_if_valid(&temp_ai_snap_parames, &ai_snapshot_params);
 	}
 	media_update_ai_snapshot_params_to_flash(&ai_snapshot_params);
 	if (media_get_life_snapshot_params_from_flash(&temp_life_snap_parames) == MEDIA_OK) {
@@ -905,7 +905,7 @@ void deinitial_media(void)
 	}
 }
 
-// Get index in the ai_sen_id array from a sensor macro ID (like SENSOR_F37)
+// Get index in the ai_sen_id array from a sensor macro ID (like SENSOR_SC5356_2M)
 int get_sensor_index_by_id(unsigned char sensor_id_macro) {
     for (int i = 0; i < SENSOR_MAX; i++) {
         if (sen_id[i] == sensor_id_macro) {
@@ -926,7 +926,7 @@ void reinit_sensor(int sensor_index)
     record_params.height = sensor_params[current_sensor_id].sensor_height;
     record_params.fps    = sensor_params[current_sensor_id].sensor_fps;
     record_params.gop    = sensor_params[current_sensor_id].sensor_fps;
-
+	
     life_snapshot_params.width  = sensor_params[current_sensor_id].sensor_width;
     life_snapshot_params.height = sensor_params[current_sensor_id].sensor_height;
 

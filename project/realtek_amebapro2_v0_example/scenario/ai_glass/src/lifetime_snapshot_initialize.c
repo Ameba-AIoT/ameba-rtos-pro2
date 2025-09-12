@@ -809,7 +809,7 @@ int lifetime_snapshot_initialize(isp_info_sync_t *isp_info)
 		ai_glass_snapshot_param_t life_snap_param;
 		memset(&life_snap_param, 0x00, sizeof(ai_glass_snapshot_param_t));
 		media_get_life_snapshot_params(&life_snap_param);
-		if (life_snap_param.width <= sensor_params[USE_SENSOR].sensor_width && life_snap_param.height <= sensor_params[USE_SENSOR].sensor_height) {
+		if (life_snap_param.width <= sensor_params[current_sensor_id].sensor_width && life_snap_param.height <= sensor_params[current_sensor_id].sensor_height) {
 			ls_video_params.params.width = life_snap_param.width;
 			ls_video_params.params.height = life_snap_param.height;
 			ls_video_params.params.rotation = life_snap_param.rotation;
@@ -819,10 +819,10 @@ int lifetime_snapshot_initialize(isp_info_sync_t *isp_info)
 			ls_video_params.params.jpeg_qlevel = life_snap_param.jpeg_qlevel;
 			ls_video_params.need_sw_encode = 0;
 		} else {
-			ls_video_params.params.width = life_snap_param.width <= sensor_params[USE_SENSOR].sensor_width ? ls_video_params.params.width :
-										sensor_params[USE_SENSOR].sensor_width;
-			ls_video_params.params.height = life_snap_param.height <= sensor_params[USE_SENSOR].sensor_height ? ls_video_params.params.height :
-											sensor_params[USE_SENSOR].sensor_height;
+			ls_video_params.params.width = life_snap_param.width <= sensor_params[current_sensor_id].sensor_width ? ls_video_params.params.width :
+										sensor_params[current_sensor_id].sensor_width;
+			ls_video_params.params.height = life_snap_param.height <= sensor_params[current_sensor_id].sensor_height ? ls_video_params.params.height :
+											sensor_params[current_sensor_id].sensor_height;
 			ls_video_params.params.rotation = life_snap_param.rotation;
 			ls_video_params.jpg_width = life_snap_param.width;
 			ls_video_params.jpg_height = life_snap_param.height;
@@ -854,9 +854,11 @@ int lifetime_snapshot_initialize(isp_info_sync_t *isp_info)
 #endif
 		ls_snapshot_ctx = mm_module_open(&video_module);
 		if (ls_snapshot_ctx) {
+			if(sensor_idx != -1){
+				mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_SENSOR_ID, sensor_idx);
+			}
 			media_get_preinit_isp_data(&ai_glass_pre_init_params);
 			mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&ai_glass_pre_init_params);
-
 			mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
 			mm_module_ctrl(ls_snapshot_ctx, MM_CMD_SET_QUEUE_LEN, 2);//Default 30
 			mm_module_ctrl(ls_snapshot_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
@@ -998,6 +1000,9 @@ int lifetime_snapshot_deinitialize(void)
 			ls_filesaver_ctx = mm_module_close(ls_filesaver_ctx);
 		}
 		lfsnap_status = LIFESNAP_IDLE;
+		if(sensor_idx != -1){
+			sensor_idx = -1;
+		}
 		return 0;
 	}
 	return -1;
