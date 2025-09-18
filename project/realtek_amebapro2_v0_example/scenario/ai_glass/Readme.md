@@ -10,112 +10,33 @@ This scenario is intended for a templete for ai glass scenario
 
 ## Update in SDK ##
 
-1. \component\file_system\fatfs\fatfs_sdcard_api.c
-- comment fatfs_sd_close in function fatfs_sd_init
-
-2. \component\media\mmfv2\module_mp4.c
-- update the define
-    undefine FATFS_SD_CARD
-    undefine FATFS_RAM
-    define VFS_ENABLE
-
-- in function mp4_destroy
-    //vfs_user_unregister("sd", VFS_FATFS, VFS_INF_SD);
-
-- in function mp4_create
-    //vfs_init(NULL);
-    memcpy(ctx->mp4_muxer->_drv, "aiglass:/", strlen("aiglass:/")); //Set tag
-    ctx->mp4_muxer->vfs_format_enable = 1;//Enable the vfs format
-    //if (vfs_user_register("sd", VFS_FATFS, VFS_INF_SD) < 0) {
-        //goto mp4_create_fail;
-    //}
-
-3. \component\soc\8735b\misc\platform\user_boot.c
-- set bl_log_cust_ctrl to DISABLE
-
-4. \component\video\driver\RTL8735B\video_user_boot.c
-- open flag ISP_CONTROL_TEST for the isp pre-setting
-
-- modify the following setting in the video_boot_stream (other keeping the same)
-	//video channel 0
-	.video_enable[STREAM_V1] = 1,
-	.video_snapshot[STREAM_V1] = 0,
-	.video_drop_frame[STREAM_V1] = 0,
-	.video_params[STREAM_V1] = {
-		.stream_id = STREAM_ID_V1,
-		.type = CODEC_H264,
-		.resolution = 0,
-		.width  = 176,
-		.height = 144,
-		.bps = 1024 * 1024,
-		.fps = 15,
-		.gop = 15,
-		.rc_mode = 2,
-		.minQp = 25,
-		.maxQp = 48,
-		.jpeg_qlevel = 0,
-		.rotation = 0,
-		.out_buf_size = V1_ENC_BUF_SIZE,
-		.out_rsvd_size = 0,
-		.direct_output = 0,
-		.use_static_addr = 0,
-		.fcs = 1 //Enable the fcs for channel 0
-	},
-
-	//video channel 1
-	.video_enable[STREAM_V2] = 1,
-	.video_snapshot[STREAM_V2] = 1,
-	.video_drop_frame[STREAM_V2] = 0,
-	.video_params[STREAM_V2] = {
-		.stream_id = STREAM_ID_V2,
-		.type = CODEC_H264,
-		.resolution = 0,
-		.width = sensor_params[USE_SENSOR].sensor_width,
-		.height = sensor_params[USE_SENSOR].sensor_height,
-		.bps = 20 * 1024 * 1024,
-		.fps = sensor_params[USE_SENSOR].sensor_fps,
-		.gop = sensor_params[USE_SENSOR].sensor_fps,
-		.rc_mode = 2,
-		.minQp = 25,
-		.maxQp = 48,
-		.jpeg_qlevel = 0,
-		.rotation = 0,
-		.out_buf_size = V2_ENC_BUF_SIZE,
-		.out_rsvd_size = 0,
-		.direct_output = 0,
-		.use_static_addr = 0,
-		.fcs = 0,
-	},
-
-	.video_enable[STREAM_V4] = 0,
-
-- modify the following setting in the user_boot_config_init (other keeping the same)
-	video_boot_stream.init_isp_items.enable = 1;
-	video_boot_stream.init_isp_items.init_brightness = 0;    //Default:0
-	video_boot_stream.init_isp_items.init_contrast = 50;     //Default:50
-	video_boot_stream.init_isp_items.init_flicker = 1;        //Default:1
-	video_boot_stream.init_isp_items.init_hdr_mode = 0;       //Default:0
-	video_boot_stream.init_isp_items.init_mirrorflip = 0xf0;  //Mirror and flip
-	video_boot_stream.init_isp_items.init_saturation = 50;    //Default:50
-	video_boot_stream.init_isp_items.init_wdr_level = 50;     //Default:50
-	video_boot_stream.init_isp_items.init_wdr_mode = 2;       //Default:0
-	video_boot_stream.init_isp_items.init_mipi_mode = 0;	  //Default:0
-
-5. \project\realtek_amebapro2_v0_example\inc\sensor.h
+1. \project\realtek_amebapro2_v0_example\inc\sensor.h
 - in sensor_params, modify [SENSOR_SC5356]       = {2592, 1944, 24},
 - in sen_id, replace SENSOR_GC2053 by SENSOR_SC5356
 - set USE_SENSOR to SENSOR_SC5356
 - in manual_iq, replace iq_gc2053 by iq_sc5356
 - set ENABLE_FCS to 1
-
-6. \component\file_system\fatfs\fatfs_ramdisk_api.c
-- set a proper size for RAM_DISK_SIZE which is the size of the ram disk
-- Here we set the ram disk size to 1024*1024*2 since we only need 2M to store a 720P jpeg (720 * 1280 * 3 / 2 ~ 1.3MB)
-1024*1024*2
-
-7. \component\soc\8735b\fwlib\rtl8735b\lib\source\ram\video\voe_bin
+ 
+2. \component\soc\8735b\fwlib\rtl8735b\lib\source\ram\video\voe_bin
 - user could replace the iq in this folder to get a better video vision
 - under project\realtek_amebapro2_v0_example\scenario\ai_glass\src\iq, there is some pre-setting iq firmware for some sensor
+
+3. \component\wifi\api\wifi_conf.c
+- (optional) For debugging purpose, user could enable wifi debugging by changing the wifi_set_user_config(void) function.
+
+  void wifi_set_user_config(void)
+{
+	/Add these two lines for debugging
+	wifi_user_config.wifi_debug_enabled = BIT(0) | BIT(1) | BIT(2) | BIT(3) | BIT(4);  /
+	wifi_user_config.rtw_powersave_en = 0;
+
+	.......
+}
+
+4. \component\soc\8735b\misc\platform\ota_8735b.h
+- (default) #define UPDATE_UPGRADE_PROGRESS_TO_8773 1 
+- for non ai-glass application, this flag need to be set to 0 to prevent compilation error.
+ 
 
 ## Config for in this scenario ##
 1. main.c

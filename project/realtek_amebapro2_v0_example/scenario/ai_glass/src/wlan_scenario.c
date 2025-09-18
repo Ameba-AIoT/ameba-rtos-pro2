@@ -1749,8 +1749,6 @@ int wifi_enable_sta_mode(rtw_network_info_t *connect_param, int timeout, int ret
 		wifi_set_channel(connect_param->channel);
 	}
 
-	wifi_fast_connect_enable(1);
-
 	if (wifi_on(RTW_MODE_STA) < 0) {
 		AI_GLASS_ERR("\n\r[SET STATION MODE] ERROR: wifi_on failed\n");
 		return WLAN_SET_FAIL;
@@ -1759,17 +1757,23 @@ int wifi_enable_sta_mode(rtw_network_info_t *connect_param, int timeout, int ret
 	WLAN_SCEN_WARN("wifi_connect cmd done %lu\r\n", mm_read_mediatime_ms());
 
 	wifi_config_autoreconnect_ms(1, retry, timeout);
+	int ret = 0;
 
 	if (strcmp((const char *) read_data.psk_essid, (const char *) connect_param->ssid.val) != 0) {
-		wifi_connect(connect_param, 1);
+		ret = wifi_connect(connect_param, 1);
 
 		WLAN_SCEN_WARN("wifi_connect cmd done %lu\r\n", mm_read_mediatime_ms());
 
 		WLAN_SCEN_WARN("LwIP_DHCP start %lu\r\n", mm_read_mediatime_ms());
-		LwIP_DHCP(0, DHCP_START);
-		WLAN_SCEN_WARN("LwIP_DHCP start done %lu\r\n", mm_read_mediatime_ms());
+		if(ret == RTW_SUCCESS) {
+			LwIP_DHCP(0, DHCP_START);
+			WLAN_SCEN_WARN("LwIP_DHCP start done %lu\r\n", mm_read_mediatime_ms());
 
-		WLAN_SCEN_WARN("Connecting to station... %lu\r\n", mm_read_mediatime_ms());
+			WLAN_SCEN_WARN("Connecting to station... %lu\r\n", mm_read_mediatime_ms());
+		}
+		else {
+			WLAN_SCEN_WARN("wifi connect failure... %lu\r\n", mm_read_mediatime_ms());
+		}
 	}
 	WLAN_SCEN_WARN("STA mode start done\r\n");
 	//ensure terminate signal is 0
