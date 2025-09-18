@@ -632,12 +632,20 @@ int MQTTDataHandle(MQTTClient *c, fd_set *readfd, MQTTPacket_connectData *connec
 	int mqtt_fd = c->ipstack->my_socket;
 
 	mqtt_rxevent = (mqtt_fd >= 0) ? FD_ISSET(mqtt_fd, readfd) : 0;
-
 	if (mqttstatus == MQTT_START) {
 		mqtt_printf(MQTT_INFO, "MQTT start");
 		if (c->isconnected) {
 			c->isconnected = 0;
 		}
+
+		int i;
+		for (i = 0; i < MAX_MESSAGE_HANDLERS; ++i) {
+			c->messageHandlers[i].topicFilter = 0;
+			c->messageHandlers[i].fp = NULL;
+		}
+		isSubscribed = 0;
+		currentpacketid = 0;
+
 		mqtt_printf(MQTT_INFO, "Connect Network \"%s\"", address);
 
 		if (c->ipstack->use_ssl == 1) {
@@ -729,6 +737,13 @@ int MQTTDataHandle(MQTTClient *c, fd_set *readfd, MQTTPacket_connectData *connec
 				int i;
 				isSubscribed++;
 				currentpacketid = mypacketid;
+				for (i = 0; i < MAX_MESSAGE_HANDLERS; ++i) {
+					if (c->messageHandlers[i].topicFilter == 0) {
+						c->messageHandlers[i].topicFilter = topic[isSubscribed - 1];
+						c->messageHandlers[i].fp = messageHandler;
+						break;
+					}
+				}
 				if (isSubscribed < topic_num) {
 					if ((rc = MQTTSubscribe(c, topic[isSubscribed], c->qos_limit, messageHandler)) != 0) {
 						mqtt_printf(MQTT_INFO, "Return code from MQTT subscribe is %d\n", rc);
