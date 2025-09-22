@@ -355,7 +355,7 @@ static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint3
 static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
 // #if ENABLE_AINR && (USE_SENSOR == SENSOR_IMX681)
-	if(current_sensor_id == SENSOR_IMX681) {
+	if(ENABLE_AINR && current_sensor_id == SENSOR_IMX681) {
 		if(init_params.isp_ae_init_gain > (256 * 85 / 10)) {
 			// IMX681 AINR flow for exposure gain > 8.5x
 			if (ainr_ctx == NULL) {
