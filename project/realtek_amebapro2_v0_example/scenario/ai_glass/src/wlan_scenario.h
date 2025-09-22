@@ -57,4 +57,6 @@ int wifi_get_ap_setting(rtw_softap_info_t *wifi_cfg);
 int wifi_get_connect_status(void);
 void wifi_set_up_file_delete_flag(uint8_t flag);
 
+void taskprint(void);
+
 #endif

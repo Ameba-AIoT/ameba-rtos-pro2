@@ -1746,16 +1746,32 @@ static void ai_glass_set_sta_mode(uartcmdpacket_t *param)
 				vTaskDelay(100);
 			}
 
+			u8 connected_channel = 0;
+			uint8_t bandwidth_check = 0;   // 1 for 2.4Ghz, 2 for 5Ghz.
+			wifi_get_channel(&channel);
+			if(channel > 0 && channel < 15){
+				AI_GLASS_INFO("Connected to 2.4GHz Network\r\n");
+				bandwidth_check = 1;
+			}
+			else if(channel >= 36  && channel <= 165){
+				AI_GLASS_INFO("Connected to 5GHz Network\r\n");
+				bandwidth_check = 2;
+			}
+
 			AI_GLASS_INFO("ip_idx0: %d\r\n", ip0);
 			AI_GLASS_INFO("ip_idx1: %d\r\n", ip1);
 			AI_GLASS_INFO("ip_idx2: %d\r\n", ip2);
 			AI_GLASS_INFO("ip_idx3: %d\r\n", ip3);
+			AI_GLASS_INFO("bandwidth_check: %d\r\n", bandwidth_check);
+
+			taskprint();
 			
 			uart_resp_set_sta_mode(param, result,
 				ip0,
 				ip1,
 				ip2,
-				ip3);
+				ip3,
+				bandwidth_check);
 		} else {
 			AI_GLASS_INFO("Already in STA mode. Skipping re-init.\r\n");
 		}
@@ -1770,12 +1786,12 @@ static void ai_glass_set_sta_mode(uartcmdpacket_t *param)
 			AI_GLASS_INFO("Fail to disable STA mode.\r\n");
 			result = AI_GLASS_PROC_FAIL;
 		}
-		uart_resp_set_sta_mode(param, result, 0, 0, 0, 0);
+		uart_resp_set_sta_mode(param, result, 0, 0, 0, 0, 0);
 	}
 	else {
 		result = AI_GLASS_PARAMS_ERR;
 		AI_GLASS_INFO("Invalid mode value: %d\r\n", new_mode);
-		uart_resp_set_sta_mode(param, result, 0, 0, 0, 0);
+		uart_resp_set_sta_mode(param, result, 0, 0, 0, 0, 0);
 	}
 }
 

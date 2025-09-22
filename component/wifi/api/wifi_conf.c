@@ -671,6 +671,11 @@ void wifi_set_ap_compatibilty_enabled(unsigned int  ap_compatibilty_enabled)
 
 void wifi_set_user_config(void)
 {
+	//For debug, you may uncomment the below 3 lines
+	// wifi_user_config.wifi_debug_enabled = BIT(0) | BIT(1) | BIT(2) | BIT(3) | BIT(4);  
+	// wifi_user_config.rtw_powersave_en = 0;
+	// wifi_user_config.channel_plan = 0x25;
+
 	// adaptivity
 	wifi_user_config.rtw_adaptivity_en = DISABLE;
 	/*

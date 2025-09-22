@@ -682,6 +682,313 @@ static void http_heap_send_thread(void *pvParameters) {
     vTaskDelete(NULL); // Delete this task when done
 }
 
+static void print_wifi_setting(const char *ifname, rtw_wifi_setting_t *pSetting)
+{
+#ifndef CONFIG_INIC_NO_FLASH
+ 
+    RTW_API_INFO("\n\r\nWIFI  %s Setting:", ifname);
+    RTW_API_INFO("\n\r==============================");
+ 
+    switch (pSetting->mode) {
+    case RTW_MODE_AP:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("\r\nAP,");
+#endif
+        RTW_API_INFO("\n\r      MODE => AP");
+        break;
+    case RTW_MODE_STA:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("\r\nSTA,");
+#endif
+        RTW_API_INFO("\n\r      MODE => STATION");
+        break;
+    default:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("\r\nUNKNOWN,");
+#endif
+        RTW_API_INFO("\n\r      MODE => UNKNOWN");
+    }
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+    at_printf("%s,%d,", pSetting->ssid, pSetting->channel);
+#endif
+    RTW_API_INFO("\n\r      SSID => %s", pSetting->ssid);
+    RTW_API_INFO("\n\r   CHANNEL => %d", pSetting->channel);
+ 
+    switch (pSetting->security_type) {
+    case RTW_SECURITY_OPEN:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("OPEN,");
+#endif
+        RTW_API_INFO("\n\r  SECURITY => OPEN");
+        break;
+    case RTW_SECURITY_WEP_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("WEP,%d,", pSetting->key_idx);
+#endif
+        RTW_API_INFO("\n\r  SECURITY => WEP");
+        RTW_API_INFO("\n\r KEY INDEX => %d", pSetting->key_idx);
+        break;
+    case RTW_SECURITY_WPA_TKIP_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("WPA TKIP,");
+#endif
+        RTW_API_INFO("\n\r  SECURITY => WPA TKIP");
+        break;
+    case RTW_SECURITY_WPA2_TKIP_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("WPA2 TKIP,");
+#endif
+        RTW_API_INFO("\n\r  SECURITY => WPA2 TKIP");
+        break;
+    case RTW_SECURITY_WPA_AES_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("WPA AES,");
+#endif
+        RTW_API_INFO("\n\r  SECURITY => WPA AES");
+        break;
+    case RTW_SECURITY_WPA_MIXED_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("WPA MIX,");
+#endif
+        RTW_API_INFO("\n\r  SECURITY => WPA Mixed");
+        break;
+    case RTW_SECURITY_WPA2_AES_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("WPA2 AES,");
+#endif
+        RTW_API_INFO("\n\r  SECURITY => WPA2 AES");
+        break;
+    case RTW_SECURITY_WPA2_MIXED_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("WPA2 Mixd,");
+#endif
+        RTW_API_INFO("\n\r  SECURITY => WPA2 Mixed");
+        break;
+    case RTW_SECURITY_WPA_WPA2_TKIP_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("WPA/WPA2 TKIP,");
+#endif
+        RTW_API_INFO("\n\r  SECURITY => WPA/WPA2 TKIP");
+        break;
+    case RTW_SECURITY_WPA_WPA2_AES_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("WPA/WPA2 AES,");
+#endif
+        RTW_API_INFO("\n\r  SECURITY => WPA/WPA2 AES");
+        break;
+    case RTW_SECURITY_WPA_WPA2_MIXED_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("WPA/WPA2 Mixd,");
+#endif
+        RTW_API_INFO("\n\r  SECURITY => WPA/WPA2 Mixed");
+        break;
+    case RTW_SECURITY_WPA3_AES_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("WPA3 SAE AES,");
+#endif
+        RTW_API_INFO("\n\r  SECURITY => WPA3 SAE AES");
+        break;
+    case RTW_SECURITY_WPA3_GCMP_PSK:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("WPA3 GCMP,");
+#endif
+        RTW_API_INFO("\n\r  SECURITY => WPA3 GCMP");
+        break;
+    case RTW_SECURITY_WPA2_WPA3_MIXED:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("WPA2/WPA3 AES,");
+#endif
+        RTW_API_INFO("\n\r  SECURITY => WPA2/WPA3 AES");
+        break;
+    default:
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+        at_printf("UNKNOWN,");
+#endif
+        RTW_API_INFO("\n\r  SECURITY => UNKNOWN");
+    }
+ 
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+    at_printf("%s,", pSetting->password);
+#endif
+    RTW_API_INFO("\n\r  PASSWORD => %s", pSetting->password);
+    RTW_API_INFO("\n\r");
+#endif
+}
+
+void taskprint(void) {
+	rtw_phy_statistics_t phy_statistics;
+	printf("[ATWR]: _AT_WLAN_GET_RSSI_\n\r");
+	wifi_fetch_phy_statistic(&phy_statistics);
+	printf("\n\rrssi = %d", phy_statistics.rssi);
+	printf("\n\r");
+    int i = 0;
+#if CONFIG_LWIP_LAYER
+    u8 *mac = LwIP_GetMAC(0);
+    u8 *ip = LwIP_GetIP(0);
+#if LWIP_VERSION_MAJOR >= 2 && LWIP_VERSION_MINOR >= 1
+#if LWIP_IPV6
+    u8 *ipv6_0 = LwIP_GetIPv6_linklocal(&xnetif[0]);
+#if LWIP_IPV6_DHCP6
+    u8 *ipv6_1 = LwIP_GetIPv6_global(&xnetif[0]);
+#endif
+#endif
+#endif
+    u8 *gw = LwIP_GetGW(0);
+    u8 *msk = LwIP_GetMASK(0);
+#endif
+    u8 *ifname[2] = {(u8 *)WLAN0_NAME, (u8 *)WLAN1_NAME};
+    rtw_wifi_setting_t setting;
+    rtw_sw_statistics_t stats;
+#ifdef CONFIG_RTK_MESH
+    int path_tbl_no;
+    struct path_sel_entry Entry;
+#endif
+ 
+    printf("[ATW?]: _AT_WLAN_INFO_\n\r");
+    for (i = 0; i < NET_IF_NUM; i++) {
+        if (wifi_is_running(i)) {
+#if CONFIG_LWIP_LAYER
+            mac = LwIP_GetMAC(i);
+            ip = LwIP_GetIP(i);
+#if LWIP_VERSION_MAJOR >= 2 && LWIP_VERSION_MINOR >= 1
+#if LWIP_IPV6
+            ipv6_0 = LwIP_GetIPv6_linklocal(&xnetif[i]);
+#if LWIP_IPV6_DHCP6
+            ipv6_1 = LwIP_GetIPv6_global(&xnetif[i]);
+#endif
+#endif
+#endif
+            gw = LwIP_GetGW(i);
+            msk = LwIP_GetMASK(i);
+#endif
+            printf("\n\r\nWIFI %s Status: Running",  ifname[i]);
+            printf("\n\r==============================");
+ 
+            wifi_get_sw_statistic(i, &stats);
+            printf("\ntx stat: tx_packets=%d, tx_dropped=%d, tx_bytes=%d\n", (unsigned int)stats.tx_packets, (unsigned int)stats.tx_dropped, (unsigned int)stats.tx_bytes);
+            printf("rx stat: rx_packets=%d, rx_dropped=%d, rx_bytes=%d, rx_overflow=%d\n", (unsigned int)stats.rx_packets, (unsigned int)stats.rx_dropped,
+                   (unsigned int)stats.rx_bytes, (unsigned int)stats.rx_overflow);
+            if (i == 0) {
+                printf("max_skbbuf_used_num=%d, skbbuf_used_num=%d\n", stats.max_skbbuf_used_number, stats.skbbuf_used_number);
+                printf("max_skbdata_used_num=%d, skbdata_used_num=%d\n", stats.max_skbdata_used_number, stats.skbdata_used_number);
+            }
+            wifi_get_setting(i, &setting);
+            print_wifi_setting((const char *)ifname[i], &setting);
+ 
+#if CONFIG_LWIP_LAYER
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+            at_printf("%02x:%02x:%02x:%02x:%02x:%02x,", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]) ;
+            at_printf("%d.%d.%d.%d,", ip[0], ip[1], ip[2], ip[3]);
+            at_printf("%d.%d.%d.%d", gw[0], gw[1], gw[2], gw[3]);
+#endif
+            printf("\n\rInterface (%s)", ifname[i]);
+            printf("\n\r==============================");
+            printf("\n\r\tMAC => %02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]) ;
+            printf("\n\r\tIP  => %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+#if LWIP_VERSION_MAJOR >= 2 && LWIP_VERSION_MINOR >= 1
+#if LWIP_IPV6
+            printf("\n\r\tLink-local IPV6 => %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+                   ipv6_0[0], ipv6_0[1],  ipv6_0[2],  ipv6_0[3],  ipv6_0[4],  ipv6_0[5],  ipv6_0[6], ipv6_0[7],
+                   ipv6_0[8], ipv6_0[9], ipv6_0[10], ipv6_0[11], ipv6_0[12], ipv6_0[13], ipv6_0[14], ipv6_0[15]);
+#if LWIP_IPV6_DHCP6
+            printf("\n\r\tIPV6            => %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+                   ipv6_1[0], ipv6_1[1],  ipv6_1[2],  ipv6_1[3],  ipv6_1[4],  ipv6_1[5],  ipv6_1[6], ipv6_1[7],
+                   ipv6_1[8], ipv6_1[9], ipv6_1[10], ipv6_1[11], ipv6_1[12], ipv6_1[13], ipv6_1[14], ipv6_1[15]);
+#endif
+#endif
+#endif
+            printf("\n\r\tGW  => %d.%d.%d.%d", gw[0], gw[1], gw[2], gw[3]);
+            printf("\n\r\tmsk  => %d.%d.%d.%d\n\r", msk[0], msk[1], msk[2], msk[3]);
+#endif
+            if (setting.mode == RTW_MODE_AP || i == 1) {
+                int client_number;
+                struct {
+                    int    count;
+                    rtw_mac_t mac_list[AP_STA_NUM];
+                } client_info;
+ 
+                client_info.count = AP_STA_NUM;
+                wifi_get_associated_client_list(&client_info, sizeof(client_info));
+ 
+                printf("\n\rAssociated Client List:");
+                printf("\n\r==============================");
+ 
+                if (client_info.count == 0) {
+                    printf("\n\rClient Num: %d\n\r", client_info.count);
+                } else {
+                    printf("\n\rClient Num: %d", client_info.count);
+                    for (client_number = 0; client_number < client_info.count; client_number++) {
+                        printf("\n\rClient %d:", client_number + 1);
+                        printf("\n\r\tMAC => "MAC_FMT"",
+                               MAC_ARG(client_info.mac_list[client_number].octet));
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+                        at_printf("\r\nCLIENT : %d,"MAC_FMT"", client_number + 1, MAC_ARG(client_info.mac_list[client_number].octet));
+#endif
+#ifdef CONFIG_RTK_MESH
+                        if (query_table(client_info.mac_list[client_number].octet, &Entry) == 1) {
+                            printf("\n\r\tPATH table => NEXT HOP:"MAC_FMT"\tSN:%d\tMETRIC:%d\t", MAC_ARG(Entry.nexthopMAC), Entry.sn, Entry.metric);
+                        }
+ 
+#endif
+ 
+                    }
+                    printf("\n\r");
+                }
+#ifdef CONFIG_RTK_MESH
+                printf("\n\rPATH table");
+                if (query_whole_table(&path_tbl_no) == 1) {
+                    printf("\n\rThere are total %d PATH table", path_tbl_no);
+                }
+#endif
+            }
+        }
+// show the ethernet interface info
+        else {
+#if CONFIG_ETHERNET
+            if (i == NET_IF_NUM - 1) {
+#if CONFIG_LWIP_LAYER
+                mac = LwIP_GetMAC(i);
+                ip = LwIP_GetIP(i);
+                gw = LwIP_GetGW(i);
+                printf("\n\rInterface ethernet\n");
+                printf("\n\r==============================");
+                printf("\n\r\tMAC => %02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]) ;
+                printf("\n\r\tIP  => %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+                printf("\n\r\tGW  => %d.%d.%d.%d\n\r", gw[0], gw[1], gw[2], gw[3]);
+#endif // end CONFIG_LWIP_LAYER
+            }
+#endif // end CONFIG_ETHERNET
+        }
+    }
+ 
+#if defined(configUSE_TRACE_FACILITY) && (configUSE_TRACE_FACILITY == 1) && (configUSE_STATS_FORMATTING_FUNCTIONS == 1)
+    {
+        int buf_len = uxTaskGetNumberOfTasks() * 32;
+        char *pcWriteBuffer = NULL;
+ 
+        if (buf_len < 1024) {
+            buf_len = 1024;
+        }
+ 
+        pcWriteBuffer = (char *)rtw_zmalloc(buf_len);
+        if (pcWriteBuffer == NULL) {
+            printf("malloc pcWriteBuffer for ATW? fail\n");
+            return;
+        }
+        vTaskList((char *)pcWriteBuffer);
+        printf("\n\rTask List: \n\r%s", pcWriteBuffer);
+ 
+        if (pcWriteBuffer) {
+            rtw_mfree((u8 *)pcWriteBuffer, 0);
+        }
+    }
+#endif
+ 
+#if (defined(SUPPORT_UART_LOG_SERVICE) && SUPPORT_UART_LOG_SERVICE) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
+    at_printf("\r\n[ATW?] OK");
+#endif
+}
+
 static void media_getfile_cb(struct httpd_conn *conn)
 { 
 	critical_process_started = 1;
