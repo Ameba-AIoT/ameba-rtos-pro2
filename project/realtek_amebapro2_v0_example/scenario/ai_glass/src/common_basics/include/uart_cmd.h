@@ -73,7 +73,7 @@ int uart_resp_get_sd_info(uartcmdpacket_t *param, uint32_t total_Kbytes, uint32_
 int uart_resp_set_ap_mode(uartcmdpacket_t *param, rtw_softap_info_t *wifi_cfg, uint32_t ssid_buf_size, uint32_t password_buf_size, uint8_t result);
 
 // For UART_RX_OPC_CMD_SET_STA_MODE
-int uart_resp_set_sta_mode(uartcmdpacket_t *param, uint8_t status, uint8_t ip_index0, uint8_t ip_index1, uint8_t ip_index2, uint8_t ip_index3);
+int uart_resp_set_sta_mode(uartcmdpacket_t *param, uint8_t status, uint8_t ip_index0, uint8_t ip_index1, uint8_t ip_index2, uint8_t ip_index3, uint8_t bandwidth);
 
 // For UART_RX_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW
 int uart_resp_get_pic_data_sliding_window(uartcmdpacket_t *param, FILE *ai_snapshot_rfile, file_seek_func file_seek, file_read_func file_read,
