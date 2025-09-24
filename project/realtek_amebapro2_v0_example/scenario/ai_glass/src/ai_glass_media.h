@@ -5,6 +5,8 @@
 #include "task.h"
 #include "sensor.h"
 #include "video_api.h"
+#include <uart_service.h>
+#include <uart_cmd.h>
 
 /**
 * Nor Flash Address To Store Snapshot/Record data
@@ -183,7 +185,7 @@ int ai_snapshot_deinitialize(void);
 
 // life snapshot
 int lifetime_snapshot_initialize(isp_info_sync_t *isp_info);
-int lifetime_snapshot_take(const char *file_name);
+int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param);
 int lifetime_highres_save(const char *file_name);
 int lifetime_snapshot_deinitialize(void);
 

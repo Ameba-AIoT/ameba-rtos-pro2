@@ -79,7 +79,6 @@ volatile uint8_t cancel_wifi_upgrade = 0;
 volatile int critical_process_started = 0;
 
 // Funtion Prototype
-static void ai_glass_init_external_disk(void);
 static void ai_glass_deinit_external_disk(void);
 static void ai_glass_init_ram_disk(void);
 void ai_glass_log_init(void);
@@ -166,7 +165,7 @@ static void aiglass_mass_storage_deinit(void)
 	}
 }
 
-static void ai_glass_init_external_disk(void)
+void ai_glass_init_external_disk(void)
 {
 	if (!extdisk_get_init_status()) {
 		extdisk_filesystem_init(ai_glass_disk_name, VFS_FATFS, EXTDISK_PLATFORM);
@@ -1233,7 +1232,6 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 			}
 		} else if (mode == 0) {
 lifetimesnapshot:
-			ai_glass_init_external_disk();
 			AI_GLASS_MSG("Process LIFETIME SNAPSHOT\r\n");
 
 			if (dual_snapshot != 1) {
@@ -1260,8 +1258,6 @@ lifetimesnapshot:
 			}
 			int ret = lifetime_snapshot_initialize(&isp_info);
 			if (ret == 0) {
-				status = AI_GLASS_DEVICE_WORKING_IN_PROG; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
-				uart_resp_snapshot(param, status);
 				uint8_t file_name_length = snapshot_param[0];
 				char temp_record_filename_buffer[160] = {0};
 				uint8_t lifetime_snap_name[160] = {0};
@@ -1300,7 +1296,9 @@ lifetimesnapshot:
 						extdisk_generate_unique_filename("PICTURE_0_0_", "19800101", ".jpg", (char *)temp_record_filename_buffer, 160);
 					}
 				}
-				if (lifetime_snapshot_take((const char *)lifetime_snap_name) == 0) {
+				if (lifetime_snapshot_take((const char *)lifetime_snap_name, param) == 0) {
+					status = AI_GLASS_DEVICE_WORKING_IN_PROG;
+					ai_glass_init_external_disk();
 					if (lifetime_highres_save((const char *)lifetime_snap_name) != 0) {
 						AI_GLASS_WARN("lifetime snapshot high res save failed\r\n");
 						status = AI_GLASS_PROC_FAIL;
@@ -2141,7 +2139,8 @@ void fLFSNAPSHOT(void *arg)
 			AI_GLASS_WARN("no memory for lifetime snapshot file name\r\n");
 			extdisk_generate_unique_filename("PICTURE_0_0_", "19800101", ".jpg", (char *)temp_record_filename_buffer, 160);
 		}
-		if (lifetime_snapshot_take((const char *)lifetime_snap_name) == 0) {
+		uartcmdpacket_t *param = NULL;
+		if (lifetime_snapshot_take((const char *)lifetime_snap_name, param) == 0) {
 			status = AI_GLASS_CMD_COMPLETE;
 			if (lifetime_highres_save((const char *)lifetime_snap_name) != 0) {
 				AI_GLASS_WARN("lifetime snapshot high res save failed\r\n");

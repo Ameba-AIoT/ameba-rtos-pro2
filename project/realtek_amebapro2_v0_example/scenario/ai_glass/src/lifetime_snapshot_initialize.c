@@ -12,6 +12,7 @@
 #include "vfs.h"
 #include "sensor.h"
 #include "ai_glass_media.h"
+#include "ai_glass_initialize.h"
 #include "module_filesaver.h"
 #include "nv12tojpg.h"
 #include "media_filesystem.h"
@@ -549,7 +550,7 @@ snashot_fail:
 	return;
 }
 
-static void high_resolution_snapshot_take(char *file_path)
+static void high_resolution_snapshot_take(char *file_path, uartcmdpacket_t *param)
 {
 #if USE_VIDEO_HR_FLOW
 	int proc_raw_idx = 0;
@@ -595,6 +596,8 @@ static void high_resolution_snapshot_take(char *file_path)
 		AI_GLASS_ERR("Err: allocate buffer to process 12M snapshot\r\n");
 		goto snashot_fail;
 	}
+	uint8_t status = AI_GLASS_DEVICE_WORKING_IN_PROG; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
+	uart_resp_snapshot(param, status);
 	AI_GLASS_MSG("get 12M NV16 done time %lu\r\n", mm_read_mediatime_ms());
 	lfsnap_status = LIFESNAP_GET;
 	return;
@@ -905,7 +908,7 @@ endoflifesnapshot:
 }
 
 // Todo: Use semapshore for the process
-int lifetime_snapshot_take(const char *file_name)
+int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 {
 	if (lfsnap_status == LIFESNAP_START) {
 		AI_GLASS_MSG("================life_snapshot_take========================== %lu\r\n", mm_read_mediatime_ms());
@@ -917,7 +920,7 @@ int lifetime_snapshot_take(const char *file_name)
 			AI_GLASS_MSG("life_snapshot_take %s\r\n", snapshot_name);
 			mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_SAVE_FILE_PATH, (int)snapshot_name);
 			lfsnap_status = LIFESNAP_TAKE;
-			high_resolution_snapshot_take(snapshot_name);
+			high_resolution_snapshot_take(snapshot_name, param);
 			if (lfsnap_status == LIFESNAP_GET) {
 				AI_GLASS_INFO("Get 12M NV16 done\r\n");
 				return 0;
@@ -925,6 +928,7 @@ int lifetime_snapshot_take(const char *file_name)
 // #else
 		} else {
 			AI_GLASS_INFO("Sanpshot start not 12M flow\r\n");
+			ai_glass_init_external_disk();
 			snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s", file_name);
 			AI_GLASS_MSG("life_snapshot_take %s\r\n", snapshot_name);
 			mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_SAVE_FILE_PATH, (int)snapshot_name);
