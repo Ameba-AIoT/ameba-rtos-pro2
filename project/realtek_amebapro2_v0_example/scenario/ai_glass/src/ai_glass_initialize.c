@@ -1009,7 +1009,7 @@ static void ai_glass_get_power_down(uartcmdpacket_t *param)
 {
 	uint8_t result = AI_GLASS_CMD_COMPLETE;
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_POWER_DOWN %lu\r\n", mm_read_mediatime_ms());
-	vTaskDelay(pdMS_TO_TICKS(1000));
+	vTaskDelay(pdMS_TO_TICKS(200));
 	// Wait until the video is down
 	if (xSemaphoreTake(video_proc_sema, POWER_DOWN_TIMEOUT) != pdTRUE) {
 		AI_GLASS_WARN("AI glass is snapshot or record, power down fail %lu\r\n", mm_read_mediatime_ms());
@@ -1397,6 +1397,9 @@ static void ai_glass_get_pic_data(uartcmdpacket_t *param)
 static void ai_glass_get_trans_pic_stop(uartcmdpacket_t *param)
 {
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_TRANS_PIC_STOP\r\n");
+	if (dual_snapshot == 1) {
+		vTaskDelay(pdMS_TO_TICKS(2000));
+	}
 	uart_resp_get_trans_pic_stop(param);
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_TRANS_PIC_STOP %lu\r\n", mm_read_mediatime_ms());
 }
