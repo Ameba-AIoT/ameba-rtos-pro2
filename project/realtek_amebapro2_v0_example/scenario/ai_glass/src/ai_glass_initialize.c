@@ -2144,7 +2144,7 @@ void fLFSNAPSHOT(void *arg)
 		}
 		uartcmdpacket_t *param = NULL;
 		if (lifetime_snapshot_take((const char *)lifetime_snap_name, param) == 0) {
-			status = AI_GLASS_CMD_COMPLETE;
+			status = AI_GLASS_DEVICE_WORKING_IN_PROG;
 			if (lifetime_highres_save((const char *)lifetime_snap_name) != 0) {
 				AI_GLASS_WARN("lifetime snapshot high res save failed\r\n");
 				status = AI_GLASS_PROC_FAIL;
@@ -2152,7 +2152,10 @@ void fLFSNAPSHOT(void *arg)
 		} else {
 			status = AI_GLASS_PROC_FAIL;
 		}
-
+		// Save filelist to EMMC
+		extdisk_save_file_cntlist();
+		AI_GLASS_MSG("Extdisk save file countlist done = %lu\r\n", mm_read_mediatime_ms());
+		status = AI_GLASS_CMD_COMPLETE;
 		AI_GLASS_MSG("wait for lifetime snapshot deinit\r\n");
 		while (lifetime_snapshot_deinitialize()) {
 			vTaskDelay(1);
@@ -2163,8 +2166,6 @@ void fLFSNAPSHOT(void *arg)
 	} else {
 		status = AI_GLASS_PROC_FAIL;
 	}
-	// Save filelist to EMMC
-	extdisk_save_file_cntlist();
 	xSemaphoreGive(video_proc_sema);
 endofsnapshot:
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_SNAPSHOT = %lu\r\n", mm_read_mediatime_ms());
