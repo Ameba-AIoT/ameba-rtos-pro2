@@ -38,6 +38,17 @@ This scenario is intended for a templete for ai glass scenario
 - (default) #define UPDATE_UPGRADE_PROGRESS_TO_8773 1 
 - for non ai-glass application, this flag need to be set to 0 to prevent compilation error.
  
+5. \component\video\driver\RTL8735B\video_api.c
+- line 2160, change out_queue_size from 4096 to 2048 
+- if (hal_video_out_cb(video_output_cb, 2048, (uint32_t)ctx, ch) != OK)
+
+6. \project\realtek_amebapro2_v0_example\GCC-RELEASE\application\rtl8735b_ram_ns.ld
+- line 8, NN_SIZE value change from 16 to 0
+- NN_SIZE = 0;
+
+7. \project\realtek_amebapro2_v0_example\GCC-RELEASE\application\rtl8735b_ram.ld
+- line 5, NN_SIZE value change from 16 to 0
+- NN_SIZE = 0;
 
 ## Config for in this scenario ##
 1. main.c

@@ -39,10 +39,10 @@
 #define SNAPSHOT_12M_ROTATION   DEFAULT_LIFESNAP_ROTATION 
 
 #define SNAPSHOT_12M_QLEVEL     91 // can be 0~100, higher means higher quality
-#define BURST_MODE_MAX_COUNT   1 // when set to 1, disable burst mode. for DDR 128M, maximum can set to 2
+#define BURST_MODE_MAX_COUNT   2 // when set to 1, disable burst mode. for DDR 128M, maximum can set to 2
 #define ENABLE_AINR 		   0 // enable AINR for high res snapshot
 #define SAVE_DBG_IMG 0
-static int raw_index = 0;
+
 //set output resolution to high resolution
 static uint32_t out_img_width = 0;
 static uint32_t out_img_height = 0;
@@ -94,10 +94,14 @@ typedef struct {
 static splited_raw_item_t splited_raw_image[BURST_MODE_MAX_COUNT] = {0};
 static int get_raw_data = 0;
 static uint32_t raw_image_len = 0;
-static int image_count = 0;
 static uint8_t *hr_nv12_image = NULL;
 static video_pre_init_params_t init_params = {0};
 static ainr_ctx_t *ainr_ctx = NULL;
+
+// burst mode
+static uint8_t raw_index = 0;
+static uint8_t jpg_index = 0;
+static uint8_t raw_taken = 0;
 
 // Hardware 12M snapshot
 static uint8_t *jpeg_nv12_addr = NULL;
@@ -194,10 +198,13 @@ static int jpeg_encode_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 	extdisk_fclose(life_snapshot_file);
 	emmc_save_time = mm_read_mediatime_ms() - emmc_save_time;
 	xSemaphoreGive(jpeg_get_sema);
-	lfsnap_status = LIFESNAP_DONE;
+	if (jpg_index == total_burst - 1) {
+		AI_GLASS_MSG("lifetime snapshot done\r\n");
+		lfsnap_status = LIFESNAP_DONE;
+	}
 	return 0;
 }
-static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t data_addr, uint32_t data_size)
+static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t data_addr, uint32_t data_size, int proc_raw_idx, int img_idx)
 {
 	if (lfsnap_status == LIFESNAP_GET) {
 		// init_params.isp_init_raw = 0;
@@ -207,7 +214,8 @@ static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t dat
 		// init_params.dn_init_mode = 0;
 		// mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
 		AI_GLASS_MSG("get liftime snapshot frame time %lu\r\n", mm_read_mediatime_ms());
-		AI_GLASS_MSG("file_path:%s  data_addr:%ld  data_size:%ld \r\n", file_path, data_addr, data_size);
+		// AI_GLASS_MSG("file_path:%s_%d_%d.jpg  data_addr:%ld  data_size:%ld \r\n", file_path, proc_raw_idx, img_idx, data_addr, data_size);
+		AI_GLASS_MSG("file_path:%s_%d.jpg  data_addr:%ld  data_size:%ld \r\n", file_path, img_idx, data_addr, data_size);
 		AI_GLASS_MSG("get liftime snapshot frame encode done time %lu\r\n", mm_read_mediatime_ms());
 		ls_video_params.params.direct_output = 0;
 		ls_video_params.params.width = out_img_width;
@@ -230,8 +238,10 @@ static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t dat
 		dcache_clean_by_addr((uint32_t *)data_addr, data_size);
 		jpeg_nv12_addr = NULL;
 		jpeg_nv12_len = 0;
-		file_save_path = file_path;
+		// file_save_path = file_path;
 		jpeg_get_sema = xSemaphoreCreateBinary();
+		// snprintf(file_save_path, MAXIMUM_FILE_SIZE, "%s_%d_%d.jpg", file_path, proc_raw_idx, img_idx);
+		snprintf(file_save_path, MAXIMUM_FILE_SIZE, "%s_%d.jpg", file_path, img_idx);
 		if (mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_EXT_INPUT, (int)data_addr) < 0) {
 			AI_GLASS_ERR("fail to set hal_video_ext_in \r\n");
 			lfsnap_status = LIFESNAP_FAIL;
@@ -375,7 +385,9 @@ static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint3
 }
 static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
-// #if ENABLE_AINR && (USE_SENSOR == SENSOR_IMX681)
+	printf("-------------------save_high_resolution_raw----------------------\r\n");
+	printf("raw_index = %d\r\n", raw_index); // raw_index 
+	printf("12M raw 0x%x, data len = %lu\r\n", data_addr, data_size);
 	if(ENABLE_AINR && current_sensor_id == SENSOR_IMX681) {
 		if(init_params.isp_ae_init_gain > (256 * 85 / 10)) {
 			// IMX681 AINR flow for exposure gain > 8.5x
@@ -396,7 +408,6 @@ static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32
 			}
 		}
 	}
-// #endif
 #if SAVE_DBG_IMG
 	raw_image = splited_raw_image[raw_index].virt_addr;
 	raw_image_size = data_size;
@@ -417,7 +428,6 @@ static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32
 		printf("raw image malloc fail\r\n");
 		return; 
 	}
-
 #endif
 	raw_image_len = data_size;
 	//split 12M raw to 2 * 6M raw
@@ -462,27 +472,23 @@ static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32
 		//merge 2 * 6M to 12M NV12 image
 		if (hr_nv12_image == NULL) {
 			AI_GLASS_ERR("hr_nv12_image malloc fail\r\n");
-			image_count = -1;
 			return;
 		}
 		AI_GLASS_INFO("dma_left raw 0x%lx, data len = %lu\r\n", data_addr, data_size);
 		yuv420stitch_step(img_buf, hr_nv12_image, out_img_width, out_img_height, out_img_overlap_width, &out_size, 0);
 		AI_GLASS_INFO("dma_left raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
 		save_yuv_option = MERGE_RIGHT_NV12_SKIP_FIRST;
-		image_count++;
 		return;
 	} else if (save_yuv_option == MERGE_RIGHT_NV12) {
 		//deal with right 6M NV12
 		//merge 2 * 6M to 12M NV12 image
 		if (hr_nv12_image == NULL) {
 			AI_GLASS_ERR("hr_nv12_image malloc fail\r\n");
-			image_count = -1;
 			return;
 		}
 		AI_GLASS_INFO("dma_right raw 0x%lx, data len = %lu\r\n", data_addr, data_size);
 		yuv420stitch_step(img_buf, hr_nv12_image, out_img_width, out_img_height, out_img_overlap_width, &out_size, 1);
 		AI_GLASS_INFO("dma_right raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
-		image_count++;
 	} else {
 		save_yuv_option = FILE_PROCESS_FAILED;
 		return;
@@ -490,10 +496,9 @@ static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32
 	save_yuv_option = FILE_PROCESS_DONE;
 }
 
-static void high_resolution_snapshot_save(char *file_path)
+static void high_resolution_snapshot_save(char *file_path, int proc_raw_idx, int img_idx)
 {
 #if USE_VIDEO_HR_FLOW
-	int proc_raw_idx = 0;
 	int timeout_count = 0;
 	//switch to verify sequence driver
 	nv12_gen_time = mm_read_mediatime_ms();
@@ -504,7 +509,7 @@ static void high_resolution_snapshot_save(char *file_path)
 	if (!hr_nv12_image) {
 		AI_GLASS_ERR("hr_nv12_image malloc fail\r\n");
 		AI_GLASS_ERR("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
-		goto snashot_fail;
+		goto snapshot_fail;
 	}
 	//sent 2 * 6M raw to voe
 	config_verification_path_buf(init_params.v_cfg, (uint32_t) splited_raw_image[proc_raw_idx].phy_addr[0], (uint32_t) splited_raw_image[proc_raw_idx].phy_addr[1], out_img_width, out_img_height, out_img_overlap_width, 4);
@@ -512,7 +517,6 @@ static void high_resolution_snapshot_save(char *file_path)
 	init_params.isp_raw_mode_tnr_dis = 0;
 	init_params.dyn_iq_mode = 1;
 	init_params.init_isp_items.init_mirrorflip = 0xf0; // not flip when use sequence
-	image_count = 0;
 
 	//switch to verify sequece driver
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
@@ -537,7 +541,7 @@ static void high_resolution_snapshot_save(char *file_path)
 		timeout_count++;
 		if (timeout_count > 100000) {
 			AI_GLASS_ERR("hr nv12 convert timeout\r\n");
-			goto snashot_fail;
+			goto snapshot_fail;
 		}
 	}	
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
@@ -559,40 +563,23 @@ static void high_resolution_snapshot_save(char *file_path)
 	
 	if (save_yuv_option == FILE_PROCESS_FAILED) {
 		AI_GLASS_ERR("snapshot failed \r\n");
-		goto snashot_fail;
+		goto snapshot_fail;
 	}
 	if (init_params.v_cfg) {
 		free(init_params.v_cfg);
 		init_params.v_cfg = NULL;
 	}
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params); //revert verify setting
-	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
-		free_split_raw_item(&(splited_raw_image[i]));
-	}
 	AI_GLASS_MSG("yuv genaerate done %lu\r\n", mm_read_mediatime_ms());
 	nv12_gen_time = mm_read_mediatime_ms() - nv12_gen_time;
 	jpeg_enc_time = mm_read_mediatime_ms();
-	lifetime_high_resolution_snapshot_save(file_path, (uint32_t)hr_nv12_image, ls_video_params.jpg_width * ls_video_params.jpg_height * 3 / 2);
-	if (hr_nv12_image) {
-		free(hr_nv12_image);
-		hr_nv12_image = NULL;
-	}
+	lifetime_high_resolution_snapshot_save(file_path, (uint32_t)hr_nv12_image, ls_video_params.jpg_width * ls_video_params.jpg_height * 3 / 2, proc_raw_idx, img_idx);
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_SENSOR_ID, get_sensor_index_by_id(current_sensor_id));
+	
 	video_set_isp_ch_buf(JPEG_CHANNEL, 2);
 	return;
-snashot_fail:
+snapshot_fail:
 	lfsnap_status = LIFESNAP_FAIL;
-	if (hr_nv12_image) {
-		free(hr_nv12_image);
-		hr_nv12_image = NULL;
-	}
-	if (init_params.v_cfg) {
-		free(init_params.v_cfg);
-		init_params.v_cfg = NULL;
-	}
-	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
-		free_split_raw_item(&(splited_raw_image[i]));
-	}
 	lifetime_snapshot_deinitialize();
 #endif
 	return;
@@ -601,72 +588,40 @@ snashot_fail:
 static void high_resolution_snapshot_take(char *file_path, uartcmdpacket_t *param)
 {
 #if USE_VIDEO_HR_FLOW
-	int ret = 0;
-	int proc_raw_idx = 0;
-	//prevent memory fragment, allocate hr splited raw buffer
-	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
-		uint8_t *tiled_raws[2];
-		int tiled_w = out_img_width / 2 + out_img_overlap_width;
-		uint32_t tiled_img_size = tiled_w * out_img_height * 2;
-
-		if(alloc_split_raw_item(&(splited_raw_image[i]), tiled_img_size) == NULL) {
-			printf("splited raw image malloc failed\n");
-			printf("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
-			goto snashot_fail;
-		}
-	}
-	//prevent memory fragment, allocate hr nv12 buffer
-	if(hr_nv12_image == NULL) {
-		hr_nv12_image = malloc(hr_nv12_size);
-	}
-	if(hr_nv12_image == NULL) {
-		AI_GLASS_ERR("hr_nv12_image malloc fail\r\n");
-		AI_GLASS_ERR("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
-		goto snashot_fail;
-	}
+	printf("----------------------high_resolution_snapshot_take----------------------\r\n");
 	// get 12M NV16 raw
 	nv16_take_time = mm_read_mediatime_ms();
 	get_raw_data = 0;
 	int timeout_count = 0;
-	raw_index = proc_raw_idx;
 	video_set_isp_ch_buf(JPEG_CHANNEL, 1);
 	if (mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL) != OK) {
-		ret = NOK;
-		goto snashot_fail;
+		goto snapshot_fail;
 	}
 	while (!get_raw_data) {
 		vTaskDelay(1);
 		timeout_count++;
 		if (timeout_count > 10000) {
 			AI_GLASS_MSG("wait image timeout\r\n");
-			ret = NOK;
-			goto snashot_fail;
+			goto snapshot_fail;
 		}
 	}
 	if (get_raw_data == -1) {
 		AI_GLASS_ERR("Err: allocate buffer to process 12M snapshot\r\n");
-		goto snashot_fail;
+		goto snapshot_fail;
 	}
-	uint8_t status = AI_GLASS_DEVICE_WORKING_IN_PROG; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
-	uart_resp_snapshot(param, status);
+	if (param != NULL) {
+		uint8_t status = AI_GLASS_DEVICE_WORKING_IN_PROG; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
+		uart_resp_snapshot(param, status);
+	}
 	AI_GLASS_MSG("get 12M NV16 done time %lu\r\n", mm_read_mediatime_ms());
+	raw_taken += 1;
+	lfsnap_status = LIFESNAP_GET;
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
 	nv16_take_time = mm_read_mediatime_ms() - nv16_take_time;
-	lfsnap_status = LIFESNAP_GET;
 	return;
-snashot_fail:
+snapshot_fail:
+	printf("GET RAW SNAPSHOT FAILED\r\n");
 	lfsnap_status = LIFESNAP_FAIL;
-	if (hr_nv12_image) {
-		free(hr_nv12_image);
-		hr_nv12_image = NULL;
-	}
-	if (init_params.v_cfg) {
-		free(init_params.v_cfg);
-		init_params.v_cfg = NULL;
-	}
-	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
-		free_split_raw_item(&(splited_raw_image[i]));
-	}
 	if(ainr_ctx) {
 		ainr_deinit(ainr_ctx);
 	}
@@ -800,96 +755,11 @@ int lifetime_snapshot_initialize(isp_info_sync_t *isp_info)
 		int voe_heap_size = 45 * 1024 * 1024;
 		video_set_voe_heap((int)NULL, voe_heap_size, 1);
 		AI_GLASS_INFO("\r\n voe heap size = %d\r\n", voe_heap_size);
-		AI_GLASS_INFO("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
-		// Load the AE and AWB data
-		media_get_preinit_isp_data(&init_params);
-		init_params.isp_init_enable = 1;
-		init_params.init_isp_items.init_brightness = 0;
-		init_params.init_isp_items.init_contrast = 50;
-		init_params.init_isp_items.init_flicker = 2;
-		init_params.init_isp_items.init_hdr_mode = 0;
-		init_params.init_isp_items.init_mirrorflip = 0xf0;
-		init_params.init_isp_items.init_saturation = 50;
-		init_params.init_isp_items.init_wdr_mode = 0; // disable WDR for 12M snapshot
-		init_params.init_isp_items.init_mipi_mode = 0;
-		init_params.voe_dbg_disable = 1;
-		init_params.isp_ae_enable = 1;
-		init_params.isp_awb_enable = 1;
-		init_params.init_isp_items.init_mirrorflip = 0xf0;
-		//sync isp info
-		if (isp_info->isp_exposure_time != 0) {
-			init_params.isp_ae_init_exposure = isp_info->isp_exposure_time;
-		}
-		if (isp_info->isp_exposure_gain != 0) {
-			init_params.isp_ae_init_gain = (uint32_t)isp_info->isp_exposure_gain;
-		}
-		if (isp_info->isp_red_gain != 0) {
-			init_params.isp_awb_init_rgain = (uint32_t)isp_info->isp_red_gain;
-		}
-		if (isp_info->isp_blue_gain != 0) {
-			init_params.isp_awb_init_bgain = (uint32_t)isp_info->isp_blue_gain;
-		}
-		// get 12M raw
-		if (lifetime_hr_snapshot_sensor_id_update() == 0) {
+		AI_GLASS_INFO("Available heap %d\r\n", xPortGetFreeHeapSize());
+		ret = lifetime_hr_snapshot_initialize(isp_info);
+		if (ret == -1) {
 			goto endoflifesnapshot;
 		}
-		init_params.isp_init_raw = 1;
-		init_params.isp_raw_mode_tnr_dis = 1;
-		init_params.video_drop_enable = 0;
-		init_params.dyn_iq_mode = 0;
-		ls_video_params.params.stream_id = JPEG_CHANNEL;
-		ls_video_params.params.rotation = SNAPSHOT_12M_ROTATION;
-		ls_video_params.params.type = VIDEO_NV16;
-		ls_video_params.params.width = sensor_params[sen_hr_drv_id].sensor_width;
-		ls_video_params.params.height = sensor_params[sen_hr_drv_id].sensor_height;
-		ls_video_params.params.fps = sensor_params[sen_hr_drv_id].sensor_fps;
-		ls_video_params.params.out_mode = 2; //set to contiuous mode
-		ls_video_params.params.use_static_addr = 1;
-		ls_video_params.jpg_width = sensor_params[sen_hr_drv_id].sensor_width;
-		ls_video_params.jpg_height = sensor_params[sen_hr_drv_id].sensor_height;
-		ls_video_params.jpg_qlevel = SNAPSHOT_12M_QLEVEL;  //life_snap_param.jpeg_qlevel * 10
-		ls_video_params.is_high_res = 1;
-		ls_video_params.params.direct_output = 0;
-		ls_video_params.params.ext_fmt = 0;
-#if defined(ENABLE_META_INFO)
-		ls_video_params.params.meta_enable = 1; // enable exif meta data
-#endif
-		ls_snapshot_ctx = mm_module_open(&video_module);
-		if (ls_snapshot_ctx) {
-			mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_SENSOR_ID, get_sensor_index_by_id(sen_hr_drv_id));
-			mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
-			mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
-			mm_module_ctrl(ls_snapshot_ctx, MM_CMD_SET_QUEUE_LEN, ls_video_params.params.fps);//Default 30
-			mm_module_ctrl(ls_snapshot_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
-		} else {
-			AI_GLASS_ERR("video open fail\n\r");
-			ret = -1;
-			goto endoflifesnapshot;
-		}
-		ls_filesaver_ctx = mm_module_open(&filesaver_module);
-		if (ls_filesaver_ctx) {
-			mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_TYPE_HANDLER, (int)save_high_resolution_raw);
-		} else {
-			AI_GLASS_ERR("filesaver open fail\n\r");
-			ret = -1;
-			goto endoflifesnapshot;
-		}
-
-		ls_siso_snapshot_filesaver = siso_create();
-		if (ls_siso_snapshot_filesaver) {
-#if defined(configENABLE_TRUSTZONE) && (configENABLE_TRUSTZONE == 1)
-			siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_SET_SECURE_CONTEXT, 1, 0);
-#endif
-			siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_ADD_INPUT, (uint32_t)ls_snapshot_ctx, 0);
-			siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_ADD_OUTPUT, (uint32_t)ls_filesaver_ctx, 0);
-			siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_SET_TASKPRIORITY, LIFE_SNAP_PRIORITY, 0);
-			siso_start(ls_siso_snapshot_filesaver);
-		} else {
-			AI_GLASS_ERR("siso_array_filesaver open fail\n\r");
-			ret = -1;
-			goto endoflifesnapshot;
-		}
-// #else
 	} else {
 		ai_glass_snapshot_param_t life_snap_param;
 		memset(&life_snap_param, 0x00, sizeof(ai_glass_snapshot_param_t));
@@ -980,7 +850,6 @@ int lifetime_snapshot_initialize(isp_info_sync_t *isp_info)
 			goto endoflifesnapshot;
 		}
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, ls_video_params.params.stream_id);	// start channel 0
-// #endif
 	}
 	lfsnap_status = LIFESNAP_START;
 	return ret;
@@ -989,29 +858,166 @@ endoflifesnapshot:
 	return ret;
 }
 
+int lifetime_hr_snapshot_initialize(isp_info_sync_t *isp_info)
+{
+	// Load the AE and AWB data
+	media_get_preinit_isp_data(&init_params);
+	init_params.isp_init_enable = 1;
+	init_params.init_isp_items.init_brightness = 0;
+	init_params.init_isp_items.init_contrast = 50;
+	init_params.init_isp_items.init_flicker = 2;
+	init_params.init_isp_items.init_hdr_mode = 0;
+	init_params.init_isp_items.init_mirrorflip = 0xf0;
+	init_params.init_isp_items.init_saturation = 50;
+	init_params.init_isp_items.init_wdr_mode = 0; // disable WDR for 12M snapshot
+	init_params.init_isp_items.init_mipi_mode = 0;
+	init_params.voe_dbg_disable = 1;
+	init_params.isp_ae_enable = 1;
+	init_params.isp_awb_enable = 1;
+	init_params.init_isp_items.init_mirrorflip = 0xf0;
+	//sync isp info
+	if (isp_info->isp_exposure_time != 0) {
+		printf("isp_exposure_time != 0\r\n");
+		init_params.isp_ae_init_exposure = isp_info->isp_exposure_time;
+	}
+	if (isp_info->isp_exposure_gain != 0) {
+		printf("isp_exposure_gain != 0\r\n");
+		init_params.isp_ae_init_gain = (uint32_t)isp_info->isp_exposure_gain;
+	}
+	if (isp_info->isp_red_gain != 0) {
+		printf("isp_red_gain != 0\r\n");
+		init_params.isp_awb_init_rgain = (uint32_t)isp_info->isp_red_gain;
+	}
+	if (isp_info->isp_blue_gain != 0) {
+		printf("isp_blue_gain != 0\r\n");
+		init_params.isp_awb_init_bgain = (uint32_t)isp_info->isp_blue_gain;
+	}
+	// get 12M raw
+	if (lifetime_hr_snapshot_sensor_id_update() == 0) {
+		goto endoflifesnapshot;
+	}
+	// get 12M raw
+	int sensor_id = 2;
+	init_params.isp_init_raw = 1;
+	init_params.isp_raw_mode_tnr_dis = 1;
+	init_params.video_drop_enable = 0;
+	init_params.dyn_iq_mode = 0;
+	ls_video_params.params.stream_id = JPEG_CHANNEL;
+	ls_video_params.params.rotation = SNAPSHOT_12M_ROTATION;
+	ls_video_params.params.type = VIDEO_NV16;
+	ls_video_params.params.width = sensor_params[sen_hr_drv_id].sensor_width;
+	ls_video_params.params.height = sensor_params[sen_hr_drv_id].sensor_height;
+	ls_video_params.params.fps = sensor_params[sen_hr_drv_id].sensor_fps;
+	ls_video_params.params.out_mode = 2; //set to contiuous mode
+	ls_video_params.params.use_static_addr = 1;
+	ls_video_params.jpg_width = sensor_params[sen_hr_drv_id].sensor_width;
+	ls_video_params.jpg_height = sensor_params[sen_hr_drv_id].sensor_height;
+	ls_video_params.jpg_qlevel = SNAPSHOT_12M_QLEVEL;  //life_snap_param.jpeg_qlevel * 10
+	ls_video_params.is_high_res = 1;
+	ls_video_params.params.direct_output = 0;
+	ls_video_params.params.ext_fmt = 0;
+#if defined(ENABLE_META_INFO)
+	ls_video_params.params.meta_enable = 1; // enable exif meta data
+#endif
+	ls_snapshot_ctx = mm_module_open(&video_module);
+	if (ls_snapshot_ctx) {
+		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_SENSOR_ID, get_sensor_index_by_id(sen_hr_drv_id));
+		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
+		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
+		mm_module_ctrl(ls_snapshot_ctx, MM_CMD_SET_QUEUE_LEN, ls_video_params.params.fps);//Default 30
+		mm_module_ctrl(ls_snapshot_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
+	} else {
+		AI_GLASS_ERR("video open fail\n\r");
+		goto endoflifesnapshot;
+	}
+	ls_filesaver_ctx = mm_module_open(&filesaver_module);
+	if (ls_filesaver_ctx) {
+		mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_TYPE_HANDLER, (int)save_high_resolution_raw);
+	} else {
+		AI_GLASS_ERR("filesaver open fail\n\r");
+		goto endoflifesnapshot;
+	}
+
+	ls_siso_snapshot_filesaver = siso_create();
+	if (ls_siso_snapshot_filesaver) {
+#if defined(configENABLE_TRUSTZONE) && (configENABLE_TRUSTZONE == 1)
+		siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_SET_SECURE_CONTEXT, 1, 0);
+#endif
+		siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_ADD_INPUT, (uint32_t)ls_snapshot_ctx, 0);
+		siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_ADD_OUTPUT, (uint32_t)ls_filesaver_ctx, 0);
+		siso_ctrl(ls_siso_snapshot_filesaver, MMIC_CMD_SET_TASKPRIORITY, LIFE_SNAP_PRIORITY, 0);
+		siso_start(ls_siso_snapshot_filesaver);
+	} else {
+		AI_GLASS_ERR("siso_array_filesaver open fail\n\r");
+		goto endoflifesnapshot;
+	}
+	return 0;
+endoflifesnapshot:
+	lifetime_snapshot_deinitialize();
+	return -1;
+}
 // Todo: Use semapshore for the process
 int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 {
 	if (lfsnap_status == LIFESNAP_START) {
-		AI_GLASS_MSG("================life_snapshot_take========================== %lu\r\n", mm_read_mediatime_ms());
-		AI_GLASS_INFO("Sanpshot start\r\n");
-// #if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_IMX471)
+
 		if ((current_sensor_id == SENSOR_IMX681) || (current_sensor_id == SENSOR_IMX471) || (current_sensor_id == SENSOR_OV13B10)) {
-			AI_GLASS_INFO("Sanpshot start 12M flow\r\n");
-			snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s", file_name);
-			AI_GLASS_MSG("life_snapshot_take %s\r\n", snapshot_name);
-			mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_SAVE_FILE_PATH, (int)snapshot_name);
-			lfsnap_status = LIFESNAP_TAKE;
-			high_resolution_snapshot_take(snapshot_name, param);
+			AI_GLASS_INFO("Snapshot start 12M flow\r\n");
+			//prevent memory fragment, allocate hr splited raw buffer
+			// for(int i = 0; i < (total_burst > 2 ? BURST_MODE_MAX_COUNT:total_burst); i++) {
+			for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
+				int tiled_w = out_img_width / 2 + out_img_overlap_width;
+				uint32_t tiled_img_size = tiled_w * out_img_height * 2;
+
+				if(alloc_split_raw_item(&(splited_raw_image[i]), tiled_img_size) == NULL) {
+					printf("splited raw image malloc failed\n");
+					printf("Available heap %d\r\n", xPortGetFreeHeapSize());
+					lifetime_snapshot_deinitialize();
+				}
+			}
+			//prevent memory fragment, allocate hr nv12 buffer
+			if(hr_nv12_image == NULL) {
+				printf("Available heap before hr_nv12_image malloc %d\r\n", xPortGetFreeHeapSize());
+				hr_nv12_image = malloc(hr_nv12_size);
+			}
+			if(hr_nv12_image == NULL) {
+				AI_GLASS_ERR("hr_nv12_image malloc fail\r\n");
+				AI_GLASS_ERR("Available heap %d\r\n", xPortGetFreeHeapSize());
+				lifetime_snapshot_deinitialize();
+			}
+			if(file_save_path == NULL) {
+				file_save_path = malloc(MAXIMUM_FILE_SIZE);
+			}
+			if (file_save_path == NULL) {
+				printf("file_save_path malloc failed\r\n");
+				printf("Available heap %d\r\n", xPortGetFreeHeapSize());
+				lifetime_snapshot_deinitialize();
+			}
+			printf("Available heap after malloc %d\r\n", xPortGetFreeHeapSize());
+			for (int i = 0; i < (total_burst > 2 ? BURST_MODE_MAX_COUNT:total_burst); i++) {
+				AI_GLASS_MSG("================life_snapshot_take========================== %lu\r\n", mm_read_mediatime_ms());
+				AI_GLASS_INFO("Snapshot start\r\n");
+				if (i == 0) {
+					snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s.jpg", file_name);
+				} else {
+					snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s_%d.jpg", file_name, i);
+				}
+				// snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s_%d.jpg", file_name, i);
+				AI_GLASS_MSG("life_snapshot_take %s\r\n", snapshot_name);
+				mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_SAVE_FILE_PATH, (int)snapshot_name);
+				lfsnap_status = LIFESNAP_TAKE;
+				raw_index = i;
+				printf("[lifetime_snapshot_take] raw_index = %d\r\n", raw_index);
+				high_resolution_snapshot_take(snapshot_name, param);
+			}
 			if (lfsnap_status == LIFESNAP_GET) {
 				AI_GLASS_INFO("Get 12M NV16 done\r\n");
 				return 0;
 			}
-// #else
 		} else {
-			AI_GLASS_INFO("Sanpshot start not 12M flow\r\n");
+			AI_GLASS_INFO("Snapshot start not 12M flow\r\n");
 			ai_glass_init_external_disk();
-			snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s", file_name);
+			snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s.jpg", file_name);
 			AI_GLASS_MSG("life_snapshot_take %s\r\n", snapshot_name);
 			mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_SAVE_FILE_PATH, (int)snapshot_name);
 			lfsnap_status = LIFESNAP_TAKE;
@@ -1025,39 +1031,94 @@ int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 			}
 			AI_GLASS_INFO("Life snapshot done\r\n");
 			return 0;
-		}
-// #endif
+		}	
 
+	} else if (lfsnap_status == LIFESNAP_GET && jpg_index < total_burst) {
+		AI_GLASS_MSG("================life_snapshot_take recurring========================== %lu\r\n", mm_read_mediatime_ms());
+		AI_GLASS_INFO("Snapshot start\r\n");
+		if ((current_sensor_id == SENSOR_IMX681) || (current_sensor_id == SENSOR_IMX471) || (current_sensor_id == SENSOR_OV13B10)) {
+			AI_GLASS_INFO("Snapshot start 12M flow\r\n");
+			raw_index = raw_taken % 2;
+			// snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s_%d_%d.jpg", file_name, raw_index, jpg_index+2);
+			snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s_%d.jpg", file_name, raw_taken);
+			AI_GLASS_MSG("life_snapshot_take %s\r\n", snapshot_name);
+			mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_SAVE_FILE_PATH, (int)snapshot_name);
+			lfsnap_status = LIFESNAP_TAKE;
+			// printf("[lifetime_snapshot_take] raw_index = %d\r\n", raw_index);
+			// printf("[lifetime_snapshot_take] taking image of index = %d\r\n", raw_taken);
+			high_resolution_snapshot_take(snapshot_name, param);
+			AI_GLASS_INFO("Get 12M NV16 done\r\n");
+			return 0;
+		}
 	}
 	return -1;
 }
 
-int lifetime_highres_save(const char *file_name)
+int lifetime_highres_save(const char *file_name, uartcmdpacket_t *param)
 {
 // #if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_IMX471)
 	if ((current_sensor_id == SENSOR_IMX681) || (current_sensor_id == SENSOR_IMX471) || (current_sensor_id == SENSOR_OV13B10)) {
 		if (lfsnap_status == LIFESNAP_GET) {
-			AI_GLASS_MSG("================highres_save========================== %lu\r\n", mm_read_mediatime_ms());
-			AI_GLASS_INFO("High res save\r\n");
-			high_resolution_snapshot_save((char *)file_name);
-			if (lfsnap_status == LIFESNAP_FAIL) {
-				AI_GLASS_INFO("Life snapshot save failed\r\n");
-				return -1;
+			for(int i = 0; i < total_burst; i++) {
+				AI_GLASS_MSG("================highres_save========================== %lu\r\n", mm_read_mediatime_ms());
+				AI_GLASS_INFO("High res save\r\n");
+				AI_GLASS_INFO("saving image index %d\r\n", i);
+				AI_GLASS_INFO("saving image raw index %d\r\n", i%2);
+				jpg_index = i;
+				high_resolution_snapshot_save((char *)file_name, i%2, i);
+				if (lfsnap_status != LIFESNAP_DONE && raw_taken < total_burst) {
+					isp_info_sync_t isp_info = {0};
+					lifetime_hr_snapshot_initialize(&isp_info);
+					lifetime_snapshot_take((const char *)file_name, param);
+				}
+				if (lfsnap_status == LIFESNAP_FAIL) {
+					AI_GLASS_INFO("Life snapshot save failed\r\n");
+					return -1;
+				}
 			}
-
 			AI_GLASS_INFO("Life snapshot save done\r\n");
+			raw_taken = 0;
+			jpg_index = 0;
+			if (hr_nv12_image) {
+				free(hr_nv12_image);
+				hr_nv12_image = NULL;
+			}
+			if (init_params.v_cfg) {
+				free(init_params.v_cfg);
+				init_params.v_cfg = NULL;
+			}
+			for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
+				free_split_raw_item(&(splited_raw_image[i]));
+			}
+			if (file_save_path) {
+				free(file_save_path);
+				file_save_path = NULL;
+			}
 			return 0;
 		}
 		return -1;
-// #else
 	} else {
 		return 0;
 	}
-// #endif
 }
 
 int lifetime_snapshot_deinitialize(void)
 {
+	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
+		free_split_raw_item(&(splited_raw_image[i]));
+	}	
+	if(hr_nv12_image) {
+		free(hr_nv12_image);
+		hr_nv12_image = NULL;
+	}
+	if (init_params.v_cfg) {
+		free(init_params.v_cfg);
+		init_params.v_cfg = NULL;
+	}
+	if (file_save_path) {
+		free(file_save_path);
+		file_save_path = NULL;
+	}
 	if (lfsnap_status != LIFESNAP_TAKE && lfsnap_status != LIFESNAP_GET) {
 		//Pause Linker
 		if (ls_siso_snapshot_filesaver) {

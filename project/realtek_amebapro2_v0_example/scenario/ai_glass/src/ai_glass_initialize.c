@@ -88,6 +88,7 @@ static UpgradeInfo info;
 
 static uint8_t g_current_wifi_mode = 0; 
 static int dual_snapshot = 0;
+volatile int total_burst = 1;
 // These functions are for testing ai glass with mass storage
 #include "usb.h"
 #include "msc/inc/usbd_msc_config.h"
@@ -1186,8 +1187,13 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 	isp_info_sync_t isp_info = {0};
 	AI_GLASS_MSG("get UART_RX_OPC_CMD_SNAPSHOT = %lu\r\n", mm_read_mediatime_ms());
 	if (xSemaphoreTake(video_proc_sema, 0) != pdTRUE) {
-		status = AI_GLASS_BUSY;
-		AI_GLASS_WARN("AI glass is snapshot or record, current snapshot busy fail\r\n");
+		if (current_state == STATE_RECORDING || current_state == STATE_END_RECORDING) {
+			status = AI_GLASS_BUSY;
+			AI_GLASS_MSG("Recording has started, not starting another recording\r\n");
+		} else {
+			AI_GLASS_WARN("AI glass snapshot burst, snapshot + 1\r\n");
+			total_burst++;
+		}
 	} else {
 		uint8_t mode = 0;
 		uint8_t *snapshot_param = uart_parser_snapshot_video_info(param, &mode);
@@ -1267,7 +1273,7 @@ lifetimesnapshot:
 					memcpy(uart_filename_str, snapshot_param + 1, file_name_length);
 					AI_GLASS_MSG("Filename retrieved from 8773\r\n"); 
 					extdisk_generate_unique_filename("", uart_filename_str, ".jpg", (char *)temp_record_filename_buffer, 160);
-					snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s%s", (const char *)temp_record_filename_buffer, ".jpg");
+					snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s", (const char *)temp_record_filename_buffer);
 				} else if((ai_snap_params.lifetime_file_name_len > 0) && (dual_snapshot == 1)) {
 					file_name_length = ai_snap_params.lifetime_file_name_len;
 					char uart_filename_str[160] = {0};
@@ -1280,7 +1286,7 @@ lifetimesnapshot:
 					ai_snap_params.lifetime_file_name[ai_snap_params.lifetime_file_name_len] = '\0';
 					
 					extdisk_generate_unique_filename("", (const char *)uart_filename_str, ".jpg", (char *)temp_record_filename_buffer, 160);
-					snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s%s", (const char *)temp_record_filename_buffer, ".jpg");
+					snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s", (const char *)temp_record_filename_buffer);
 					AI_GLASS_MSG("lifetime_snap_name = %s\r\n", (char *)lifetime_snap_name);
 					
 				} else {
@@ -1288,7 +1294,7 @@ lifetimesnapshot:
 					if (cur_time_str) {
 						AI_GLASS_MSG("Filename generated from 8735B\r\n");
 						extdisk_generate_unique_filename("PICTURE_0_0_", cur_time_str, ".jpg", (char *)temp_record_filename_buffer, 160);
-						snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s%s", (const char *)temp_record_filename_buffer, ".jpg");
+						snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s", (const char *)temp_record_filename_buffer);
 						AI_GLASS_MSG("lifetime_snap_name = %s\r\n", (char *)lifetime_snap_name);
 						free(cur_time_str);
 					} else {
@@ -1299,7 +1305,7 @@ lifetimesnapshot:
 				if (lifetime_snapshot_take((const char *)lifetime_snap_name, param) == 0) {
 					status = AI_GLASS_DEVICE_WORKING_IN_PROG;
 					ai_glass_init_external_disk();
-					if (lifetime_highres_save((const char *)lifetime_snap_name) != 0) {
+					if (lifetime_highres_save((const char *)lifetime_snap_name, param) != 0) {
 						AI_GLASS_WARN("lifetime snapshot high res save failed\r\n");
 						status = AI_GLASS_PROC_FAIL;
 						uart_resp_snapshot(param, status);
@@ -2118,6 +2124,17 @@ void fENABLESTAMODE(void *arg)
 
 void fLFSNAPSHOT(void *arg)
 {
+	int argc = 0;
+	char *argv[MAX_ARGC] = {0};
+	argc = parse_param(arg, argv);
+	if (argc > 1) {
+		printf("argc = %d\r\n", argc);
+		// burst mode
+		total_burst = atoi(argv[1]);
+	} else {
+		total_burst = 1;
+	}
+
 	uint8_t status = AI_GLASS_CMD_COMPLETE;
 	isp_info_sync_t isp_info = {0};
 	if (xSemaphoreTake(video_proc_sema, 0) != pdTRUE) {
@@ -2136,7 +2153,7 @@ void fLFSNAPSHOT(void *arg)
 		char *cur_time_str = (char *)media_filesystem_get_current_time_string();
 		if (cur_time_str) {
 			extdisk_generate_unique_filename("PICTURE_0_0_", cur_time_str, ".jpg", (char *)temp_record_filename_buffer, 160);
-			snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s%s", (const char *)temp_record_filename_buffer, ".jpg");
+			snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s", (const char *)temp_record_filename_buffer);
 			free(cur_time_str);
 		} else {
 			AI_GLASS_WARN("no memory for lifetime snapshot file name\r\n");
@@ -2145,7 +2162,7 @@ void fLFSNAPSHOT(void *arg)
 		uartcmdpacket_t *param = NULL;
 		if (lifetime_snapshot_take((const char *)lifetime_snap_name, param) == 0) {
 			status = AI_GLASS_DEVICE_WORKING_IN_PROG;
-			if (lifetime_highres_save((const char *)lifetime_snap_name) != 0) {
+			if (lifetime_highres_save((const char *)lifetime_snap_name, param) != 0) {
 				AI_GLASS_WARN("lifetime snapshot high res save failed\r\n");
 				status = AI_GLASS_PROC_FAIL;
 			}

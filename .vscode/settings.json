@@ -1,0 +1,9 @@
+{
+    "files.associations": {
+        "librtsremosaic.h": "c",
+        "video_api.h": "c",
+        "ainr.h": "c",
+        "stdlib.h": "c",
+        "nnlite_api.h": "c"
+    }
+}

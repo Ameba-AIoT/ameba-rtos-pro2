@@ -2157,7 +2157,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 		}
 	}
 	video_dprintf(VIDEO_LOG_INF, "set video callback\r\n");
-	if (hal_video_out_cb(video_output_cb, 4096, (uint32_t)ctx, ch) != OK) {
+	if (hal_video_out_cb(video_output_cb, 2048, (uint32_t)ctx, ch) != OK) { //4096
 		video_dprintf(VIDEO_LOG_ERR, "hal_video_cb_register fail\n");
 		status = NOK;
 		goto EXIT;
