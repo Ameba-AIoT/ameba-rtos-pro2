@@ -110,10 +110,15 @@ static char *file_save_path = NULL;
 static SemaphoreHandle_t jpeg_get_sema = NULL;
 #if defined(ENABLE_META_INFO)
 static video_meta_t metadata;
+
+//Exif information
+char img_date[9];
+char img_time[7];
+char img_datetime[20];
 static ExifParams param = {
 	.make = "Realtek",                      // Manufacturer (e.g., "Realtek")
 	.model = "Rtl8735b",                    // Camera model (e.g., "Rtl8735b")
-	.datetime = "2025:07:22 15:16:17",      // Date and time of capture (EXIF format: "YYYY:MM:DD HH:MM:SS")
+	.datetime = (const char *)img_datetime, // Date and time of capture (EXIF format: "YYYY:MM:DD HH:MM:SS")
 	.exposure_time = 1.0 / 500.0,           // Exposure time (e.g., 1/500 second ?? 0.002)
 	.fnumber = 2.8,                         // Aperture (e.g., f/2.8)
 	.focal_length = 35.0,                   // Focal length in mm (e.g., 35mm)
@@ -215,7 +220,13 @@ static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t dat
 		// mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
 		AI_GLASS_MSG("get liftime snapshot frame time %lu\r\n", mm_read_mediatime_ms());
 		// AI_GLASS_MSG("file_path:%s_%d_%d.jpg  data_addr:%ld  data_size:%ld \r\n", file_path, proc_raw_idx, img_idx, data_addr, data_size);
-		AI_GLASS_MSG("file_path:%s_%d.jpg  data_addr:%ld  data_size:%ld \r\n", file_path, img_idx, data_addr, data_size);
+		if (img_idx == 0) {
+			snprintf(file_save_path, MAXIMUM_FILE_SIZE, "%s.jpg", file_path);
+			AI_GLASS_MSG("file_path:%s.jpg  data_addr:%ld  data_size:%ld \r\n", file_path, data_addr, data_size);
+		} else {
+			snprintf(file_save_path, MAXIMUM_FILE_SIZE, "%s_%d.jpg", file_path, img_idx);
+			AI_GLASS_MSG("file_path:%s_%d.jpg  data_addr:%ld  data_size:%ld \r\n", file_path, img_idx, data_addr, data_size);
+		}
 		AI_GLASS_MSG("get liftime snapshot frame encode done time %lu\r\n", mm_read_mediatime_ms());
 		ls_video_params.params.direct_output = 0;
 		ls_video_params.params.width = out_img_width;
@@ -241,7 +252,6 @@ static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t dat
 		// file_save_path = file_path;
 		jpeg_get_sema = xSemaphoreCreateBinary();
 		// snprintf(file_save_path, MAXIMUM_FILE_SIZE, "%s_%d_%d.jpg", file_path, proc_raw_idx, img_idx);
-		snprintf(file_save_path, MAXIMUM_FILE_SIZE, "%s_%d.jpg", file_path, img_idx);
 		if (mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_EXT_INPUT, (int)data_addr) < 0) {
 			AI_GLASS_ERR("fail to set hal_video_ext_in \r\n");
 			lfsnap_status = LIFESNAP_FAIL;
@@ -570,7 +580,7 @@ static void high_resolution_snapshot_save(char *file_path, int proc_raw_idx, int
 		init_params.v_cfg = NULL;
 	}
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params); //revert verify setting
-	AI_GLASS_MSG("yuv genaerate done %lu\r\n", mm_read_mediatime_ms());
+	AI_GLASS_MSG("yuv generate done %lu\r\n", mm_read_mediatime_ms());
 	nv12_gen_time = mm_read_mediatime_ms() - nv12_gen_time;
 	jpeg_enc_time = mm_read_mediatime_ms();
 	lifetime_high_resolution_snapshot_save(file_path, (uint32_t)hr_nv12_image, ls_video_params.jpg_width * ls_video_params.jpg_height * 3 / 2, proc_raw_idx, img_idx);
@@ -1009,6 +1019,15 @@ int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 				raw_index = i;
 				printf("[lifetime_snapshot_take] raw_index = %d\r\n", raw_index);
 				high_resolution_snapshot_take(snapshot_name, param);
+				sscanf(file_name, "PICTURE_0_0_%8[0-9]_%6[0-9]", img_date, img_time);
+				sprintf(img_datetime, "%.4s:%.2s:%.2s %.2s:%.2s:%.2s",
+					img_date,         // YYYY
+					img_date+4,       // MM
+					img_date+6,       // DD
+					img_time,         // HH
+					img_time+2,       // mm
+					img_time+4        // ss
+				);
 			}
 			if (lfsnap_status == LIFESNAP_GET) {
 				AI_GLASS_INFO("Get 12M NV16 done\r\n");
@@ -1019,6 +1038,15 @@ int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 			ai_glass_init_external_disk();
 			snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s.jpg", file_name);
 			AI_GLASS_MSG("life_snapshot_take %s\r\n", snapshot_name);
+			sscanf(file_name, "PICTURE_0_0_%8[0-9]_%6[0-9]", img_date, img_time);
+			sprintf(img_datetime, "%.4s:%.2s:%.2s %.2s:%.2s:%.2s",
+				img_date,         // YYYY
+				img_date+4,       // MM
+				img_date+6,       // DD
+				img_time,         // HH
+				img_time+2,       // mm
+				img_time+4        // ss
+			);
 			mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_SAVE_FILE_PATH, (int)snapshot_name);
 			lfsnap_status = LIFESNAP_TAKE;
 			if (ls_video_params.need_sw_encode) {
