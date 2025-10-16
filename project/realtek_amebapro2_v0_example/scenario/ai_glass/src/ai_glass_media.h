@@ -198,6 +198,10 @@ void lifetime_recording_stop(void);
 void lifetime_recording_deinitialize(void);
 int media_update_record_time(uint16_t record_length);
 
+// life audio
+int lifetime_audio_initialize(uint8_t record_filename_length, const char *filename);
+void lifetime_audio_deinitialize(void);
+
 #define MAIN_STREAM_ID  1
 
 #define ENABLE_META_INFO 1

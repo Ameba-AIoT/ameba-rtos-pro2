@@ -1964,3 +1964,236 @@ update_ota_exit:
 }
 
 #endif
+
+#ifdef HEAP_OTA_UPDATE
+
+int heap_update_ota(uint8_t *buffer, uint32_t length)
+{
+    printf("\n\r[%s] Starting Heap OTA update\n\r", __FUNCTION__);
+
+    int ret = -1;
+    uint8_t *buf = NULL;
+    uint32_t buf_size = 0;
+    uint32_t idx = 0;
+    uint32_t total_blocks = 0;
+    uint32_t cur_block = 0;
+    int boot_sel = 0;
+    uint8_t cur_fw_idx = 0;
+    uint8_t target_fw_idx = 0;
+    _file_checksum file_checksum;
+    file_checksum.u = 0;
+	uint32_t fw_timest;
+
+    // Determine boot selection
+    boot_sel = sys_get_boot_sel();
+    buf_size = (boot_sel == 0) ? NOR_BLOCK_SIZE : NAND_BLOCK_SIZE;
+
+    buf = update_malloc(buf_size);
+    if (!buf) {
+        printf("\n\r[%s] Failed to allocate buffer\n\r", __FUNCTION__);
+        goto update_ota_exit;
+    }
+
+    printf("\n\r[%s] Buffer OTA length: %u bytes\n\r", __FUNCTION__, length);
+
+	// Ota_timestamp offset is 0x2D4 in your OTA image
+	uint32_t ota_timestamp = buffer[0x2D4] | (buffer[0x2D5] << 8) | (buffer[0x2D6] << 16) | (buffer[0x2D7] << 24);
+
+	printf("\n\r[%s] OTA timestamp from Heap (hex): 0x%08X\n\r", __FUNCTION__, ota_timestamp);
+
+    // Determine current firmware index
+    cur_fw_idx = hal_sys_get_ld_fw_idx();
+    printf("\n\r[%s] Current firmware index is %d\n\r", __FUNCTION__, cur_fw_idx);
+	
+	fw_timest = hal_sys_get_fw_timest(cur_fw_idx);
+
+	printf("\n\r[%s] Current firmware timestamp (hex): 0x%08X\n\r", __FUNCTION__, fw_timest);
+
+	if (fw_timest >= ota_timestamp) {
+		printf("\n\r[%s] OTA is older or same, skip update\n\r", __FUNCTION__);
+    	goto update_ota_exit;
+	}
+
+    if (cur_fw_idx == 1) {
+        target_fw_idx = OTA_FW2;
+    } else if (cur_fw_idx == 2) {
+        target_fw_idx = OTA_FW1;
+    } else {
+        goto update_ota_exit;
+    }
+
+    // Read checksum bytes from the last 4 bytes of buffer before loop
+#if USE_CHECKSUM
+    if (length >= 4) {
+        file_checksum.c[0] = buffer[length - 4];
+        file_checksum.c[1] = buffer[length - 3];
+        file_checksum.c[2] = buffer[length - 2];
+        file_checksum.c[3] = buffer[length - 1];
+    }
+#endif
+	
+    total_blocks = (length + buf_size - 1) / buf_size;
+
+
+    printf("\n\r[%s] Start OTA update\n\r", __FUNCTION__);
+
+    while (idx < length) {
+        uint32_t rest_len = length - idx;
+        uint32_t data_len = (rest_len > buf_size) ? buf_size : rest_len;
+
+        memset(buf, 0, buf_size);
+        memcpy(buf, buffer + idx, data_len);
+
+        cur_block = idx / buf_size;
+
+		if (cur_block == (total_blocks - 1)) {
+            // last block: remove checksum bytes from flash write
+            data_len -= 4;
+            memset(buf + data_len, 0xFF, buf_size - data_len);  // Optional padding
+        }
+
+#if UPDATE_UPGRADE_PROGRESS_TO_8773
+		if (cancel_wifi_upgrade) {
+			printf("OTA was cancelled!\n");
+			ret = -2;
+			progress = 0;
+			goto update_ota_exit;
+		}
+        // Update progress percentage
+        if (length > 0) {
+            progress = (unsigned char)(((uint64_t)idx * 100) / length);
+            if (progress > 99) progress = 99;
+        }
+		uart_resp_get_sys_upgrade((uint8_t) 1, progress);
+        printf("[Firmware updating] ============================== updating: %d / %lu Bytes (%d%%)\n",
+               idx, (length - 4), progress);
+#else
+        printf("[Firmware updating] ============================== updating: %d / %lu Bytes\n",
+               idx, (length - 4));
+#endif
+
+        if (boot_sel == 0) {
+            ret = ota_flash_NOR(target_fw_idx, total_blocks, cur_block, buf, data_len, file_checksum);
+        } else if (boot_sel == 1) {
+            ret = ota_flash_NAND(target_fw_idx, total_blocks, cur_block, buf, data_len, file_checksum);
+        }
+
+        if (ret < 0) {
+            printf("\n\r[%s] OTA flash failed\n\r", __FUNCTION__);
+            goto update_ota_exit;
+        }
+
+		if (data_len == 0) {
+            break;
+        }
+
+        idx += data_len;
+    }
+#if UPDATE_UPGRADE_PROGRESS_TO_8773
+	progress = 100;
+	uart_resp_get_sys_upgrade((uint8_t) 1, progress);
+#endif
+    printf("\n\r[%s] OTA update completed successfully\n\r", __FUNCTION__);
+
+update_ota_exit:
+    if (buf) {
+        update_free(buf);
+    }
+    return ret;
+}
+
+int heap_update_boot_ota(uint8_t *buffer, uint32_t length)
+{
+    printf("\n\r[%s] Starting Heap Bootloader OTA update\n\r", __FUNCTION__);
+
+    int ret = -1;
+    uint8_t *buf = NULL;
+    uint32_t buf_size = 0;
+    uint32_t idx = 0;
+    uint32_t total_blocks = 0;
+    uint32_t cur_block = 0;
+    int boot_sel = 0;
+    uint8_t target_fw_idx = OTA_BL_PRI;   // bootloader always flash into primary
+    _file_checksum file_checksum;
+    file_checksum.u = 0;
+
+    // Determine boot selection
+    boot_sel = sys_get_boot_sel();
+    if (boot_sel == 0) {
+        buf_size = NOR_BLOCK_SIZE;
+    } else if (boot_sel == 1) {
+        buf_size = NAND_BLOCK_SIZE;
+    } else {
+        printf("[%s] Invalid boot_sel\n", __FUNCTION__);
+        return -1;
+    }
+
+    buf = update_malloc(buf_size);
+    if (!buf) {
+        printf("\n\r[%s] Failed to allocate buffer\n\r", __FUNCTION__);
+        goto update_ota_exit;
+    }
+
+    printf("\n\r[%s] Buffer OTA length: %u bytes\n\r", __FUNCTION__, length);
+
+#if USE_CHECKSUM
+    // Extract checksum from last 4 bytes
+    if (length >= 4) {
+        file_checksum.c[0] = buffer[length - 4];
+        file_checksum.c[1] = buffer[length - 3];
+        file_checksum.c[2] = buffer[length - 2];
+        file_checksum.c[3] = buffer[length - 1];
+    }
+#endif
+
+    total_blocks = (length + buf_size - 1) / buf_size;
+
+    printf("\n\r[%s] Start Bootloader OTA update\n\r", __FUNCTION__);
+    while (idx < length) {
+
+        uint32_t rest_len = length - idx;
+        uint32_t data_len = (rest_len > buf_size) ? buf_size : rest_len;
+
+        memset(buf, 0, buf_size);
+        memcpy(buf, buffer + idx, data_len);
+
+        cur_block = idx / buf_size;
+
+        if (cur_block == (total_blocks - 1)) {
+            // last block: remove checksum bytes from flash write
+            if (data_len >= 4) {
+                data_len -= 4;
+            }
+            memset(buf + data_len, 0xFF, buf_size - data_len);  // pad rest
+        }
+
+        printf("[Bootloader updating] ============================== updating: %u / %u Bytes\n", idx, (length - 4));
+
+        if (boot_sel == 0) {
+            ret = ota_flash_NOR(target_fw_idx, total_blocks, cur_block, buf, data_len, file_checksum);
+        } else if (boot_sel == 1) {
+            ret = ota_flash_NAND(target_fw_idx, total_blocks, cur_block, buf, data_len, file_checksum);
+        }
+
+        if (ret < 0) {
+            printf("\n\r[%s] OTA flash failed\n\r", __FUNCTION__);
+            goto update_ota_exit;
+        }
+
+		if (data_len == 0) {
+			break;
+		}
+
+        idx += data_len;
+    }
+
+    printf("\n\r[%s] Bootloader OTA update completed successfully\n\r", __FUNCTION__);
+
+update_ota_exit:
+    if (buf) {
+        update_free(buf);
+    }
+    return ret;
+}
+
+#endif

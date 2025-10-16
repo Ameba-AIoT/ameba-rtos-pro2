@@ -63,7 +63,9 @@ static const char *ai_glass_disk_name = "aiglass";
 static uint8_t send_response_timer_setstop = 0;
 
 static TimerHandle_t send_response_timer = NULL;
+static TimerHandle_t send_audio_response_timer = NULL;
 static SemaphoreHandle_t send_response_timermutex = NULL;
+static SemaphoreHandle_t send_audio_response_timermutex = NULL;
 static SemaphoreHandle_t video_proc_sema = NULL;
 static struct msc_opts *disk_operation = NULL;
 static int usb_msc_initialed = 0;
@@ -385,6 +387,7 @@ static int ota_file_exists(char *version_str, char ota_versions[2][16])
 	}
 }
 
+#if OTA_EMMC
 // Check OTA files exists and get OTA filename from EMMC
 static int ota_filenames_exists(char ota_filenames[3][32], char *version_str, uint8_t mode)
 {
@@ -523,6 +526,77 @@ static int ota_filenames_exists(char ota_filenames[3][32], char *version_str, ui
 	}
 
 }
+
+#else
+// Check if heap OTA filename matches the requested version
+static int heap_ota_version_matches(uint8_t mode, const char *version_str)
+{
+    #define OTA_FILE_WIFI_PREFIX "wifi_ota_v"
+    #define OTA_FILE_BT_PREFIX   "bt_ota_v"
+    #define OTA_FILE_BOOT_PREFIX "boot_ota_v"
+    #define OTA_FILE_EXTENSION   ".bin"
+
+    int found_wifi = 0, found_bt = 0, found_boot = 0;
+
+    if (!g_heap_ota_data) {
+        AI_GLASS_ERR("Heap OTA data not initialized.\n");
+        return 0;
+    }
+
+    // Check WiFi OTA
+    if ((mode == 0x02 || mode == 0x03) && strncmp(g_heap_ota_data->wifi_filename, OTA_FILE_WIFI_PREFIX, strlen(OTA_FILE_WIFI_PREFIX)) == 0) {
+
+        char *start = g_heap_ota_data->wifi_filename + strlen(OTA_FILE_WIFI_PREFIX);
+        char *end = strstr(start, OTA_FILE_EXTENSION);
+        if (end) {
+            size_t len = end - start;
+            if (len < 16) {
+                char ver_buf[16] = {0};
+                strncpy(ver_buf, start, len);
+                ver_buf[len] = '\0';
+                if (strcmp(ver_buf, version_str) == 0) {
+					found_wifi = 1;
+				}
+            }
+        }
+    }
+
+    // Check Bootloader OTA
+    if ((mode == 0x03) && strncmp(g_heap_ota_data->boot_filename, OTA_FILE_BOOT_PREFIX, strlen(OTA_FILE_BOOT_PREFIX)) == 0) {
+
+        char *start = g_heap_ota_data->boot_filename + strlen(OTA_FILE_BOOT_PREFIX);
+        char *end = strstr(start, OTA_FILE_EXTENSION);
+        if (end) {
+            size_t len = end - start;
+            if (len < 16) {
+                char ver_buf[16] = {0};
+                strncpy(ver_buf, start, len);
+                ver_buf[len] = '\0';
+                if (strcmp(ver_buf, version_str) == 0) {
+					found_boot = 1;
+				}
+            }
+        }
+    }
+
+    // Check BT OTA
+    if (mode == 0x04) {
+    	if (strcmp(g_heap_ota_data->bt_version, version_str) == 0) {
+			found_bt = 1;
+		}
+        
+    }
+
+    // Final check based on mode
+    if ((mode == 0x02 && found_wifi) || (mode == 0x03 && found_wifi && found_boot) || (mode == 0x04 && found_bt)) {
+        return 1; // version matches
+    }
+
+    AI_GLASS_ERR("OTA file name mismatch (mode=0x%02X, WiFi: %d, Boot: %d, BT: %d)\n", mode, found_wifi, found_boot, found_bt);
+    return 0;
+}
+
+#endif
 
 static int clear_ota_signature(void)
 {
@@ -707,7 +781,7 @@ static int clear_ota_signature(void)
 	return 1;
 }
 
-
+#if OTA_EMMC
 //8430
 static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 {
@@ -967,6 +1041,253 @@ static void ai_glass_resp_bt_fw_upgrade(uartcmdpacket_t *param)
 		critical_process_started = 0;
 }
 
+#else
+static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
+{
+    AI_GLASS_INFO("get UART_TX_OPC_CMD_TRANSFER_UPGRADE_DATA\r\n");
+
+    // Print heap OTA info if it exists
+    if (g_heap_ota_data && (g_heap_ota_data->wifi_data || g_heap_ota_data->bt_data)) {
+        AI_GLASS_INFO("Heap OTA WiFi file: %s, size: %u, Heap OTA BOOT file: %s, size: %u, Heap OTA BT version: %s, size: %u\n",
+                      g_heap_ota_data->wifi_filename,
+                      g_heap_ota_data->wifi_length,
+					  g_heap_ota_data->boot_filename,
+                      g_heap_ota_data->boot_length,
+					  g_heap_ota_data->bt_version,
+                      g_heap_ota_data->bt_length);
+    } else {
+        AI_GLASS_INFO("No heap OTA data available.\n");
+    }
+
+    // Parse UART packet to UpgradeInfo
+    info = uart_parser_version_and_upgradetype(param);
+
+    // Print parsed UART upgrade info
+    AI_GLASS_INFO("Parsed Upgrade Info: type=%u, version=%u.%u.%u.%u\n",
+                  info.upgradetype,
+                  info.version[0], info.version[1],
+                  info.version[2], info.version[3]);
+	uint8_t status = AI_GLASS_CMD_COMPLETE;
+	uint8_t power_result = 0;
+	uart_resp_request_sys_upgrade(status);
+	AI_GLASS_INFO("After 8430 CMD acknowledgement\r\n");
+
+	if (info.upgradetype == 0x02) {
+		AI_GLASS_INFO("Start WiFI OTA\r\n");
+
+		// Convert received version to a string
+		snprintf(version_str, sizeof(version_str), "%u.%u.%u.%u",
+				 info.version[0], info.version[1],
+				 info.version[2], info.version[3]);
+
+		AI_GLASS_INFO("WIFI version to be upgrade to: %s\r\n", version_str);
+
+		if (heap_ota_version_matches(info.upgradetype, version_str)) {
+			
+			int ret = -1;
+				ret = heap_update_ota(g_heap_ota_data->wifi_data, g_heap_ota_data->wifi_length);
+				if (!ret) {
+					AI_GLASS_MSG("\n\r Ready to reboot\n");
+					if (g_heap_ota_data && (g_heap_ota_data->bt_data != NULL)) {
+						power_result = UART_PWR_WIFI_OTA_SUCCESS_BT_OTA_READY;
+					} else {
+						power_result = UART_PWR_WIFI_OTA_SUCCESS;
+					}
+					
+					uart_resp_get_power_state(param, power_result);
+					//ota_platform_reset();
+				} else {
+					AI_GLASS_ERR("\n\r OTA Process Failed\n");
+					power_result = AI_GLASS_WIFI_OTA_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
+
+		} else {
+			AI_GLASS_ERR("OTA file name not found.\n");
+			status = AI_GLASS_OTA_FILE_NOT_EXISTED;
+			uart_resp_request_sys_upgrade(status);
+		}
+	} 
+
+	else if (info.upgradetype == 0x04) {
+		AI_GLASS_INFO("Start BT OTA\r\n");
+
+		// Convert received version to a string
+		snprintf(version_str, sizeof(version_str), "%u.%u.%u.%u",
+				 info.version[0], info.version[1],
+				 info.version[2], info.version[3]);
+
+		AI_GLASS_INFO("BT version to be upgrade to: %s\r\n", version_str);
+
+		status = AI_GLASS_CMD_COMPLETE;
+		uart_resp_start_bt_soc_fw_upgrade_ack(status);
+		AI_GLASS_INFO("Send 631 CMD, waiting BT response of 631.\r\n");
+	}
+
+	else if (info.upgradetype == 0x03) {
+		AI_GLASS_INFO("Start WIFI Bootloader and WIFI OTA\r\n");
+
+		// Convert received version to a string
+		snprintf(version_str, sizeof(version_str), "%u.%u.%u.%u",
+				 info.version[0], info.version[1],
+				 info.version[2], info.version[3]);
+
+		AI_GLASS_INFO("Bootloader and WIFI version to be upgrade to: %s\r\n", version_str);
+
+		if (heap_ota_version_matches(info.upgradetype, version_str)) {
+
+			int ret = -1;
+			ret = heap_update_boot_ota(g_heap_ota_data->boot_data, g_heap_ota_data->boot_length);
+			if (!ret) {
+				AI_GLASS_MSG("\n\r Bootloader OTA done. Continue to upgrade wifi firmware...\r\n");
+
+				int ret = -1;
+				ret = heap_update_ota(g_heap_ota_data->wifi_data, g_heap_ota_data->wifi_length);
+				if (!ret) {
+					AI_GLASS_MSG("\n\r Ready to reboot\n");
+					if (g_heap_ota_data && (g_heap_ota_data->bt_data != NULL)) {
+						power_result = UART_PWR_WIFI_OTA_SUCCESS_BT_OTA_READY;
+					} else {
+						power_result = UART_PWR_WIFI_OTA_SUCCESS;
+					}
+					uart_resp_get_power_state(param, power_result);
+					//ota_platform_reset();
+				} else {
+					AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
+					power_result = AI_GLASS_WIFI_OTA_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
+			} else {
+				AI_GLASS_ERR("\n\r OTA Bootloader Process Failed\n");
+				power_result = AI_GLASS_WIFI_OTA_FAILED;
+				uart_resp_get_power_state(param, power_result);
+			}
+		} else {
+			AI_GLASS_ERR("OTA file name not found.\n");
+			status = AI_GLASS_OTA_FILE_NOT_EXISTED;
+			uart_resp_request_sys_upgrade(status);
+		}
+	}
+    AI_GLASS_INFO("end of UART_TX_OPC_CMD_TRANSFER_UPGRADE_DATA\r\n");
+}
+
+// 631
+static void ai_glass_resp_bt_fw_upgrade(uartcmdpacket_t *param)
+{
+    AI_GLASS_INFO("get UART_TX_OPC_CMD_START_BT_SOC_FW_UPGRADE\r\n");
+
+    cancel_bt_upgrade = 0;  // Reset cancel flag on entry
+    int packet_count   = 0;
+    uint32_t sendtime  = mm_read_mediatime_ms();
+
+    wifi_off();
+    vTaskDelay(20);
+
+    AI_GLASS_INFO("Disabled WIFI\r\n");
+    AI_GLASS_INFO("Sending bluetooth binary via UART...\r\n");
+
+    // Check version match before proceeding
+    if (heap_ota_version_matches(info.upgradetype, version_str)) {
+
+        uint16_t tmp_uart_pic_size = uart_service_get_pic_size() - EMPTY_PACKET_LEN;
+        uint32_t file_size = g_heap_ota_data->bt_length;
+        uint32_t offset = 0;
+        uint16_t data_length = 0;
+        uint8_t data_buffer[1541] = {0};
+
+#if UPDATE_UPGRADE_PROGRESS_TO_8773
+        int total_bytes_sent = 0;
+        uart_resp_get_sys_upgrade((uint8_t)2, (uint8_t)0);
+        AI_GLASS_MSG("BT FW File_size: %lu\r\n", file_size);
+#endif
+
+        while (1) {
+            if (cancel_bt_upgrade) {
+                AI_GLASS_INFO("BT upgrade cancelled by command!\r\n");
+                bt_progress = 0;
+                packet_count = 0;
+#if UPDATE_UPGRADE_PROGRESS_TO_8773
+                AI_GLASS_INFO("FW rollback...\r\n");
+                if (clear_ota_signature()) {
+                    uint8_t status = AI_GLASS_CMD_COMPLETE;
+                    uart_resp_set_wifi_fw_rollback(status);
+                    uart_resp_cancel_sys_upgrade(status);
+                    AI_GLASS_INFO("FW rollback done\r\n");
+                } else {
+                    uint8_t status = AI_GLASS_SCEN_ERR;
+                    uart_resp_set_wifi_fw_rollback(status);
+                    uart_resp_cancel_sys_upgrade(status);
+                    AI_GLASS_ERR("FW rollback failed\r\n");
+                }
+#endif
+                break;
+            }
+
+            // Determine how many bytes remain and copy into buffer
+            uint32_t remain = file_size - offset;
+            if (remain == 0) {
+                AI_GLASS_INFO("End of BT FW buffer reached.\r\n");
+                break;
+            }
+
+            data_length = (remain > tmp_uart_pic_size) ? tmp_uart_pic_size : remain;
+            memset(data_buffer, 0, tmp_uart_pic_size);
+            memcpy(data_buffer, g_heap_ota_data->bt_data + offset, data_length);
+            offset += data_length;
+
+#if UPDATE_UPGRADE_PROGRESS_TO_8773
+            total_bytes_sent += data_length;
+            packet_count++;
+            AI_GLASS_INFO("Total_bytes_sent: %u\r\n", total_bytes_sent);
+
+            static uint8_t last_bt_progress = 0xFF;
+            if (file_size > 0) {
+                bt_progress = (uint8_t)((total_bytes_sent * 100) / file_size);
+                AI_GLASS_INFO("BT progress: %u\r\n", bt_progress);
+                if (bt_progress > 99) {
+                    bt_progress = 99;
+                }
+            }
+            if (bt_progress != last_bt_progress) {
+                last_bt_progress = bt_progress;
+                uart_resp_get_sys_upgrade((uint8_t)2, bt_progress);
+                AI_GLASS_INFO("BT progress update: %u%% after %d packets\r\n",
+                               bt_progress, packet_count);
+            }
+#endif
+
+            AI_GLASS_MSG("[8735(2) Sending] Data Length: %d bytes, Data[0-2]: %02X %02X %02X\n",
+                         data_length, data_buffer[0], data_buffer[1], data_buffer[2]);
+
+            uart_resp_transfer_upgrade_data(data_buffer, data_length);
+            vTaskDelay(pdMS_TO_TICKS(10));
+
+            if (offset >= file_size) {
+#if UPDATE_UPGRADE_PROGRESS_TO_8773
+                uart_resp_get_sys_upgrade((uint8_t)2, (uint8_t)100);
+                AI_GLASS_MSG("Send BT progress status 100\r\n");
+#endif
+                break;
+            }
+        }
+
+        // Delay to ensure all packets are sent before starting BT SoC OTA
+        vTaskDelay(5000);
+        AI_GLASS_INFO("Firmware transfer completed.\r\n");
+        uint32_t endtime = mm_read_mediatime_ms();
+        uint32_t transfertime = endtime - sendtime;
+        uart_resp_finish_bt_soc_fw_upgrade();
+        bt_progress = 0;
+        AI_GLASS_MSG("End of START_BT_SOC_FW_UPGRADE_RESP = %lu\r\n", transfertime);
+    }
+
+    AI_GLASS_INFO("end of UART_TX_OPC_CMD_START_BT_SOC_FW_UPGRADE\r\n");
+    critical_process_started = 0;
+}
+
+#endif
+
+#if OTA_EMMC
 // UART_TX_OPC_CMD_FINISH_BT_SOC_FW_UPGRADE 633
 static void ai_glass_resp_bt_fw_finish(uartcmdpacket_t *param)
 {
@@ -979,6 +1300,18 @@ static void ai_glass_resp_bt_fw_finish(uartcmdpacket_t *param)
 	critical_process_started = 0;
 
 }
+
+#else
+static void ai_glass_resp_bt_fw_finish(uartcmdpacket_t *param)
+{
+	critical_process_started = 1;
+	AI_GLASS_INFO("get UART_TX_OPC_CMD_FINISH_BT_SOC_FW_UPGRADE\r\n");
+
+	AI_GLASS_INFO("end of UART_TX_OPC_CMD_FINISH_BT_SOC_FW_UPGRADE\r\n");
+	critical_process_started = 0;
+
+}
+#endif
 
 // For UART_RX_OPC_CMD_SET_WIFI_FW_ROLLBACK 8415
 static void ai_glass_wifi_fw_rollback(uartcmdpacket_t *param)
@@ -1449,6 +1782,47 @@ static void mp4_send_response_callback(struct tmrTimerControl *parm)
 	}
 	return;
 }
+
+static void mp4_send_audio_response_callback(struct tmrTimerControl *parm)
+{
+	uint8_t record_resp_status = AI_GLASS_CMD_COMPLETE;
+
+	if (xSemaphoreTake(send_audio_response_timermutex, portMAX_DELAY) == pdTRUE) {
+		if (send_response_timer_setstop == 0) {
+			if (current_state == STATE_END_RECORDING || current_state == STATE_ERROR) {
+				if (current_state == STATE_ERROR) {
+					record_resp_status = AI_GLASS_PROC_FAIL;
+				} else {
+					record_resp_status = AI_GLASS_CMD_COMPLETE;
+				}
+				lifetime_audio_deinitialize();
+				send_response_timer_setstop = 1;
+				xSemaphoreGive(send_audio_response_timermutex);
+				uart_resp_audio_record_stop(record_resp_status);
+				AI_GLASS_MSG("mp4_send_audio_response_callback UART_TX_OPC_RESP_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
+				xSemaphoreGive(video_proc_sema);
+			} else {
+				if (current_state == STATE_RECORDING || current_state == STATE_IDLE) {
+					record_resp_status = AI_GLASS_CMD_COMPLETE;
+				}
+				uart_resp_audio_record_cont(record_resp_status);
+				AI_GLASS_MSG("mp4_send_audio_response_callback %lu\r\n", mm_read_mediatime_ms());
+				if (send_audio_response_timer != NULL) {
+					if (xTimerStart(send_audio_response_timer, 0) != pdPASS) {
+						AI_GLASS_ERR("Send timer failed\r\n");
+					}
+				}
+				xSemaphoreGive(send_audio_response_timermutex);
+			}
+		} else {
+			xSemaphoreGive(send_audio_response_timermutex);
+		}
+	} else {
+		AI_GLASS_ERR("Send timer mutex failed\r\n");
+	}
+	return;
+}
+
 static void ai_glass_record_start(uartcmdpacket_t *param)
 {
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_RECORD_START = %lu\r\n", mm_read_mediatime_ms());
@@ -1527,6 +1901,76 @@ static void ai_glass_record_start(uartcmdpacket_t *param)
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_RECORD_START\r\n");
 }
 
+static void ai_glass_audio_start(uartcmdpacket_t *param)
+{
+	AI_GLASS_INFO("get UART_TX_OPC_CMD_AUDIO_START = %lu\r\n", mm_read_mediatime_ms());
+
+	ai_glass_init_external_disk();
+	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
+	AI_GLASS_MSG("Opcode (hex): 0x%x\r\n", query_pkt->opcode);
+	uint8_t record_start_status = AI_GLASS_CMD_COMPLETE;
+
+	//UART PARSER_RECORDING_FILENAME_AND_LENGTH
+	uint8_t record_filename_length = 0;
+	uint8_t *record_filename = uart_parser_recording_video_info(param, &record_filename_length);
+	const char *filename_str;
+	char filename_buf[160] = {0}; // One extra for null terminator
+
+	if (record_filename && record_filename_length < sizeof(filename_buf)) {
+		memcpy(filename_buf, record_filename, record_filename_length);
+		filename_buf[record_filename_length] = '\0'; // Null-terminate
+
+		filename_str = filename_buf;
+	}
+	//This is to make sure that if there is no record filename, the length will not be passed into the function lifetime_recording initialize.
+	else {
+		record_filename_length = 0;
+	}
+	printf("Audio record filename: %s\r\n", filename_str);
+	//Initialize function has a timer that constantly reads the status of MP4.
+	
+	AI_GLASS_MSG("Record start = %lu\r\n", mm_read_mediatime_ms());
+	if (current_state == STATE_RECORDING || current_state == STATE_END_RECORDING) {
+		AI_GLASS_MSG("Video recording has started, not starting another audio recording\r\n");
+		record_start_status = AI_GLASS_CMD_COMPLETE;
+		uart_resp_audio_record_start(record_start_status);
+	} else if (current_state == STATE_IDLE) {
+		int ret = lifetime_audio_initialize(record_filename_length, (const char *)filename_str);
+		// Save filelist to EMMC
+		if (send_audio_response_timer != NULL && ret == 0) {
+			extdisk_save_file_cntlist();
+			if (xSemaphoreTake(send_audio_response_timermutex, portMAX_DELAY) == pdTRUE) {
+				if (xTimerStart(send_audio_response_timer, 0) != pdPASS) {
+					record_start_status = AI_GLASS_PROC_FAIL;
+					uart_resp_audio_record_start(record_start_status);
+					AI_GLASS_ERR("Send UART_RX_OPC_CMD_RECORD_START timer failed\r\n");
+					lifetime_audio_deinitialize();
+				} else {
+					record_start_status = AI_GLASS_CMD_COMPLETE;
+					send_response_timer_setstop = 0;
+					uart_resp_audio_record_start(record_start_status);
+				}
+				xSemaphoreGive(send_audio_response_timermutex);
+			} else {
+				record_start_status = AI_GLASS_PROC_FAIL;
+				uart_resp_audio_record_start(record_start_status);
+				AI_GLASS_ERR("Send UART_RX_OPC_CMD_RECORD_START timer mutex failed\r\n");
+				lifetime_audio_deinitialize();			
+			}
+		} else {
+			record_start_status = AI_GLASS_PROC_FAIL;
+			uart_resp_audio_record_start(record_start_status);
+			AI_GLASS_ERR("Failed to create send_response_timer\r\n");
+			}
+	} else {
+		record_start_status = AI_GLASS_PROC_FAIL;
+		uart_resp_audio_record_start(record_start_status);
+		AI_GLASS_ERR("Failed because of the known record status\r\n");
+	}
+
+	AI_GLASS_INFO("end of UART_TX_OPC_CMD_AUDIO_START\r\n");
+}
+
 static void ai_glass_record_sync_ts(uartcmdpacket_t *param)
 {
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_RECORD_SYNC_TS\r\n");
@@ -1558,6 +2002,32 @@ static void ai_glass_record_stop(uartcmdpacket_t *param)
 	}
 	uart_resp_record_stop(record_stop_status);
 	AI_GLASS_MSG("end of UART_RX_OPC_CMD_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
+}
+
+static void ai_glass_audio_stop(uartcmdpacket_t *param)
+{
+	AI_GLASS_MSG("get UART_RX_OPC_CMD_AUDIO_STOP %lu\r\n", mm_read_mediatime_ms());
+	uint8_t record_stop_status = AI_GLASS_CMD_COMPLETE;
+	if (current_state == STATE_RECORDING) {
+		if (xSemaphoreTake(send_audio_response_timermutex, portMAX_DELAY) == pdTRUE) {
+			if (send_response_timer_setstop == 0) {
+				if (send_audio_response_timer != NULL) {
+					if (xTimerIsTimerActive(send_audio_response_timer) == pdTRUE) {
+						xTimerStop(send_audio_response_timer, 0);
+					}
+				}
+				lifetime_audio_deinitialize();
+				xSemaphoreGive(video_proc_sema);
+				send_response_timer_setstop = 1;
+				xSemaphoreGive(send_audio_response_timermutex);
+			} else {
+				AI_GLASS_MSG("The recording timer has stop\r\n");
+				xSemaphoreGive(send_audio_response_timermutex);
+			}
+		}
+	}
+	uart_resp_audio_record_stop(record_stop_status);
+	AI_GLASS_MSG("end of UART_RX_OPC_CMD_AUDIO_STOP %lu\r\n", mm_read_mediatime_ms());
 }
 
 static void ai_glass_get_file_cnt(uartcmdpacket_t *param)
@@ -1847,6 +2317,9 @@ static rxopc_item_t rx_opcode_basic_items[ ] = {
 	{UART_RX_OPC_CMD_SET_WIFI_MODE,     {false, false, ai_glass_set_ap_mode},           {NULL, NULL}},
 	{UART_RX_OPC_CMD_SET_STA_MODE,      {false, false, ai_glass_set_sta_mode},          {NULL, NULL}},
 
+	{UART_RX_OPC_CMD_AUDIO_START,      {false, false, ai_glass_audio_start},          {NULL, NULL}},
+	{UART_RX_OPC_CMD_AUDIO_STOP,       {true,  false, ai_glass_audio_stop},           {NULL, NULL}},
+
 	{UART_RX_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW,       {false, false, ai_glass_get_pic_data_sliding_window},       {NULL, NULL}},
 	{UART_RX_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW_ACK,   {false, true, ai_glass_get_pic_data_sliding_window_ack},    {NULL, NULL}},
 
@@ -1889,6 +2362,16 @@ void ai_glass_service_thread(void *param)
 	send_response_timermutex = xSemaphoreCreateMutex();
 	if (send_response_timermutex == NULL) {
 		AI_GLASS_ERR("send_response_timermutex create fail\r\n");
+		goto exit;
+	}
+	send_audio_response_timer = xTimerCreate("send_audio_response_timer", 100 / portTICK_PERIOD_MS, pdFALSE, NULL, mp4_send_audio_response_callback);
+	if (send_audio_response_timer == NULL) {
+		AI_GLASS_ERR("send_audio_response_timer create fail\r\n");
+		goto exit;
+	}
+	send_audio_response_timermutex = xSemaphoreCreateMutex();
+	if (send_audio_response_timermutex == NULL) {
+		AI_GLASS_ERR("send_audio_response_timermutex create fail\r\n");
 		goto exit;
 	}
 	video_proc_sema = xSemaphoreCreateBinary();

@@ -49,6 +49,20 @@ enum {
 	WLAN_SET_OK         = 0,
 };
 
+typedef struct {
+    uint8_t *wifi_data;
+	uint8_t *boot_data;
+	uint8_t *bt_data;
+    uint32_t wifi_length;
+	uint32_t boot_length;
+	uint32_t bt_length;
+	char wifi_filename[32];
+    char boot_filename[32];
+    char bt_version[18];
+} heap_ota_data_t;
+
+extern heap_ota_data_t *g_heap_ota_data;
+
 int wifi_enable_sta_mode(rtw_network_info_t *connect_param, int timeout, int retry);
 int wifi_disable_sta_mode(void);
 int wifi_enable_ap_mode(const char *ssid, const char *password, int channel, int timeout);

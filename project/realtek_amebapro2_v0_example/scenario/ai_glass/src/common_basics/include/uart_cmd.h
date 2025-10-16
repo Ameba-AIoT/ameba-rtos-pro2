@@ -48,14 +48,23 @@ int uart_resp_get_trans_pic_stop(uartcmdpacket_t *param);
 uint8_t *uart_parser_recording_video_info(uartcmdpacket_t *param, uint8_t *record_filename_length);
 int uart_resp_record_start(uint8_t resp_stat);
 
+// For UART_RX_OPC_CMD_AUDIO_START
+int uart_resp_audio_record_start(uint8_t resp_stat);
+
 // For UART_TX_OPC_RESP_RECORD_CONT
 int uart_resp_record_cont(uint8_t resp_stat);
+
+// For UART_TX_OPC_RESP_AUDIO_RECORD_CONT
+int uart_resp_audio_record_cont(uint8_t resp_stat);
 
 // For UART_RX_OPC_CMD_RECORD_SYNC_TS
 int uart_resp_record_sync_ts(uartcmdpacket_t *param);
 
 // For UART_TX_OPC_RESP_RECORD_STOP
 int uart_resp_record_stop(uint8_t resp_stat);
+
+// For UART_TX_OPC_CMD_AUDIO_STOP
+int uart_resp_audio_record_stop(uint8_t resp_stat);
 
 // For UART_RX_OPC_CMD_GET_FILE_CNT
 int uart_resp_get_file_cnt(uartcmdpacket_t *param, uint16_t film_num, uint16_t snapshot_num, uint8_t result);

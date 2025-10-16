@@ -10,6 +10,7 @@
 /************************Related setting****************************/
 #define HTTP_OTA_UPDATE
 #define EXT_STORAGE_OTA_UPDATE
+#define HEAP_OTA_UPDATE
 
 #define NOR_BLOCK_SIZE		4096
 #define NAND_BLOCK_SIZE		(64 * 2048)
@@ -102,6 +103,21 @@ int http_update_ota(char *host, int port, char *resource);
 **************************************************************************************************/
 int ext_storage_update_ota(char *filename);
 int ext_storage_update_boot_ota(char *filename);
+#endif
+
+#ifdef HEAP_OTA_UPDATE
+/*************************************************************************************************
+** Function Name  : heap_update_ota
+** Description    : Performs OTA firmware update using binary data stored in heap memory.
+**                  The binary OTA file is passed directly via buffer without relying on 
+**                  file system.
+** Input          : buffer - Pointer to OTA binary data in heap
+**                  length - Length of the binary data
+** Return         : 0      - OTA success
+**                  < 0    - OTA failure
+**************************************************************************************************/
+int heap_update_ota(uint8_t *buffer, uint32_t length);
+int heap_update_boot_ota(uint8_t *buffer, uint32_t length);
 #endif
 
 #endif

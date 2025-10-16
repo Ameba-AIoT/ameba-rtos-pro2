@@ -86,6 +86,7 @@ list(
     ${CMAKE_CURRENT_LIST_DIR}/src/ai_snapshot_initialize.c
     ${CMAKE_CURRENT_LIST_DIR}/src/lifetime_recording_initialize.c
     ${CMAKE_CURRENT_LIST_DIR}/src/lifetime_snapshot_initialize.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/lifetime_audio_initialize.c
     ${CMAKE_CURRENT_LIST_DIR}/src/media_filesystem.c
     ${CMAKE_CURRENT_LIST_DIR}/src/nv12tojpg.c
     ${CMAKE_CURRENT_LIST_DIR}/src/wlan_scenario.c
