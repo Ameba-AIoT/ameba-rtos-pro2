@@ -2733,6 +2733,80 @@ void fCHANGESENSOR(void *arg)
     
 }
 
+void fLFRECORD(void *arg)
+{
+    AI_GLASS_INFO("RECORD_START = %lu\r\n", mm_read_mediatime_ms());
+    int argc = 0;
+    char *argv[MAX_ARGC] = {0};
+   
+    argc = parse_param(arg, argv);  // Typical AT command parsing
+   
+    uint16_t record_length = 0;
+ 
+    if (argc) {
+       
+        record_length =  atoi(argv[1]);
+    }
+	
+    media_update_record_time(record_length);
+ 
+    uint8_t record_filename_length = 0;
+    uint8_t *record_filename = 0;
+ 
+    char filename_buf[160] = {0};
+    const char *filename_str = NULL;
+ 
+    if (record_filename && record_filename_length < sizeof(filename_buf)) {
+        memcpy(filename_buf, record_filename, record_filename_length);
+        filename_buf[record_filename_length] = '\0';  // Ensure null-terminated
+ 
+        filename_str = filename_buf;
+    } else {
+        record_filename_length = 0;
+    }
+ 
+    ai_glass_init_external_disk();
+ 
+    //Initialize function has a timer that constantly reads the status of MP4.
+    if (xSemaphoreTake(video_proc_sema, 0) == pdTRUE) {
+        AI_GLASS_MSG("Record start = %lu\r\n", mm_read_mediatime_ms());
+        if (current_state == STATE_RECORDING || current_state == STATE_END_RECORDING) {
+            AI_GLASS_MSG("Recording has started, not starting another recording\r\n");
+            xSemaphoreGive(video_proc_sema);
+        } else if (current_state == STATE_IDLE) {
+            int ret = lifetime_recording_initialize(record_filename_length, filename_str);
+            // Save filelist to EMMC
+            if (send_response_timer != NULL && ret == 0) {
+                extdisk_save_file_cntlist();
+                if (xSemaphoreTake(send_response_timermutex, portMAX_DELAY) == pdTRUE) {
+                    if (xTimerStart(send_response_timer, 0) != pdPASS) {
+                        AI_GLASS_ERR("Send UART_RX_OPC_CMD_RECORD_START timer failed\r\n");
+                        lifetime_recording_deinitialize();
+                        xSemaphoreGive(video_proc_sema);
+                    } else {
+                        send_response_timer_setstop = 0;
+                    }
+                    xSemaphoreGive(send_response_timermutex);
+                } else {
+                    AI_GLASS_ERR("Send UART_RX_OPC_CMD_RECORD_START timer mutex failed\r\n");
+                    lifetime_recording_deinitialize();
+                    xSemaphoreGive(video_proc_sema);
+                }
+            } else {
+                AI_GLASS_ERR("Failed to create send_response_timer\r\n");
+                xSemaphoreGive(video_proc_sema);
+            }
+        } else {
+            AI_GLASS_ERR("Failed because of the known record status\r\n");
+            xSemaphoreGive(video_proc_sema);
+        }
+    } else {
+        AI_GLASS_WARN("AI glass is snapshot or record, current record busy fail\r\n");
+    }
+ 
+    AI_GLASS_INFO("end of UART_RX_OPC_CMD_RECORD_START\r\n");
+}
+
 log_item_t at_ai_glass_items[ ] = {
 	{"AT+AIGLASSFORMAT",    fDISKFORMAT,            {NULL, NULL}},
 	{"AT+AIGLASSGSENSOR",   fTESTGSENSOR,           {NULL, NULL}},
@@ -2742,6 +2816,7 @@ log_item_t at_ai_glass_items[ ] = {
 	{"AT+AIGLASSSETSTAMODE", fENABLESTAMODE,        {NULL, NULL}},
 	{"AT+AIGLASSCLEARMEDIAFLASH", fCLEARMEDIAFLASH, {NULL, NULL}},
 	{"AT+AIGLASSCHANGESENSOR", fCHANGESENSOR,       {NULL, NULL}},
+	{"AT+AIGLASSLFRECORD", fLFRECORD,               {NULL, NULL}},
 };
 #endif
 void ai_glass_log_init(void)

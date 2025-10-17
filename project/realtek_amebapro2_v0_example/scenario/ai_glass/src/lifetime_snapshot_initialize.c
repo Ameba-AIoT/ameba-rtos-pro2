@@ -203,10 +203,10 @@ static int jpeg_encode_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 	extdisk_fclose(life_snapshot_file);
 	emmc_save_time = mm_read_mediatime_ms() - emmc_save_time;
 	xSemaphoreGive(jpeg_get_sema);
-	if (jpg_index == total_burst - 1) {
-		AI_GLASS_MSG("lifetime snapshot done\r\n");
-		lfsnap_status = LIFESNAP_DONE;
-	}
+	// if (jpg_index == total_burst - 1) {
+	// 	AI_GLASS_MSG("lifetime snapshot done\r\n");
+	// 	lfsnap_status = LIFESNAP_DONE;
+	// }
 	return 0;
 }
 static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t data_addr, uint32_t data_size, int proc_raw_idx, int img_idx)
@@ -762,6 +762,7 @@ int lifetime_snapshot_initialize(isp_info_sync_t *isp_info)
 		// Deinitialize fake media channel
 		deinitial_media();
 		//remalloc voe heap to 45M
+		video_voe_release();
 		int voe_heap_size = 45 * 1024 * 1024;
 		video_set_voe_heap((int)NULL, voe_heap_size, 1);
 		AI_GLASS_INFO("\r\n voe heap size = %d\r\n", voe_heap_size);
@@ -1094,19 +1095,25 @@ int lifetime_highres_save(const char *file_name, uartcmdpacket_t *param)
 				AI_GLASS_INFO("saving image raw index %d\r\n", i%2);
 				jpg_index = i;
 				high_resolution_snapshot_save((char *)file_name, i%2, i);
+				if (lfsnap_status == LIFESNAP_FAIL) {
+					AI_GLASS_INFO("Life snapshot save failed\r\n");
+					return -1;
+				}
+				if (jpg_index == total_burst - 1) {
+					AI_GLASS_MSG("lifetime snapshot last image save done\r\n");
+					lfsnap_status = LIFESNAP_DONE;
+					break;
+				}
 				if (lfsnap_status != LIFESNAP_DONE && raw_taken < total_burst) {
 					isp_info_sync_t isp_info = {0};
 					lifetime_hr_snapshot_initialize(&isp_info);
 					lifetime_snapshot_take((const char *)file_name, param);
 				}
-				if (lfsnap_status == LIFESNAP_FAIL) {
-					AI_GLASS_INFO("Life snapshot save failed\r\n");
-					return -1;
-				}
 			}
 			AI_GLASS_INFO("Life snapshot save done\r\n");
 			raw_taken = 0;
 			jpg_index = 0;
+			total_burst = 1;
 			if (hr_nv12_image) {
 				free(hr_nv12_image);
 				hr_nv12_image = NULL;

@@ -5,7 +5,7 @@ INCLUDE "romsym_ns.so"
 
 /* unit - Mega byte */
 DDR_SIZE = 128;
-NN_SIZE = 0;
+NN_SIZE = 16;
 
 DDR_END = 0x70000000 + ((DDR_SIZE - 2) - NN_SIZE)*1024*1024;
 NN_END  = 0x70000000 + (DDR_SIZE - 2)*1024*1024;
