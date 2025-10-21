@@ -576,7 +576,11 @@ typedef struct {
 
 	u32 i2c_clock;
 
-	u32 rsvd[29];   //When add new element, please reduce same rsvd size
+	u32 init_dir_wdr_level;
+
+	u32 init_max_dyn_region_en;
+
+	u32 rsvd[27];   //When add new element, please reduce same rsvd size
 
 } __attribute__((aligned(32))) commandLine_s;
 

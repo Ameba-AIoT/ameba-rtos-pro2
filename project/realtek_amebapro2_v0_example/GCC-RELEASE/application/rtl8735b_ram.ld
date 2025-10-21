@@ -2,7 +2,7 @@ INCLUDE "romsym_is.so"
 
 /* unit - Mega byte */
 DDR_SIZE = 128;
-NN_SIZE = 4;
+NN_SIZE = 12;
 
 DDR_END = 0x70000000 + (DDR_SIZE - NN_SIZE)*1024*1024;
 NN_END  = 0x70000000 + (DDR_SIZE)*1024*1024;
@@ -446,3 +446,4 @@ SECTIONS
 	/* Check if data + heap + stack exceeds RAM limit */
 /* TODO:	ASSERT(__StackLimit >= __HeapLimit, "region RAM overflowed with stack") */
 }
+

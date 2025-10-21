@@ -214,4 +214,6 @@ void lifetime_audio_deinitialize(void);
 #define CLEAR_RECORD_PARAMS 0x04
 #define CLEAR_ALL           0xFF
 
+static enum hal_isp_ae_region dyn_region_idx = 0; // Data range: 0 ~ 3. 0: upper left, 1: upper right, 2: lower left, 3: lower right.
+
 #endif

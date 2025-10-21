@@ -4,11 +4,19 @@
 		"PROFILE":["FWFS"],
 	"FWFS":{
 		"files":[
-			"yolov4_tiny",
-			"yamnet_s_hybrid",
-			"scrfd320p",
-			"mobilefacenet_i8"
+			"ainr_mulaw_1024_imx681",
+			"planar_to_nchw_blc_1024"
 		]
+	},
+	"ainr_mulaw_1024_imx681":{
+		"name" : "ainr_mulaw_1024_imx681.nb",
+		"source":"binary",
+		"file":"ainr_mulaw_1024_imx681.nb"
+	},
+	"planar_to_nchw_blc_1024":{
+		"name" : "planar_to_nchw_1024_lut.nb",
+		"source":"binary",
+		"file":"planar_to_nchw_1024_lut.nb"
 	},
 	"yolov4_tiny":{
 		"name" : "yolov4_tiny.nb",

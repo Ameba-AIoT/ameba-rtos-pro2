@@ -66,6 +66,16 @@ enum encode_type {
 	VIDEO_H264_JPEG
 };
 
+//rc error code
+#define RC_SUCESS		0
+#define RC_FAIL			BIT(0)
+#define RC_ERR_FPS		BIT(1)
+#define RC_ERR_ISPFPS	BIT(2)
+#define RC_ERR_GOP		BIT(3)
+#define RC_ERR_BPS		BIT(4)
+#define RC_ERR_QP		BIT(5)
+#define RC_ERR_QPI		BIT(6)
+
 //#define USE_ISP_RETENTION_DATA
 #ifdef USE_ISP_RETENTION_DATA
 typedef struct isp_retention_data_s {
@@ -199,6 +209,7 @@ typedef struct video_pre_init_params_s {
 	uint32_t meta_gop_duration;//Setup times to the I frame by gop duration.
 
 #if USE_VIDEO_HR_FLOW
+	uint32_t dyn_region_enable;
 	//only use for high resolution flow.
 	uint32_t isp_init_raw; //enable first image in raw format
 	uint32_t isp_raw_mode_tnr_dis; //disable isp tnr function
@@ -556,6 +567,12 @@ int video_create_exif_tags(uint8_t *buf, uint32_t video_len);
 void video_fill_exif_tags_from_struct(const ExifParams *params);
 
 int video_get_error_group(int error_id);
+
+#if USE_VIDEO_HR_FLOW
+int video_get_dir_wdr_level(int ch, int *level);
+
+int video_get_max_dyn_region_idx(int ch, enum hal_isp_ae_region *idx);
+#endif
 //////////////////////
 #define VOE_NAND_FLASH_OFFSET 0x8000000
 #define FW_1 0x01

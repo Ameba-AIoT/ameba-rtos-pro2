@@ -39,14 +39,15 @@
 #define SNAPSHOT_12M_ROTATION   DEFAULT_LIFESNAP_ROTATION 
 
 #define SNAPSHOT_12M_QLEVEL     91 // can be 0~100, higher means higher quality
-#define BURST_MODE_MAX_COUNT   2 // when set to 1, disable burst mode. for DDR 128M, maximum can set to 2
-#define ENABLE_AINR 		   0 // enable AINR for high res snapshot
+#define BURST_MODE_MAX_COUNT   1 // when set to 1, disable burst mode. for DDR 128M, maximum can set to 2
+#define ENABLE_AINR 		   1 // enable AINR for high res snapshot
 #define SAVE_DBG_IMG 0
 
 //set output resolution to high resolution
 static uint32_t out_img_width = 0;
 static uint32_t out_img_height = 0;
 static uint32_t out_img_overlap_width = 0;
+static uint32_t out_img_overlap_height = 0;
 static uint32_t hr_nv12_size = 0;
 static unsigned char sen_hr_drv_id;
 static unsigned char sen_seq_drv_id;
@@ -78,6 +79,21 @@ static mm_siso_t *ls_siso_snapshot_filesaver = NULL;
 
 static int lfsnap_status = LIFESNAP_IDLE;
 
+enum file_process_status {
+	PROCESS_DONE = 0,
+	PROCESS_START,
+	SPLIT_RAW_IMAGE_START,
+	MERGE_UL_NV12_1, // Upper left 1.
+	MERGE_UL_NV12_2, // Upper left 2.
+	MERGE_UR_NV12_1, // Upper right 1.
+	MERGE_UR_NV12_2, // Upper right 2.
+	MERGE_LL_NV12_1, // Lower left 1.
+	MERGE_LL_NV12_2, // Lower left 2.
+	MERGE_LR_NV12_1, // Lower right 1.
+	MERGE_LR_NV12_2,  // Lower right 2.
+	PROCESS_FAILED
+};
+
 #define JPEG_CHANNEL 0
 #include "sensor_service.h"
 #include "isp_ctrl_api.h"
@@ -86,7 +102,11 @@ allocate virt addr and free virt addr
 dma use phy addr
 fill data in phy addr
 */
-#define SPLIT_RAW_NUM 2
+#define SPLIT_RAW_NUM 4
+#define ORG_FRAME_NUM (SPLIT_RAW_NUM * 2)
+#define DUMMY_FRAME_NUM 2 // Dummy frames based on 8x3M.
+#define VERIFY_NUM (ORG_FRAME_NUM + DUMMY_FRAME_NUM)
+
 typedef struct {
 	void *virt_addr; //for temporary save 12M raw
 	void *phy_addr[SPLIT_RAW_NUM];
@@ -110,6 +130,8 @@ static char *file_save_path = NULL;
 static SemaphoreHandle_t jpeg_get_sema = NULL;
 #if defined(ENABLE_META_INFO)
 static video_meta_t metadata;
+
+static int tiled_nv12_cnt = 0;
 
 //Exif information
 char img_date[9];
@@ -272,29 +294,82 @@ OUT_IMG_WIDTH => full width
 h => full height
 */
 __attribute__((optimize("-O2")))
-static int yuv420stitch_step(uint8_t *tiled_yuv, uint8_t *output_buf, int w, int h, int x_overlap, uint32_t *out_size, int is_right)
+static int yuv420stitch_step_4c(uint8_t *tiled_yuv, uint8_t *output_buf, const uint16_t w, const uint16_t h, const uint16_t overlap_width, const uint16_t overlap_height, uint32_t * const out_size, const enum file_process_status proc_stat)
 {
-	uint8_t *output_pos = output_buf;
-	uint8_t *in_pos = tiled_yuv;
-	uint16_t w_tiled = (w / 2 + x_overlap);
-	uint16_t w_half = w / 2;
-	if (is_right) {
-		output_pos += w_half;
+	const uint16_t w_half = w / 2;
+	const uint16_t w_tiled = w_half + overlap_width;
+	const uint16_t y_half = h / 2;
+	const uint16_t uv_half = y_half / 2;
+	const uint16_t h_tiled = y_half + overlap_height;
+
+	uint8_t *output_y_pos = output_buf;
+	uint8_t *output_uv_pos = output_buf + w * h;
+	uint8_t *input_y_pos = tiled_yuv;
+	uint8_t *input_uv_pos = tiled_yuv + w_tiled * h_tiled;
+
+	// Initialize start positions of I/O buffers.
+	// NOTE: only accepts second images of each position.
+	switch (proc_stat) {
+	case MERGE_UL_NV12_2:
+		break;
+	case MERGE_UR_NV12_2:
+		output_y_pos += w_half;
+		output_uv_pos += w_half;
+		input_y_pos += overlap_width;
+		input_uv_pos += overlap_width;
+		break;
+	case MERGE_LL_NV12_2:
+		output_y_pos += w * y_half;
+		output_uv_pos += w * uv_half;
+		input_y_pos += overlap_height * w_tiled;
+		input_uv_pos += (overlap_height / 2) * w_tiled;
+		break;
+	case MERGE_LR_NV12_2:
+		output_y_pos += w * y_half + w_half;
+		output_uv_pos += w * uv_half + w_half;
+		input_y_pos += overlap_height * w_tiled + overlap_width;
+		input_uv_pos += (overlap_height / 2) * w_tiled + overlap_width;
+		break;
+	default:
+		printf("[ERROR] Invalid option for function %s: %d\r\n", __FUNCTION__, proc_stat);
+		return -1;
 	}
-	for (int l = 0; l < h * 3 / 2; l++) {
-		if (is_right) {
-			memcpy(output_pos, in_pos + x_overlap, w_half);
-		} else {
-			memcpy(output_pos, in_pos, w_half);
-		}
-		// Move to next line
-		output_pos += w_half;
-		output_pos += w_half;
-		in_pos += w_tiled;
+
+	// Copy line by line.
+	for (uint16_t l = 0; l < y_half; l++, output_y_pos += w, input_y_pos += w_tiled) {
+		memcpy(output_y_pos, input_y_pos, w_half);
 	}
-	*out_size += w / 2 * h * 3 / 2;
+
+	for (uint16_t l = 0; l < uv_half; l++, output_uv_pos += w, input_uv_pos += w_tiled) {
+		memcpy(output_uv_pos, input_uv_pos, w_half);
+	}
+
+	*out_size += w_half * y_half;
 	return 0;
 }
+// static int yuv420stitch_step(uint8_t *tiled_yuv, uint8_t *output_buf, int w, int h, int x_overlap, uint32_t *out_size, int is_right)
+// {
+// 	uint8_t *output_pos = output_buf;
+// 	uint8_t *in_pos = tiled_yuv;
+// 	uint16_t w_tiled = (w / 2 + x_overlap);
+// 	uint16_t w_half = w / 2;
+// 	if (is_right) {
+// 		output_pos += w_half;
+// 	}
+// 	for (int l = 0; l < h * 3 / 2; l++) {
+// 		if (is_right) {
+// 			memcpy(output_pos, in_pos + x_overlap, w_half);
+// 		} else {
+// 			memcpy(output_pos, in_pos, w_half);
+// 		}
+// 		// Move to next line
+// 		output_pos += w_half;
+// 		output_pos += w_half;
+// 		in_pos += w_tiled;
+// 	}
+// 	*out_size += w / 2 * h * 3 / 2;
+// 	return 0;
+// }
 __attribute__((optimize("-O2")))
 static void get_remosaiced_cord(uint16_t x, uint16_t y, uint16_t *rm_x, uint16_t *rm_y)
 {
@@ -358,31 +433,49 @@ static void free_split_raw_item(splited_raw_item_t *splited_raw)
 		splited_raw->phy_addr[i] = NULL;
 	}
 }
-static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint32_t img_buf_addr0, uint32_t img_buf_addr1, uint32_t w, uint32_t h,
-		uint32_t overlap_width, uint32_t verify_number)
+static void config_verification_path_buf_4c(struct verify_ctrl_config *v_cfg, const uint32_t img_buf_addr[4],
+	const uint16_t w, const uint16_t h, const uint16_t overlap_width, const uint16_t overlap_height)
 {
-	uint32_t y_len, uv_len;
-	y_len = (w / 2 + overlap_width) * h;
-	uv_len = y_len;
-	if (v_cfg == NULL) {
-		AI_GLASS_ERR("[%s] fail\r\n", __FUNCTION__);
+	const uint32_t y_len = (w / 2 + overlap_width) * (h / 2 + overlap_height);
+	const uint32_t uv_len = y_len;
+
+	if(v_cfg == NULL) {
+		printf("[%s] fail\r\n", __FUNCTION__);
 		return;
 	}
-	v_cfg->verify_number = verify_number;
+
+	v_cfg->verify_number = VERIFY_NUM;
 	v_cfg->verify_ylen = y_len;
 	v_cfg->verify_uvlen = uv_len;
 
-	uint32_t center_x, center_y;
-	for (int i = 0; i < verify_number; i++) {
-		if (i < 2) {
-			v_cfg->verify_addr[i] = img_buf_addr0;
-			center_x = w / 2;
-		} else {
-			v_cfg->verify_addr[i] = img_buf_addr1;
-			center_x = overlap_width;
-		}
-		center_y = h / 2;
+	for (uint8_t i = 0; i < VERIFY_NUM; i++) {
+		const uint8_t split_num = i < DUMMY_FRAME_NUM ? 0 : (i - DUMMY_FRAME_NUM) / 2;
+		const uint8_t split_id = (split_num + dyn_region_idx) % SPLIT_RAW_NUM;
 
+		uint16_t center_x, center_y;
+		switch (split_id) {
+		case 0:
+			center_x = w / 2;
+			center_y = h / 2;
+			break;
+		case 1:
+			center_x = overlap_width;
+			center_y = h / 2;
+			break;
+		case 2:
+			center_x = w / 2;
+			center_y = overlap_height;
+			break;
+		case 3:
+			center_x = overlap_width;
+			center_y = overlap_height;
+			break;
+		default:
+			printf("[%s] invalid split_id: %d\r\n", __FUNCTION__, split_id);
+			return;
+		}
+
+		v_cfg->verify_addr[i] = img_buf_addr[split_id];
 		v_cfg->verify_nlsc_center[i].verify_nlsc_rcenter_x = center_x;
 		v_cfg->verify_nlsc_center[i].verify_nlsc_rcenter_y = center_y;
 		v_cfg->verify_nlsc_center[i].verify_nlsc_gcenter_x = center_x;
@@ -390,9 +483,45 @@ static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint3
 		v_cfg->verify_nlsc_center[i].verify_nlsc_bcenter_x = center_x;
 		v_cfg->verify_nlsc_center[i].verify_nlsc_bcenter_y = center_y;
 	}
-	SCB_CleanDCache_by_Addr((uint32_t *)img_buf_addr0, y_len + uv_len);
-	SCB_CleanDCache_by_Addr((uint32_t *)img_buf_addr1, y_len + uv_len);
+	for(int i = 0; i < SPLIT_RAW_NUM; i++) {
+		SCB_CleanDCache_by_Addr((uint32_t *)img_buf_addr[i], y_len + uv_len);
+	}
 }
+// static void config_verification_path_buf(struct verify_ctrl_config *v_cfg, uint32_t img_buf_addr0, uint32_t img_buf_addr1, uint32_t w, uint32_t h,
+// 		uint32_t overlap_width, uint32_t verify_number)
+// {
+// 	uint32_t y_len, uv_len;
+// 	y_len = (w / 2 + overlap_width) * h;
+// 	uv_len = y_len;
+// 	if (v_cfg == NULL) {
+// 		AI_GLASS_ERR("[%s] fail\r\n", __FUNCTION__);
+// 		return;
+// 	}
+// 	v_cfg->verify_number = verify_number;
+// 	v_cfg->verify_ylen = y_len;
+// 	v_cfg->verify_uvlen = uv_len;
+
+// 	uint32_t center_x, center_y;
+// 	for (int i = 0; i < verify_number; i++) {
+// 		if (i < 2) {
+// 			v_cfg->verify_addr[i] = img_buf_addr0;
+// 			center_x = w / 2;
+// 		} else {
+// 			v_cfg->verify_addr[i] = img_buf_addr1;
+// 			center_x = overlap_width;
+// 		}
+// 		center_y = h / 2;
+
+// 		v_cfg->verify_nlsc_center[i].verify_nlsc_rcenter_x = center_x;
+// 		v_cfg->verify_nlsc_center[i].verify_nlsc_rcenter_y = center_y;
+// 		v_cfg->verify_nlsc_center[i].verify_nlsc_gcenter_x = center_x;
+// 		v_cfg->verify_nlsc_center[i].verify_nlsc_gcenter_y = center_y;
+// 		v_cfg->verify_nlsc_center[i].verify_nlsc_bcenter_x = center_x;
+// 		v_cfg->verify_nlsc_center[i].verify_nlsc_bcenter_y = center_y;
+// 	}
+// 	SCB_CleanDCache_by_Addr((uint32_t *)img_buf_addr0, y_len + uv_len);
+// 	SCB_CleanDCache_by_Addr((uint32_t *)img_buf_addr1, y_len + uv_len);
+// }
 static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
 	printf("-------------------save_high_resolution_raw----------------------\r\n");
@@ -440,70 +569,64 @@ static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32
 	}
 #endif
 	raw_image_len = data_size;
-	//split 12M raw to 2 * 6M raw
-	uint8_t *tiled_raws[2];
-	tiled_raws[0] = splited_raw_image[raw_index].phy_addr[0];
-	tiled_raws[1] = splited_raw_image[raw_index].phy_addr[1];
-	if(current_sensor_id == SENSOR_IMX681 || current_sensor_id == SENSOR_OV13B10) {
-		cap_raw_tiling_with_remosaic((uint8_t *)data_addr, tiled_raws, ls_video_params.jpg_width, ls_video_params.jpg_height, out_img_overlap_width, REMOSAIC_DISABLE, REMOSAIC_DIRECT_MODE, GR);
-	} else{
-		cap_raw_tiling_with_remosaic((uint8_t *)data_addr, tiled_raws, ls_video_params.jpg_width, ls_video_params.jpg_height, out_img_overlap_width, REMOSAIC_ENABLE, REMOSAIC_DETECT_MODE, GR);
+	//split 12M raw into 4x3M raw.
+	uint8_t *tiled_raws[SPLIT_RAW_NUM];
+	for (uint8_t i = 0; i < SPLIT_RAW_NUM; i++) {
+		tiled_raws[i] = (uint8_t *)splited_raw_image[raw_index].phy_addr[i];
 	}
-	AI_GLASS_INFO("img_left: %x\n\r", splited_raw_image[raw_index].phy_addr[0]);
-	AI_GLASS_INFO("img_right: %x\n\r", splited_raw_image[raw_index].phy_addr[1]);
+	cap_raw_tiling_with_remosaic_4c((uint8_t*)data_addr, tiled_raws, out_img_width, out_img_height, out_img_overlap_width, out_img_overlap_height, REMOSAIC_DISABLE, REMOSAIC_DIRECT_MODE, GR);
+	for(int i = 0; i < SPLIT_RAW_NUM; i++) {
+		printf("tiled_raws_%d: 0x%x\r\n", i, tiled_raws[i]);
+	}
 	get_raw_data = 1;
 	return;
 }
-enum save_yuv_option { 
-	FILE_PROCESS_DONE = 0,
-	MERGE_LEFT_NV12_SKIP_FIRST,
-	MERGE_LEFT_NV12,
-	MERGE_RIGHT_NV12_SKIP_FIRST,
-	MERGE_RIGHT_NV12,
-	FILE_PROCESS_FAILED
-};
-static enum save_yuv_option save_yuv_option = FILE_PROCESS_DONE;
+// enum save_yuv_option { 
+// 	FILE_PROCESS_DONE = 0,
+// 	MERGE_LEFT_NV12_SKIP_FIRST,
+// 	MERGE_LEFT_NV12,
+// 	MERGE_RIGHT_NV12_SKIP_FIRST,
+// 	MERGE_RIGHT_NV12,
+// 	FILE_PROCESS_FAILED
+// };
+// static enum save_yuv_option save_yuv_option = FILE_PROCESS_DONE;
+static enum file_process_status file_proc_stat = PROCESS_DONE;
 static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
 	AI_GLASS_INFO("[%s] 0x%lx, data len = %lu\r\n", __FUNCTION__, data_addr, data_size);
 	uint8_t *img_buf = (uint8_t *)data_addr;
 	uint32_t out_size;
-	if(save_yuv_option == MERGE_LEFT_NV12_SKIP_FIRST) {
-		save_yuv_option = MERGE_LEFT_NV12;
-		return;
-	}
-	if(save_yuv_option == MERGE_RIGHT_NV12_SKIP_FIRST) {
-		save_yuv_option = MERGE_RIGHT_NV12;
-		return;
-	}
-
-	if (save_yuv_option == MERGE_LEFT_NV12) {
-		//deal with left 6M NV12 
-		//merge 2 * 6M to 12M NV12 image
-		if (hr_nv12_image == NULL) {
-			AI_GLASS_ERR("hr_nv12_image malloc fail\r\n");
-			return;
+	switch (file_proc_stat)
+	{
+	case PROCESS_START:
+	case MERGE_UL_NV12_1:
+	case MERGE_UR_NV12_1:
+	case MERGE_LL_NV12_1:
+	case MERGE_LR_NV12_1:
+		if (tiled_nv12_cnt < DUMMY_FRAME_NUM) {
+			printf("[file_process] Skip %d dummy frame...\r\n", tiled_nv12_cnt + 1);
+		} else {
+			file_proc_stat++;
 		}
-		AI_GLASS_INFO("dma_left raw 0x%lx, data len = %lu\r\n", data_addr, data_size);
-		yuv420stitch_step(img_buf, hr_nv12_image, out_img_width, out_img_height, out_img_overlap_width, &out_size, 0);
-		AI_GLASS_INFO("dma_left raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
-		save_yuv_option = MERGE_RIGHT_NV12_SKIP_FIRST;
+		tiled_nv12_cnt++;
 		return;
-	} else if (save_yuv_option == MERGE_RIGHT_NV12) {
-		//deal with right 6M NV12
-		//merge 2 * 6M to 12M NV12 image
-		if (hr_nv12_image == NULL) {
-			AI_GLASS_ERR("hr_nv12_image malloc fail\r\n");
-			return;
+	case MERGE_UL_NV12_2:
+	case MERGE_UR_NV12_2:
+	case MERGE_LL_NV12_2:
+	case MERGE_LR_NV12_2:
+		yuv420stitch_step_4c(img_buf, hr_nv12_image, out_img_width, out_img_height, out_img_overlap_width, out_img_overlap_height, &out_size, file_proc_stat);
+		if (tiled_nv12_cnt == VERIFY_NUM - 1) {
+			file_proc_stat = PROCESS_DONE;
+		} else {
+			file_proc_stat = (file_proc_stat + 1 - MERGE_UL_NV12_1) % ORG_FRAME_NUM + MERGE_UL_NV12_1;
 		}
-		AI_GLASS_INFO("dma_right raw 0x%lx, data len = %lu\r\n", data_addr, data_size);
-		yuv420stitch_step(img_buf, hr_nv12_image, out_img_width, out_img_height, out_img_overlap_width, &out_size, 1);
-		AI_GLASS_INFO("dma_right raw 0x%lx, data len = %lu done\r\n", data_addr, data_size);
-	} else {
-		save_yuv_option = FILE_PROCESS_FAILED;
+		tiled_nv12_cnt++;
+		return;
+	default:
+		printf("Invalid file_proc_stat: %d\r\n", file_proc_stat);
 		return;
 	}
-	save_yuv_option = FILE_PROCESS_DONE;
+	file_proc_stat = PROCESS_DONE;
 }
 
 static void high_resolution_snapshot_save(char *file_path, int proc_raw_idx, int img_idx)
@@ -521,11 +644,20 @@ static void high_resolution_snapshot_save(char *file_path, int proc_raw_idx, int
 		AI_GLASS_ERR("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
 		goto snapshot_fail;
 	}
-	//sent 2 * 6M raw to voe
-	config_verification_path_buf(init_params.v_cfg, (uint32_t) splited_raw_image[proc_raw_idx].phy_addr[0], (uint32_t) splited_raw_image[proc_raw_idx].phy_addr[1], out_img_width, out_img_height, out_img_overlap_width, 4);
+	// //sent 2 * 6M raw to voe
+	// config_verification_path_buf(init_params.v_cfg, (uint32_t) splited_raw_image[proc_raw_idx].phy_addr[0], (uint32_t) splited_raw_image[proc_raw_idx].phy_addr[1], out_img_width, out_img_height, out_img_overlap_width, 4);
+	
+	//sent 4 * 3M raw to voe
+	uint32_t tiled_raws[SPLIT_RAW_NUM];
+	for (uint8_t i = 0; i < SPLIT_RAW_NUM; i++) {
+		tiled_raws[i] = (uint32_t)splited_raw_image[proc_raw_idx].phy_addr[i];
+	}
+	config_verification_path_buf_4c(init_params.v_cfg, tiled_raws, out_img_width, out_img_height, out_img_overlap_width, out_img_overlap_height);
 	init_params.isp_init_raw = 0;
 	init_params.isp_raw_mode_tnr_dis = 0;
 	init_params.dyn_iq_mode = 1;
+	init_params.init_isp_items.init_wdr_mode = WDR_DIRECT;
+	init_params.dyn_region_enable = 0;
 	init_params.init_isp_items.init_mirrorflip = 0xf0; // not flip when use sequence
 
 	//switch to verify sequece driver
@@ -541,12 +673,15 @@ static void high_resolution_snapshot_save(char *file_path, int proc_raw_idx, int
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ls_video_params.params));
 	mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_TYPE_HANDLER, (int)save_high_resolution_yuv);
 	
-	// merge output 2 * 6M nv12 to 12M nv12 image
-	save_yuv_option = MERGE_LEFT_NV12_SKIP_FIRST;
+	// // merge output 2 * 6M nv12 to 12M nv12 image
+	// save_yuv_option = MERGE_LEFT_NV12_SKIP_FIRST;
+	//merge output 4 * 3M nv12 to 12M nv12 image
+	file_proc_stat = MERGE_UL_NV12_1 + dyn_region_idx * 2; //decide process order with dyn_region_idx
+	tiled_nv12_cnt = 0;
 	timeout_count = 0;
 	video_set_isp_ch_buf(JPEG_CHANNEL, 2);
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL);
-	while (save_yuv_option != FILE_PROCESS_DONE) {
+	while (file_proc_stat != PROCESS_DONE) {
 		vTaskDelay(1);
 		timeout_count++;
 		if (timeout_count > 100000) {
@@ -571,7 +706,7 @@ static void high_resolution_snapshot_save(char *file_path, int proc_raw_idx, int
 #endif
 
 	
-	if (save_yuv_option == FILE_PROCESS_FAILED) {
+	if (file_proc_stat == PROCESS_FAILED) {
 		AI_GLASS_ERR("snapshot failed \r\n");
 		goto snapshot_fail;
 	}
@@ -726,6 +861,7 @@ static int lifetime_hr_snapshot_sensor_id_update(void){
 		out_img_width = sensor_params[sen_hr_drv_id].sensor_width;
 		out_img_height = sensor_params[sen_hr_drv_id].sensor_height;
 		out_img_overlap_width = (((sensor_params[sen_seq_drv_id].sensor_width * 2) - sensor_params[sen_hr_drv_id].sensor_width) / 2);
+		out_img_overlap_height = (((sensor_params[sen_seq_drv_id].sensor_height * 2) - sensor_params[sen_hr_drv_id].sensor_height) / 2);
 	}
 	else if (current_sensor_id == SENSOR_IMX471) {
 		sen_hr_drv_id = SENSOR_IMX471_12M;
@@ -733,6 +869,7 @@ static int lifetime_hr_snapshot_sensor_id_update(void){
 		out_img_width = sensor_params[sen_hr_drv_id].sensor_width;
 		out_img_height = sensor_params[sen_hr_drv_id].sensor_height;
 		out_img_overlap_width = (((sensor_params[sen_seq_drv_id].sensor_width * 2) - sensor_params[sen_hr_drv_id].sensor_width) / 2);
+		out_img_overlap_height = (((sensor_params[sen_seq_drv_id].sensor_height * 2) - sensor_params[sen_hr_drv_id].sensor_height) / 2);
 	}
 	else if (current_sensor_id == SENSOR_OV13B10) {
 		sen_hr_drv_id = SENSOR_OV13B10_12M;
@@ -740,6 +877,7 @@ static int lifetime_hr_snapshot_sensor_id_update(void){
 		out_img_width = sensor_params[sen_hr_drv_id].sensor_width;
 		out_img_height = sensor_params[sen_hr_drv_id].sensor_height;
 		out_img_overlap_width = (((sensor_params[sen_seq_drv_id].sensor_width * 2) - sensor_params[sen_hr_drv_id].sensor_width) / 2);
+		out_img_overlap_height = (((sensor_params[sen_seq_drv_id].sensor_height * 2) - sensor_params[sen_hr_drv_id].sensor_height) / 2);
 	} else {
 		AI_GLASS_ERR("Get 12M sensor driver error for current sensor %d\r\n", current_sensor_id);
 		return 0;
@@ -913,6 +1051,7 @@ int lifetime_hr_snapshot_initialize(isp_info_sync_t *isp_info)
 	init_params.isp_raw_mode_tnr_dis = 1;
 	init_params.video_drop_enable = 0;
 	init_params.dyn_iq_mode = 0;
+	init_params.dyn_region_enable = 0;
 	ls_video_params.params.stream_id = JPEG_CHANNEL;
 	ls_video_params.params.rotation = SNAPSHOT_12M_ROTATION;
 	ls_video_params.params.type = VIDEO_NV16;
@@ -978,7 +1117,8 @@ int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 			// for(int i = 0; i < (total_burst > 2 ? BURST_MODE_MAX_COUNT:total_burst); i++) {
 			for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
 				int tiled_w = out_img_width / 2 + out_img_overlap_width;
-				uint32_t tiled_img_size = tiled_w * out_img_height * 2;
+				int tiled_h = out_img_height / 2 + out_img_overlap_height;
+				uint32_t tiled_img_size = tiled_w * tiled_h * 2;
 
 				if(alloc_split_raw_item(&(splited_raw_image[i]), tiled_img_size) == NULL) {
 					printf("splited raw image malloc failed\n");

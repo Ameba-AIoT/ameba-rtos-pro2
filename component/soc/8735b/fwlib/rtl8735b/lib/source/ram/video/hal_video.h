@@ -493,6 +493,8 @@ int hal_video_config_isp_calibration(int iq_cali_flag);
 int hal_video_set_isp_stream_fps(int ch, uint32_t fps);
 int hal_video_isp_zoom_filter_coef_init(int ch, u8* buf);
 int hal_video_isp_verify_info(int ch, struct verify_ctrl_config v_cfg);
+int hal_video_get_dir_wdr_level(int ch, int *level);
+int hal_video_get_max_dyn_region_idx(int ch, enum hal_isp_ae_region *idx);
 
 extern hal_video_adapter_t vv_adapter;
 
@@ -890,6 +892,29 @@ static __inline__ int hal_video_set_i2c_clock(int ch, int val)
 	dcache_clean_invalidate_by_addr((uint32_t *)v_adp->cmd[ch], sizeof(commandLine_s));
 	return OK;
 }
+
+static __inline__ int hal_video_set_dir_wdr_level(int ch, int level)
+{
+	hal_video_adapter_t *v_adp = &vv_adapter;
+	commandLine_s *cml;
+
+	cml = v_adp->cmd[ch];
+	cml->init_dir_wdr_level = level;
+	dcache_clean_invalidate_by_addr((uint32_t *)v_adp->cmd[ch], sizeof(commandLine_s));
+	return OK;
+}
+
+static __inline__ int hal_video_set_max_dyn_region_en(int ch, int enable)
+{
+	hal_video_adapter_t *v_adp = &vv_adapter;
+	commandLine_s *cml;
+
+	cml = v_adp->cmd[ch];
+	cml->init_max_dyn_region_en = enable;
+	dcache_clean_invalidate_by_addr((uint32_t *)v_adp->cmd[ch], sizeof(commandLine_s));
+	return OK;
+}
+
 
 #endif // #if !defined (CONFIG_VOE_PLATFORM) || !CONFIG_VOE_PLATFORM // Run on TM9
 /** @} */ /* End of group hal_enc */

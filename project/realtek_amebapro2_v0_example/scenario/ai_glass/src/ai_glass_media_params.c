@@ -765,6 +765,12 @@ void media_update_preinit_isp_awb(void)
 	isp_get_blue_balance(&awb_bgain);
 	ai_glass_pre_init_params.isp_awb_init_rgain = awb_rgain;
 	ai_glass_pre_init_params.isp_awb_init_bgain = awb_bgain;
+	video_get_max_dyn_region_idx(0, &dyn_region_idx);
+	printf("video_get_dyn_region_idx value %d\r\n", dyn_region_idx);
+	int direct_wdr_level = 0;
+	video_get_dir_wdr_level(0, &direct_wdr_level);
+	ai_glass_pre_init_params.init_isp_items.init_wdr_level = direct_wdr_level;
+	printf("video_get_dir_wdr_level value %d\r\n", direct_wdr_level);
 }
 void initial_media_parameters(void)
 {
@@ -796,9 +802,14 @@ void initial_media_parameters(void)
 			pre_init_params.init_isp_items.init_mirrorflip = 0xf0; // flip and mirror
 			pre_init_params.init_isp_items.init_saturation = 50;
 			pre_init_params.init_isp_items.init_wdr_level = 50;
-			pre_init_params.init_isp_items.init_wdr_mode = 2;
+			pre_init_params.init_isp_items.init_wdr_mode = WDR_AUTO;
 			pre_init_params.init_isp_items.init_mipi_mode = 0;
 			pre_init_params.voe_dbg_disable = !APP_VOE_LOG_EN;
+			pre_init_params.isp_init_raw = 0;
+			pre_init_params.isp_raw_mode_tnr_dis = 0;
+			pre_init_params.video_drop_enable = 0;
+			pre_init_params.dyn_iq_mode = 0;
+			pre_init_params.dyn_region_enable = 1;
 		#if defined(ENABLE_META_INFO)
 			unsigned char uuid[16] = {0xc7, 0x98, 0x2c, 0x28, 0x0a, 0xfc, 0x49, 0xe6, 0xaa, 0xe4, 0x7f, 0x8f, 0x64, 0xee, 0x65, 0x01};
 			pre_init_params.meta_enable = 1;
