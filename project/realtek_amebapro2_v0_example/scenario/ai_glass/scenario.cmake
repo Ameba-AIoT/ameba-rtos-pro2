@@ -53,6 +53,8 @@ list(
     ${sdk_root}/component/media/mmfv2/module_i2s.c
     ${sdk_root}/component/media/mmfv2/module_mp4.c
     ${sdk_root}/component/media/mmfv2/module_filesaver.c
+    ${sdk_root}/component/media/mmfv2/module_rtsp2.c
+    ${sdk_root}/component/media/mmfv2/module_opusc.c
 )
 
 #NN module
@@ -91,6 +93,7 @@ list(
     ${CMAKE_CURRENT_LIST_DIR}/src/nv12tojpg.c
     ${CMAKE_CURRENT_LIST_DIR}/src/wlan_scenario.c
     ${CMAKE_CURRENT_LIST_DIR}/src/ai_glass_version.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/wifi_streaming_initialize.c
 )
 
 #ENTRY for the project

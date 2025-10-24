@@ -14,11 +14,13 @@
 #define FLASH_FW_SELECT_ADDR            (FLASH_APP_BASE + 0x1000) // Remain 1K after FLASH_APP_BASE
 #define FLASH_FW_SELECT_SIZE            0x100
 #define FLASH_AI_SNAP_BLOCK_BASE        (FLASH_FW_SELECT_ADDR + FLASH_FW_SELECT_SIZE)
-#define FLASH_AI_SNAP_BLOCK_SIZE        0x800
+#define FLASH_AI_SNAP_BLOCK_SIZE        0x200
 #define FLASH_REC_BLOCK_BASE            (FLASH_AI_SNAP_BLOCK_BASE + FLASH_AI_SNAP_BLOCK_SIZE) //Store the AI Glass Record params
-#define FLASH_REC_BLOCK_SIZE            0x800
+#define FLASH_REC_BLOCK_SIZE            0x200
 #define FLASH_LIFE_SNAP_BLOCK_BASE      (FLASH_REC_BLOCK_BASE + FLASH_REC_BLOCK_SIZE) //Store the AI Glass Snapshot params
-#define FLASH_LIFE_SNAP_BLOCK_SIZE      0x800
+#define FLASH_LIFE_SNAP_BLOCK_SIZE      0x200
+#define FLASH_STREAM_BLOCK_BASE         (FLASH_LIFE_SNAP_BLOCK_BASE + FLASH_LIFE_SNAP_BLOCK_SIZE)
+#define FLASH_STREAM_BLOCK_SIZE         0x200
 
 // Todo: Nand Flash Address To Store Snapshot/Record data
 
@@ -45,6 +47,11 @@ enum {
 	MEDIA_FAIL              = -1,   // MEDIA_FAIL
 	MEDIA_OK                = 0,    // MEDIA_OK
 	MEDIA_NO_NEED_TO_UPDATE = 1,    // MEDIA_NO_NEED_TO_UPDATE
+
+	// New additions for stream validation
+	MEDIA_INVALID_LEVEL     = -12,  // MEDIA_INVALID_LEVEL
+	MEDIA_INVALID_PROFILE   = -13,  // MEDIA_INVALID_PROFILE
+	MEDIA_INVALID_CAVLC     = -14,  // MEDIA_INVALID_CAVLC
 };
 
 typedef enum {
@@ -101,6 +108,30 @@ typedef struct ai_glass_snapshot_param_s {
 	uint16_t    isp_blue_gain;
 } ai_glass_snapshot_param_t;
 
+//streaming
+typedef struct ai_glass_stream_param_s {
+    uint8_t     type;
+    uint16_t    width;
+    uint16_t    height;
+    uint32_t    bps;
+    uint16_t    fps;
+    uint16_t    gop;
+	uint32_t resolution;
+    struct {
+        uint32_t    xmin;
+        uint32_t    ymin;
+        uint32_t    xmax;
+        uint32_t    ymax;
+    } roi;
+    uint16_t    minQp;
+    uint16_t    maxQp;
+    uint8_t     rotation;
+    uint8_t     rc_mode;
+	uint8_t     level;      // VCENC_H264_LEVEL_*
+    uint8_t     profile;    // VCENC_H264_BASE_PROFILE, MAIN_PROFILE, etc.
+    uint8_t     cavlc;      // 1 for CAVLC, 0 for CABAC
+} ai_glass_stream_param_t;
+
 typedef struct isp_info_sync_s {
 	uint32_t isp_exposure_time;
 	uint16_t isp_exposure_gain;
@@ -153,6 +184,30 @@ typedef struct isp_info_sync_s {
 #define DEFAULT_LIFESNAP_MAXQP      0
 #define DEFAULT_LIFESNAP_ROTATION   0 // 0: no rotate, 1: 90 degree CCW, 2: 90 degree CW, 3: 180 degree
 
+//streaming
+#define MAX_STREAM_WIDTH       		sensor_params[USE_SENSOR].sensor_width
+#define MAX_STREAM_HEIGHT      		sensor_params[USE_SENSOR].sensor_height
+#define MAX_STREAM_BPS         		(12 * 1024 * 1024)
+#define MIN_STREAM_BPS         		(64 * 1024)
+#define MAX_STREAM_FPS         		sensor_params[USE_SENSOR].sensor_fps
+#define MIN_STREAM_FPS         		6
+#define MAX_STREAM_GOP         		sensor_params[USE_SENSOR].sensor_fps
+#define MIN_STREAM_GOP         		6
+
+#define DEFAULT_STREAM_TYPE       VIDEO_H264
+#define DEFAULT_STREAM_WIDTH      1280
+#define DEFAULT_STREAM_HEIGHT     720
+#define DEFAULT_STREAM_BPS        (2*1024 * 1024)
+#define DEFAULT_STREAM_FPS        30
+#define DEFAULT_STREAM_GOP        30
+#define DEFAULT_STREAM_MINQP      0
+#define DEFAULT_STREAM_MAXQP      0
+#define DEFAULT_STREAM_ROTATION   0
+#define DEFAULT_STREAM_RCMODE     2 // 1: CBR, 2: VBR
+#define DEFAULT_STREAM_LEVEL      VCENC_H264_LEVEL_4
+#define DEFAULT_STREAM_PROFILE    VCENC_H264_BASE_PROFILE
+#define DEFAULT_STREAM_CAVLC      1
+
 // Declare the current sensor id (defined in .c)
 extern unsigned char current_sensor_id;
 extern int sensor_idx;
@@ -198,6 +253,13 @@ void lifetime_recording_stop(void);
 void lifetime_recording_deinitialize(void);
 int media_update_record_time(uint16_t record_length);
 
+//streaming
+int wifi_streaming_initialize(void);
+void wifi_streaming_deinitialize(void);
+void print_stream_data(const ai_glass_stream_param_t *params);
+int media_get_stream_params(ai_glass_stream_param_t *params);
+int media_update_stream_params(const ai_glass_stream_param_t *params);
+
 // life audio
 int lifetime_audio_initialize(uint8_t record_filename_length, const char *filename);
 void lifetime_audio_deinitialize(void);
@@ -215,5 +277,9 @@ void lifetime_audio_deinitialize(void);
 #define CLEAR_ALL           0xFF
 
 static enum hal_isp_ae_region dyn_region_idx = 0; // Data range: 0 ~ 3. 0: upper left, 1: upper right, 2: lower left, 3: lower right.
+
+// Definition of the audio interfcae
+#define I2S_INTERFACE           0
+#define AUDIO_INTERFACE         1
 
 #endif

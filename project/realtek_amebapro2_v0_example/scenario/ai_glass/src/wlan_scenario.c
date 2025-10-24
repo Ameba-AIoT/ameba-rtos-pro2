@@ -1088,7 +1088,7 @@ static void media_getfile_cb(struct httpd_conn *conn)
 				WLAN_SCEN_WARN("Http send %s fail, ret = %lx\r\n", filename, notifyValue);
 			}
 #else
-			buffer = (char *)malloc(4 * 1024 * 1024);
+			buffer = (char *)malloc(10 * 1024 * 1024);
 			if (!buffer) {
 				WLAN_SCEN_ERR("Failed to allocate buffer!\n");
 				httpd_response_bad_request(conn, (char *)"Memory allocation failed");

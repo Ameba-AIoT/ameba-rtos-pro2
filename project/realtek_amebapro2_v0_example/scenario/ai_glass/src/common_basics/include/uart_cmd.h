@@ -117,4 +117,11 @@ int uart_resp_get_sys_upgrade(uint8_t device_id, uint8_t device_upgrade_status);
 // UART_RX_OPC_CMD_CANCEL_SYS_UPGRADE
 int uart_resp_cancel_sys_upgrade(uint8_t resp_stat);
 
+//streaming
+void *uart_parser_stream_info(uartcmdpacket_t *param);
+// For UART_RX_OPC_CMD_LIVE_START
+int uart_resp_rtsp_live_start(uartcmdpacket_t *param, rtw_softap_info_t *wifi_cfg, uint32_t ssid_buf_size, uint32_t password_buf_size, uint8_t resp_stat);
+// For UART_RX_OPC_CMD_LIVE_STOP
+int uart_resp_rtsp_live_stop(uartcmdpacket_t *param, uint8_t resp_stat);
+
 #endif //#ifndef __UART_CMD_H__

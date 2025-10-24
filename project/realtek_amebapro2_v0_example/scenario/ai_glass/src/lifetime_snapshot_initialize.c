@@ -17,7 +17,6 @@
 #include "nv12tojpg.h"
 #include "media_filesystem.h"
 #include "ai_glass_dbg.h"
-#include "ai_glass_media.h"
 #include "isp_ctrl_api.h"
 #include "avcodec.h"
 #include "librtsremosaic.h"

@@ -15,11 +15,6 @@
 #include "ai_glass_media.h"
 #include "media_filesystem.h"
 #include "ai_glass_dbg.h"
-#include "ai_glass_media.h"
-
-// Definition of the audio interfcae
-#define I2S_INTERFACE           0
-#define AUDIO_INTERFACE         1
 
 // Definition of gyro save status
 #define GYRO_SAVE_IDLE          0x00

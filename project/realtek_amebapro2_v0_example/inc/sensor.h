@@ -156,7 +156,7 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_OV13B10_12M_SEQ]  = {2032,  3024, 5} //width = 2016 + 16(overlap)
 };
 
-#define SENSOR_MAX         5
+#define SENSOR_MAX         4
 
 static const unsigned char sen_id[SENSOR_MAX] = {
 	SENSOR_DUMMY,

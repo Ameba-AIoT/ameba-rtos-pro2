@@ -18,6 +18,9 @@
 #define MIN_AISNAP_HEIGHT   MIN_VIDEO_HEIGHT
 #define MIN_LIFESNAP_WIDTH  MIN_VIDEO_WIDTH
 #define MIN_LIFESNAP_HEIGHT MIN_VIDEO_HEIGHT
+//streaming
+#define MIN_STREAM_WIDTH     MIN_VIDEO_WIDTH
+#define MIN_STREAM_HEIGHT    MIN_VIDEO_HEIGHT
 
 #define IS_VALID_RECORD_TYPE(value) \
 	((value) == VIDEO_H264 || \
@@ -68,6 +71,45 @@
 
 unsigned char current_sensor_id = USE_SENSOR;  // Default sensor
 int sensor_idx = -1;
+
+//streaming
+#define IS_VALID_STREAM_TYPE(value) \
+	((value) == VIDEO_H264 || \
+     (value) == VIDEO_HEVC)
+
+#define IS_VALID_STREAM_WIDTH(value) \
+    ((value) >= MIN_STREAM_WIDTH && \
+     (value) <= MAX_STREAM_WIDTH)
+
+#define IS_VALID_STREAM_HEIGHT(value) \
+    ((value) >= MIN_STREAM_HEIGHT && \
+     (value) <= MAX_STREAM_HEIGHT)
+
+#define IS_VALID_STREAM_BPS(value) \
+	((value) >= MIN_STREAM_BPS && \
+     (value) <= MAX_STREAM_BPS)
+
+#define IS_VALID_STREAM_FPS(value) \
+	((value) >= MIN_STREAM_FPS && \
+     (value) <= MAX_STREAM_FPS)
+
+#define IS_VALID_STREAM_GOP(value) \
+	((value) >= MIN_STREAM_GOP && \
+     (value) <= MAX_STREAM_GOP)
+
+#define IS_VALID_STREAM_RCMODE(value) \
+	 ((value) == 1 || (value) == 2)
+
+#define IS_VALID_STREAM_LEVEL(value) \
+    ((value) >= VCENC_H264_LEVEL_1 && (value) <= VCENC_H264_LEVEL_5_1)
+
+#define IS_VALID_STREAM_PROFILE(value) \
+	((value) == VCENC_H264_BASE_PROFILE || \
+     (value) == VCENC_H264_MAIN_PROFILE || \
+     (value) == VCENC_H264_HIGH_PROFILE)
+
+#define IS_VALID_STREAM_CAVLC(value) \
+	((value) == 0 || (value) == 1)
 
 static ai_glass_record_param_t record_params = {
 	.type = DEFAULT_RECORD_TYPE,
@@ -134,6 +176,30 @@ static video_params_t video_fake_params = {
 	.rc_mode = 2,
 	.use_static_addr = 1,
 	.direct_output = 1
+};
+
+//streaming
+static ai_glass_stream_param_t stream_params = {
+    .type = DEFAULT_STREAM_TYPE,
+    .width = DEFAULT_STREAM_WIDTH,
+    .height = DEFAULT_STREAM_HEIGHT,
+    .bps = DEFAULT_STREAM_BPS,
+    .fps = DEFAULT_STREAM_FPS,
+    .gop = DEFAULT_STREAM_GOP,
+	.resolution = 6,
+    .roi = {
+        .xmin = 0,
+        .ymin = 0,
+        .xmax = 0,
+        .ymax = 0,
+    },
+    .minQp = DEFAULT_STREAM_MINQP,
+    .maxQp = DEFAULT_STREAM_MAXQP,
+    .rotation = DEFAULT_STREAM_ROTATION,
+    .rc_mode = DEFAULT_STREAM_RCMODE,
+    .level = DEFAULT_STREAM_LEVEL,
+    .profile = DEFAULT_STREAM_PROFILE,
+    .cavlc = DEFAULT_STREAM_CAVLC
 };
 
 static video_pre_init_params_t ai_glass_pre_init_params = {0};
@@ -211,6 +277,47 @@ static int life_snapshot_data_check(const ai_glass_snapshot_param_t *params)
 		}
 		if (!IS_VALID_SNAP_QVALUE(params->jpeg_qlevel)) {
 			return MEDIA_INVALID_QVALUE;
+		}
+	} else {
+		return MEDIA_FAIL;
+	}
+
+	return MEDIA_OK;
+}
+
+//streaming
+static int stream_data_check(const ai_glass_stream_param_t *params)
+{
+	if (params) {
+		if (!IS_VALID_STREAM_TYPE(params->type)) {
+			return MEDIA_INVALID_VTYPE;
+		}
+		if (!IS_VALID_STREAM_WIDTH(params->width)) {
+			return MEDIA_INVALID_WIDTH;
+		}
+		if (!IS_VALID_STREAM_HEIGHT(params->height)) {
+			return MEDIA_INVALID_HEIGHT;
+		}
+		if (!IS_VALID_STREAM_BPS(params->bps)) {
+			return MEDIA_INVALID_BPS;
+		}
+		if (!IS_VALID_STREAM_FPS(params->fps)) {
+			return MEDIA_INVALID_FPS;
+		}
+		if (!IS_VALID_STREAM_GOP(params->gop)) {
+			return MEDIA_INVALID_GOP;
+		}
+		if (!IS_VALID_STREAM_RCMODE(params->rc_mode)) {
+			return MEDIA_INVALID_RCMODE;
+		}
+		if (!IS_VALID_STREAM_LEVEL(params->level)) {
+			return MEDIA_INVALID_LEVEL;
+		}
+		if (!IS_VALID_STREAM_PROFILE(params->profile)) {
+			return MEDIA_INVALID_PROFILE;
+		}
+		if (!IS_VALID_STREAM_CAVLC(params->cavlc)) {
+			return MEDIA_INVALID_CAVLC;
 		}
 	} else {
 		return MEDIA_FAIL;
@@ -374,6 +481,75 @@ static int life_snapshot_update_if_valid(ai_glass_snapshot_param_t *ori_params, 
 	}
 }
 
+//streaming
+static int stream_data_update_if_valid(ai_glass_stream_param_t *ori_params, const ai_glass_stream_param_t *params)
+{
+    int need_update = 0;
+
+    if (IS_VALID_STREAM_TYPE(params->type) && ori_params->type != params->type) {
+        need_update = 1;
+        ori_params->type = params->type;
+    }
+    if (IS_VALID_STREAM_WIDTH(params->width) && IS_VALID_STREAM_HEIGHT(params->height) && 
+        (ori_params->width != params->width || ori_params->height != params->height)) {
+        need_update = 1;
+        ori_params->width = params->width;
+        ori_params->height = params->height;
+        if ((ori_params->roi.xmax - ori_params->roi.xmin) < params->width) {
+            ori_params->roi.xmax = params->width;
+            ori_params->roi.xmin = 0;
+        }
+        if ((ori_params->roi.ymax - ori_params->roi.ymin) < params->height) {
+            ori_params->roi.ymax = params->height;
+            ori_params->roi.ymin = 0;
+        }
+    }
+    if (IS_VALID_STREAM_WIDTH(params->roi.xmax) && IS_VALID_STREAM_HEIGHT(params->roi.ymax) &&
+        params->roi.xmax > params->roi.xmin && params->roi.ymax > params->roi.ymin) {
+        if (ori_params->width > (params->roi.xmax - params->roi.xmin) && ori_params->height > (params->roi.ymax - params->roi.ymin)) {
+            need_update = 1;
+            ori_params->roi.xmax = params->roi.xmax;
+            ori_params->roi.xmin = params->roi.xmin;
+            ori_params->roi.ymax = params->roi.ymax;
+            ori_params->roi.ymin = params->roi.ymin;
+        }
+    }
+    if (IS_VALID_STREAM_BPS(params->bps) && ori_params->bps != params->bps) {
+        need_update = 1;
+        ori_params->bps = params->bps;
+    }
+    if (IS_VALID_STREAM_FPS(params->fps) && ori_params->fps != params->fps) {
+        need_update = 1;
+        ori_params->fps = params->fps;
+    }
+    if (IS_VALID_STREAM_GOP(params->gop) && ori_params->gop != params->gop) {
+        need_update = 1;
+        ori_params->gop = params->gop;
+    }
+    if (IS_VALID_STREAM_RCMODE(params->rc_mode) && ori_params->rc_mode != params->rc_mode) {
+        need_update = 1;
+        ori_params->rc_mode = params->rc_mode;
+    }
+    if (IS_VALID_STREAM_LEVEL(params->level) && ori_params->level != params->level) {
+        need_update = 1;
+        ori_params->level = params->level;
+    }
+    if (IS_VALID_STREAM_PROFILE(params->profile) && ori_params->profile != params->profile) {
+        need_update = 1;
+        ori_params->profile = params->profile;
+    }
+    if (IS_VALID_STREAM_CAVLC(params->cavlc) && ori_params->cavlc != params->cavlc) {
+        need_update = 1;
+        ori_params->cavlc = params->cavlc;
+    }
+
+    if (need_update) {
+        return MEDIA_OK;
+    } else {
+        return MEDIA_NO_NEED_TO_UPDATE;
+    }
+}
+
 static int media_set_record_params(const ai_glass_record_param_t *params)
 {
 	ai_glass_record_param_t temp_params = {0};
@@ -405,6 +581,25 @@ static int media_set_life_snapshot_params(const ai_glass_snapshot_param_t *param
 		memcpy(&life_snapshot_params, &temp_params, sizeof(ai_glass_snapshot_param_t));
 	}
 	return ret;
+}
+
+//streaming
+static int media_set_stream_params(const ai_glass_stream_param_t *params)
+{
+    ai_glass_stream_param_t temp_params = {0};
+
+    // Copy current streaming parameters into temp_params
+    memcpy(&temp_params, &stream_params, sizeof(ai_glass_stream_param_t));
+
+    // Update temp_params if valid and changed
+    int ret = stream_data_update_if_valid(&temp_params, params);
+
+    // If update succeeded, copy back to global streaming params
+    if (ret == MEDIA_OK) {
+        memcpy(&stream_params, &temp_params, sizeof(ai_glass_stream_param_t));
+    }
+
+    return ret;
 }
 
 static int media_update_record_params_to_flash(const ai_glass_record_param_t *params)
@@ -519,6 +714,50 @@ static int media_update_life_snapshot_params_to_flash(const ai_glass_snapshot_pa
 	return MEDIA_OK;
 }
 
+//streaming
+static int media_update_stream_params_to_flash(const ai_glass_stream_param_t *params)
+{
+    // Allocate buffer for flash operation
+    unsigned char *stream_buf = malloc(FLASH_STREAM_BLOCK_SIZE); // 2KB buffer
+    unsigned int flash_addr = 0;
+
+    if (sys_get_boot_sel() == 0) {
+        flash_addr = FLASH_STREAM_BLOCK_BASE;  // You need to define this address
+    } else {
+        // Placeholder for NAND FLASH ADDR in future
+    }
+
+    if (stream_buf == NULL) {
+        AI_GLASS_ERR("Failed to allocate stream buffer\r\n");
+        return MEDIA_FAIL;
+    }
+
+    memset(stream_buf, 0x00, FLASH_STREAM_BLOCK_SIZE);
+    stream_buf[0] = 'S';  // Tag for identification (Streaming params)
+    stream_buf[1] = 'T';
+    stream_buf[2] = 'R';
+    stream_buf[3] = 'M';
+
+    memcpy(stream_buf + 4, params, sizeof(ai_glass_stream_param_t));
+
+    ftl_common_write(flash_addr, stream_buf, FLASH_STREAM_BLOCK_SIZE);
+    memset(stream_buf, 0xFF, FLASH_STREAM_BLOCK_SIZE);
+    ftl_common_read(flash_addr, stream_buf, FLASH_STREAM_BLOCK_SIZE);
+
+    ai_glass_stream_param_t *read_data = (ai_glass_stream_param_t *)(stream_buf + 4);
+
+    AI_GLASS_MSG("[FLASH] type: %u, width: %u, height: %u, bps: %u, fps: %u, gop: %u, roi_xmin: %u, roi_ymin: %u, roi_xmax: %u, roi_ymax: %u, minQp: %u, maxQp: %u, rotation: %u, rc_mode: %u, level: %u, profile: %u, cavlc: %u\r\n",
+                 read_data->type, read_data->width, read_data->height, read_data->bps, read_data->fps, read_data->gop,
+                 read_data->roi.xmin, read_data->roi.ymin, read_data->roi.xmax, read_data->roi.ymax,
+                 read_data->minQp, read_data->maxQp, read_data->rotation, read_data->rc_mode,
+                 read_data->level, read_data->profile, read_data->cavlc);
+
+    if (stream_buf) {
+        free(stream_buf);
+    }
+    return MEDIA_OK;
+}
+
 static int media_get_record_params_from_flash(ai_glass_record_param_t *params)
 {
 	if (params == NULL) {
@@ -628,6 +867,46 @@ static int media_get_life_snapshot_params_from_flash(ai_glass_snapshot_param_t *
 	return ret;
 }
 
+//streaming
+static int media_get_stream_params_from_flash(ai_glass_stream_param_t *params)
+{
+    if (params == NULL) {
+        AI_GLASS_ERR("Input buffer for stream params is NULL\r\n");
+        return MEDIA_FAIL;
+    }
+
+    unsigned char *stream_buf = malloc(FLASH_REC_BLOCK_SIZE); // Allocate a 2KB buffer
+    unsigned int flash_addr = 0;
+    int ret = 0;
+
+    if (sys_get_boot_sel() == 0) {
+        flash_addr = FLASH_STREAM_BLOCK_BASE;  // Define this as the flash base for streaming params
+    } else {
+        // Placeholder for NAND FLASH ADDR in future
+    }
+
+    if (stream_buf == NULL) {
+        AI_GLASS_ERR("It can't get the stream buffer\r\n");
+        return MEDIA_FAIL;
+    }
+
+    memset(stream_buf, 0x00, FLASH_REC_BLOCK_SIZE);
+    ftl_common_read(flash_addr, stream_buf, FLASH_REC_BLOCK_SIZE);
+
+    if (stream_buf[0] == 'S' && stream_buf[1] == 'T' && stream_buf[2] == 'R' && stream_buf[3] == 'M') {
+        memcpy(params, stream_buf + 4, sizeof(ai_glass_stream_param_t));
+        ret = MEDIA_OK;
+    } else {
+        AI_GLASS_WARN("Get Stream Param from flash failed\r\n");
+        ret = MEDIA_FAIL;
+    }
+
+    if (stream_buf) {
+        free(stream_buf);
+    }
+    return ret;
+}
+
 void print_record_data(const ai_glass_record_param_t *params)
 {
 	printf("record_params print\r\n");
@@ -664,6 +943,22 @@ void print_snapshot_data(const ai_glass_snapshot_param_t *params)
 	printf("rotation = %u\r\n", params->rotation);
 }
 
+//streaming
+void print_stream_data(const ai_glass_stream_param_t *params)
+{
+    printf("stream_params print\r\n");
+    printf("type = %u\r\n", params->type);
+	printf("resolution = %lu\r\n", params->resolution);
+    printf("width = %u\r\n", params->width);
+    printf("height = %u\r\n", params->height);
+    printf("bps = %lu\r\n", params->bps);
+    printf("fps = %u\r\n", params->fps);
+    printf("minQp = %u\r\n", params->minQp);
+    printf("maxQp = %u\r\n", params->maxQp);
+    printf("rotation = %u\r\n", params->rotation);
+    printf("rc_mode = %u\r\n", params->rc_mode);
+}
+
 int media_get_record_params(ai_glass_record_param_t *params)
 {
 	if (params) {
@@ -690,6 +985,17 @@ int media_get_life_snapshot_params(ai_glass_snapshot_param_t *params)
 	}
 	return MEDIA_FAIL;
 }
+
+//streaming
+int media_get_stream_params(ai_glass_stream_param_t *params)
+{
+    if (params) {
+        memcpy(params, &stream_params, sizeof(ai_glass_stream_param_t));  // Assuming stream_params is your global instance
+        return MEDIA_OK;
+    }
+    return MEDIA_FAIL;
+}
+
 
 int media_update_record_params(const ai_glass_record_param_t *params)
 {
@@ -738,6 +1044,19 @@ int media_update_life_snapshot_params(const ai_glass_snapshot_param_t *params)
 		return MEDIA_OK;
 	}
 	return MEDIA_FAIL;
+}
+
+//streaming
+int media_update_stream_params(const ai_glass_stream_param_t *params)
+{
+    int ret = media_set_stream_params(params);  // You will need to implement media_set_stream_params similar to media_set_record_params
+    if (ret == MEDIA_OK) {
+        // update data to flash
+        return media_update_stream_params_to_flash(params);  // Similar to media_update_record_params_to_flash, but for streaming
+    } else if (ret == MEDIA_NO_NEED_TO_UPDATE) {
+        return MEDIA_OK;
+    }
+    return MEDIA_FAIL;
 }
 
 void media_update_preinit_isp_data(video_pre_init_params_t *isp_data)
@@ -884,6 +1203,9 @@ void initial_media_parameters(void)
 	ai_glass_snapshot_param_t temp_ai_snap_parames = {0};
 	ai_glass_snapshot_param_t temp_life_snap_parames = {0};
 
+	//streaming
+	ai_glass_stream_param_t temp_stream_params = {0};
+
 	if (media_get_record_params_from_flash(&temp_record_parames) == MEDIA_OK) {
 		AI_GLASS_INFO("Get Record Parameters From Flash Success\r\n");
 		record_data_update_if_valid(&temp_record_parames, &record_params);
@@ -899,6 +1221,12 @@ void initial_media_parameters(void)
 		life_snapshot_update_if_valid(&life_snapshot_params, &temp_life_snap_parames);
 	}
 	media_update_life_snapshot_params_to_flash(&life_snapshot_params);
+	//streaming
+	if (media_get_stream_params_from_flash(&temp_stream_params) == MEDIA_OK) {
+        AI_GLASS_INFO("Get Streaming Parameters From Flash Success\r\n");
+        stream_data_update_if_valid(&stream_params, &temp_stream_params);
+    }
+    media_update_stream_params_to_flash(&stream_params);
 }
 
 void deinitial_media(void)

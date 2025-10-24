@@ -38,7 +38,7 @@
 
 // Configure for ai glass
 #define ENABLE_TEST_CMD             1   // For the tester to test some hardware
-#define EXTDISK_PLATFORM            VFS_INF_EMMC //VFS_INF_SD
+#define EXTDISK_PLATFORM            VFS_INF_SD //VFS_INF_SD
 #define UART_TX                     PA_2
 #define UART_RX                     PA_3
 #define UART_BAUDRATE               2000000 //115200 //2000000 //3750000 //4000000
@@ -1395,6 +1395,42 @@ static void ai_glass_get_power_state(uartcmdpacket_t *param)
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_GET_POWER_STATE\r\n");
 }
 
+static void parser_rtsp_stream_param(ai_glass_stream_param_t *rec_buf, uint8_t *raw_buf)
+{
+    if (rec_buf) {
+		// Streaming type and resolution
+		rec_buf->type   	= raw_buf[4];
+		rec_buf->resolution = raw_buf[5];
+
+		// Width and Height
+		rec_buf->width  = raw_buf[6] | (raw_buf[7] << 8);
+		rec_buf->height = raw_buf[8] | (raw_buf[9] << 8);
+
+		// FPS and BPS
+		rec_buf->fps 	= raw_buf[10] | (raw_buf[11] << 8) | (raw_buf[12] << 16) | (raw_buf[13] << 24);
+		rec_buf->bps    = raw_buf[14] | (raw_buf[15] << 8) | (raw_buf[16] << 16) | (raw_buf[17] << 24);
+
+		// QP
+		rec_buf->minQp  = raw_buf[18] | (raw_buf[19] << 8);
+		rec_buf->maxQp  = raw_buf[20] | (raw_buf[21] << 8);
+
+		// Rotation and RC mode
+		rec_buf->rotation = raw_buf[22];
+		rec_buf->rc_mode  = raw_buf[23];
+
+		// Set ROI, level, profile, cavlc to defaults (since packet does not carry them)
+		rec_buf->roi.xmin = 0;
+		rec_buf->roi.ymin = 0;
+		rec_buf->roi.xmax = 1;
+		rec_buf->roi.ymax = 1;
+		rec_buf->gop      = raw_buf[10] | (raw_buf[11] << 8) | (raw_buf[12] << 16) | (raw_buf[13] << 24);
+		rec_buf->level    = DEFAULT_STREAM_LEVEL;
+		rec_buf->profile  = DEFAULT_STREAM_PROFILE;
+		rec_buf->cavlc    = DEFAULT_STREAM_CAVLC;
+	} 
+    
+}
+
 static void parser_record_param(ai_glass_record_param_t *rec_buf, uint8_t *raw_buf)
 {
 	if (rec_buf) {
@@ -1637,6 +1673,13 @@ lifetimesnapshot:
 				}
 				if (lifetime_snapshot_take((const char *)lifetime_snap_name, param) == 0) {
 					status = AI_GLASS_DEVICE_WORKING_IN_PROG;
+					if ((current_sensor_id == SENSOR_IMX681) || (current_sensor_id == SENSOR_IMX471) || (current_sensor_id == SENSOR_OV13B10)) {
+						//do nothing
+					}
+					else {
+						// for non HR sensor, return 0x22 status
+						uart_resp_snapshot(param, status);
+					}
 					ai_glass_init_external_disk();
 					if (lifetime_highres_save((const char *)lifetime_snap_name, param) != 0) {
 						AI_GLASS_WARN("lifetime snapshot high res save failed\r\n");
@@ -2296,6 +2339,68 @@ static void ai_glass_get_pic_data_sliding_window_ack(uartcmdpacket_t *param)
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_PICTURE_DATA SLIDING WINDOW_ACK END\r\n");
 }
 
+static void ai_glass_rtsp_live_start(uartcmdpacket_t *param)
+{
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_RTSP_LIVE_START\r\n");
+    //STEP 1: Set AP mode
+	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
+    uint8_t mode = query_pkt->data_buf[0];
+	uint8_t result = AI_GLASS_CMD_COMPLETE;
+	rtw_softap_info_t wifi_cfg = {0};
+	uint8_t password[MAX_AP_PASSWORD_LEN] = {0};
+	wifi_cfg.password = password;
+
+	if (mode == 1) {
+		ai_glass_init_external_disk();
+		if (wifi_enable_ap_mode(AI_GLASS_AP_SSID, AI_GLASS_AP_PASSWORD, AI_GLASS_AP_CHANNEL, 20) == WLAN_SET_OK) {
+			wifi_get_ap_setting(&wifi_cfg);
+			result = AI_GLASS_CMD_COMPLETE;
+		} else {
+			result = AI_GLASS_PROC_FAIL;
+		}
+	} else if (mode == 0) {
+		if (wifi_disable_ap_mode() == WLAN_SET_OK) {
+			result = AI_GLASS_CMD_COMPLETE;
+		} else {
+			result = AI_GLASS_PROC_FAIL;
+		}
+	} else {
+		result = AI_GLASS_PARAMS_ERR;
+	}
+	AI_GLASS_MSG("RTSP STREAM] SET MODE %d done %lu\r\n", mode, mm_read_mediatime_ms());
+
+	if (mode == 1 && result == AI_GLASS_CMD_COMPLETE) {
+		deinitial_media(); // To save power
+	}
+
+	//STEP 2: Set stream parameters
+	ai_glass_stream_param_t temp_stream_param = {0};
+	uint8_t *video_params = uart_parser_stream_info(param);
+	parser_rtsp_stream_param(&temp_stream_param, video_params);
+	AI_GLASS_INFO("Get Stream Data\r\n");
+	print_stream_data(&temp_stream_param);
+	if (media_update_stream_params(&temp_stream_param) != MEDIA_OK) {
+		result = AI_GLASS_PARAMS_ERR;
+		AI_GLASS_ERR("UPDATE STREAM PARAMS ERROR\r\n");
+	}
+
+    //STEP 3: Start stream service
+	wifi_streaming_initialize();
+	result = AI_GLASS_CMD_COMPLETE;
+	//STEP 4: Respond status
+	uart_resp_rtsp_live_start(param, &wifi_cfg, MAX_AP_SSID_VALUE_LEN, MAX_AP_PASSWORD_LEN, result);
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_LIVE_START END\r\n");
+}
+
+void ai_glass_rtsp_live_stop(uartcmdpacket_t *param)
+{
+    AI_GLASS_INFO("get UART_RX_OPC_CMD_RTSP_LIVE_STOP\r\n");
+   	wifi_streaming_deinitialize();
+	uint8_t resp_stat = AI_GLASS_CMD_COMPLETE;
+	uart_resp_rtsp_live_stop(param, resp_stat);
+    AI_GLASS_INFO("UART_TX_OPC_RESP_STOP_RTSP_STREAMING END\r\n");
+}
+
 // {opcode, {is_critical, is_no_ack, callback}, {NULL, NULL})
 static rxopc_item_t rx_opcode_basic_items[ ] = {
 	{UART_RX_OPC_CMD_QUERY_INFO,        {true,  false, ai_glass_get_query_info},        {NULL, NULL}},
@@ -2327,6 +2432,9 @@ static rxopc_item_t rx_opcode_basic_items[ ] = {
 	{UART_TX_OPC_CMD_START_BT_SOC_FW_UPGRADE,                {false, false, ai_glass_resp_bt_fw_upgrade},               {NULL, NULL}},
 	{UART_TX_OPC_CMD_FINISH_BT_SOC_FW_UPGRADE,               {false, false, ai_glass_resp_bt_fw_finish},                {NULL, NULL}},
 	{UART_RX_OPC_CMD_SET_WIFI_FW_ROLLBACK,                   {false, false, ai_glass_wifi_fw_rollback},                 {NULL, NULL}},
+
+	{UART_RX_OPC_CMD_RTSP_LIVE_START,                   	 {false, false, ai_glass_rtsp_live_start},                  {NULL, NULL}},
+	{UART_RX_OPC_CMD_RTSP_LIVE_STOP,                         {true, false, ai_glass_rtsp_live_stop},                    {NULL, NULL}},
 	     
 
 };
