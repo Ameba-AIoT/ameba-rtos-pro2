@@ -19,7 +19,7 @@
 #define AUDIO_INTERFACE         1
 
 #define AUDIO_SAMPLE_RATE       16000
-#define AUDIO_SRC               AUDIO_INTERFACE //I2S_INTERFACE // or AUDIO_INTERFACE
+#define AUDIO_SRC               I2S_INTERFACE // or AUDIO_INTERFACE
 #define AUDIO_I2S_ROLE          I2S_SLAVE
 
 // Modules
