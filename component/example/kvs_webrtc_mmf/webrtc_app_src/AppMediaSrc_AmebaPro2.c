@@ -472,14 +472,14 @@ static STATUS app_media_source_init(PMediaContext *ppMediaContext)
 	pVideoStream = &pGstConfiguration->videoStream;
 	pAudioStream = &pGstConfiguration->audioStream;
 	pVideoStream->codec = RTC_CODEC_H264_PROFILE_42E01F_LEVEL_ASYMMETRY_ALLOWED_PACKETIZATION_MODE;
-#if AUDIO_OPUS
-	printf("AUDIO_OPUS\r\n");
+#if KVS_AUDIO_OPUS
+	printf("KVS_AUDIO_OPUS\r\n");
 	pAudioStream->codec = RTC_CODEC_OPUS;
-#elif AUDIO_G711_MULAW
-	printf("AUDIO_G711_MULAW\r\n");
+#elif KVS_AUDIO_G711_MULAW
+	printf("KVS_AUDIO_G711_MULAW\r\n");
 	pAudioStream->codec = RTC_CODEC_MULAW;
-#elif AUDIO_G711_ALAW
-	printf("AUDIO_G711_ALAW\r\n");
+#elif KVS_AUDIO_G711_ALAW
+	printf("KVS_AUDIO_G711_ALAW\r\n");
 	pAudioStream->codec = RTC_CODEC_ALAW;
 #endif
 
@@ -528,7 +528,7 @@ static void priv_app_media_frameHandler(uint64_t customData, PFrame pFrame)
 	memcpy(remote_audio.pData, pFrame->frameData, pFrame->size);
 	remote_audio.size = pFrame->size;
 	remote_audio.timestamp = pFrame->presentationTs / HUNDREDS_OF_NANOS_IN_A_MILLISECOND;
-	remote_audio.type =  AUDIO_OPUS ? AV_CODEC_ID_OPUS : (AUDIO_G711_MULAW ? AV_CODEC_ID_PCMU : AV_CODEC_ID_PCMA);
+	remote_audio.type =  KVS_AUDIO_OPUS ? AV_CODEC_ID_OPUS : (KVS_AUDIO_G711_MULAW ? AV_CODEC_ID_PCMU : AV_CODEC_ID_PCMA);
 	remote_audio.bFreeData = true;
 
 	kvsWebrtcMediaSendToQueue(&remote_audio, pkvsWebrtcMediaQ->AudioRecvQueue);

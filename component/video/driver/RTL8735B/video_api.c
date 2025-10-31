@@ -859,12 +859,6 @@ static void video_rc_callback(int ch, bps_stbl_ctrl_t *bps_stbl_ctrl, uint32_t f
 
 	uint64_t rc_update_duration = (hal_read_systime_us() - voe_info.ch_info[ch].rc_info->update_time) / 1000;
 	if ((rc_update_duration > (1000 / cur_fps)) && atomic_exchange(&(voe_info.ch_info[ch].rc_info->update_flag), false)) {
-		if (voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps != 0 &&
-			(voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps > voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps)) {
-			video_dprintf(VIDEO_LOG_MSG, "[%s] invalid fps(%d) > ispfps(%d)\r\n", __FUNCTION__, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps,
-						  voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps);
-			voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps = 0;
-		}
 		// if update_flag = ture, update rc parameters and set update_flag to false
 		int ret = hal_video_set_rc(&(voe_info.ch_info[ch].rc_info->temp_rc_ctrl), ch);
 		if (ret == OK) {
@@ -895,15 +889,63 @@ int video_get_rc(int ch, rate_ctrl_s *rc_ctrl)
 	return OK;
 }
 
-int video_set_rc(int ch, rate_ctrl_s *rc_ctrl)
+static int video_rc_validate_and_fix(int ch, rate_ctrl_s *rc_ctrl)
 {
-	int ret = OK;
-	if (voe_info.ch_info[ch].rc_info == NULL) {
-		video_dprintf(VIDEO_LOG_ERR, "[%s] ch%d rc_info not init\r\n", __FUNCTION__, ch);
-		return NOK;
+	int ret = RC_SUCESS;
+	
+	if(rc_ctrl->isp_fps || rc_ctrl->fps) {
+		int ispfps, encfps;
+		video_get_realfps(ch, &ispfps, &encfps);
+		if(rc_ctrl->isp_fps > ispfps) {
+			video_dprintf(VIDEO_LOG_MSG, "[%s] invalid ispfps\r\n", __FUNCTION__);
+			rc_ctrl->isp_fps = 0;
+			ret = ret | RC_ERR_ISPFPS;
+		}
+		if(rc_ctrl->fps > ispfps) {
+			video_dprintf(VIDEO_LOG_MSG, "[%s] invalid fps\r\n", __FUNCTION__);
+			rc_ctrl->fps = 0;
+			ret = ret | RC_ERR_FPS;
+		}
+		if (rc_ctrl->isp_fps && rc_ctrl->fps && rc_ctrl->fps > rc_ctrl->isp_fps) {
+			video_dprintf(VIDEO_LOG_MSG, "[%s] invalid fps(%d) > ispfps(%d)\r\n", __FUNCTION__, rc_ctrl->fps, rc_ctrl->isp_fps);
+			rc_ctrl->isp_fps = 0;
+			rc_ctrl->fps = 0;
+			ret = ret | RC_ERR_ISPFPS;
+			ret = ret | RC_ERR_FPS;
+		}
+	}
+	if (rc_ctrl->gop && (rc_ctrl->gop < 0 || rc_ctrl->gop > 300)) {
+		rc_ctrl->gop = 0;
+		video_dprintf(VIDEO_LOG_MSG, "[%s] ch%d invalid gop setting\r\n", __FUNCTION__, ch);
+		ret = ret | RC_ERR_GOP;
 	}
 
-	video_rc_update_param(ch, &(voe_info.ch_info[ch].rc_info->temp_rc_ctrl), rc_ctrl);
+	if(rc_ctrl->minqp || rc_ctrl->maxqp) {
+		// check if both qp values are set and in valid range
+		if ((rc_ctrl->minqp == 0 || rc_ctrl->maxqp == 0) ||	// Both must be set
+			(rc_ctrl->minqp > rc_ctrl->maxqp) ||			// minqp should not be greater than maxqp
+			(rc_ctrl->maxqp < 0 || rc_ctrl->maxqp > 51) ||	// Ensure maxqp in range
+			(rc_ctrl->minqp < 0 || rc_ctrl->minqp > 51)) {	// Ensure minqp in range
+			video_dprintf(VIDEO_LOG_MSG, "[%s] ch%d invalid qp setting\r\n", __FUNCTION__, ch);
+			rc_ctrl->minqp = 0;
+			rc_ctrl->maxqp = 0;
+			ret = ret | RC_ERR_QP;
+		}
+	}
+	
+	if(rc_ctrl->qpMinI || rc_ctrl->qpMaxI) {
+		// check if both qp values are set and in valid range
+		if ((rc_ctrl->qpMinI == 0 || rc_ctrl->qpMaxI == 0) ||	// Both must be set
+			(rc_ctrl->qpMinI > rc_ctrl->qpMaxI) ||				// qpMinI should not be greater than qpMaxI
+			(rc_ctrl->qpMaxI < 0 || rc_ctrl->qpMaxI > 51) ||	// Ensure qpMaxI in range
+			(rc_ctrl->qpMinI < 0 || rc_ctrl->qpMinI > 51)) {	// Ensure qpMinI in range
+			video_dprintf(VIDEO_LOG_MSG, "[%s] ch%d invalid qpI setting\r\n", __FUNCTION__, ch);
+			rc_ctrl->qpMinI = 0;
+			rc_ctrl->qpMaxI = 0;
+			ret = ret | RC_ERR_QPI;
+		}
+	}
+
 	if (rc_ctrl->bps) {
 		int rcMode = voe_info.ch_info[ch].param->rc_mode - 1;
 		int bps;
@@ -913,15 +955,33 @@ int video_set_rc(int ch, rate_ctrl_s *rc_ctrl)
 			bps = rc_ctrl->bps;
 		}
 		if (bps >= 10000) { //encoder HW limit
-			voe_info.ch_info[ch].rc_info->temp_rc_ctrl.bps = bps;
+			rc_ctrl->bps = bps;
 		} else {
-			video_dprintf(VIDEO_LOG_MSG, "[%s] ch%d invlid bps setting\r\n", __FUNCTION__, ch);
+			rc_ctrl->bps = 0;
+			video_dprintf(VIDEO_LOG_MSG, "[%s] ch%d invalid bps setting\r\n", __FUNCTION__, ch);
+			ret = ret | RC_ERR_BPS;
 		}
 	}
+	return ret;
+}
+
+int video_set_rc(int ch, rate_ctrl_s *rc_ctrl)
+{
+	int ret = RC_SUCESS;
+	if (voe_info.ch_info[ch].rc_info == NULL) {
+		video_dprintf(VIDEO_LOG_ERR, "[%s] ch%d rc_info not init\r\n", __FUNCTION__, ch);
+		return RC_FAIL;
+	}
+
+	rate_ctrl_s update_rc;
+	memcpy(&update_rc, rc_ctrl, sizeof(rate_ctrl_s));
+	ret = video_rc_validate_and_fix(ch, &update_rc);
+	video_rc_update_param(ch, &(voe_info.ch_info[ch].rc_info->temp_rc_ctrl), &update_rc);
 	//video_dprintf(VIDEO_LOG_MSG, "[%s] rc fps = %d, isp_fps = %d, gop = %d, bps = %d\r\n", __FUNCTION__, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.fps,
 	//		voe_info.ch_info[ch].rc_info->temp_rc_ctrl.isp_fps, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.gop, voe_info.ch_info[ch].rc_info->temp_rc_ctrl.bps);
 	atomic_store(&(voe_info.ch_info[ch].rc_info->update_flag), true);
-	return OK;
+
+	return ret;
 }
 
 int video_get_realfps(int ch, int *isp_fps, int *enc_fps)
@@ -1753,12 +1813,12 @@ void video_pre_init_procedure(int ch, video_pre_init_params_t *parm)
 		video_isp_initial_items_t init_items;
 		init_items.init_brightness = 0;
 		init_items.init_contrast = 50;
-		init_items.init_flicker = 1;
+		init_items.init_flicker = FLICKER_50HZ;
 		init_items.init_hdr_mode = 0;
-		init_items.init_mirrorflip = 0xf0;
+		init_items.init_mirrorflip = MIRRORFLIP_DISABLE;
 		init_items.init_saturation = 50;
 		init_items.init_wdr_level = 50;
-		init_items.init_wdr_mode = 2;
+		init_items.init_wdr_mode = WDR_AUTO;
 		init_items.init_mipi_mode = 0;
 		hal_video_set_isp_init_items(ch, &init_items);
 	}

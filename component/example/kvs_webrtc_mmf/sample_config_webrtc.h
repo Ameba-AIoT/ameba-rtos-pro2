@@ -33,10 +33,10 @@ void example_kvs_webrtc(void);
 #define ENABLE_AUDIO_SENDRECV
 
 /* Audio format setting */
-#define AUDIO_G711_MULAW        1
-#define AUDIO_G711_ALAW         0
-#define AUDIO_OPUS              0
-#if (AUDIO_G711_MULAW+AUDIO_G711_ALAW+AUDIO_OPUS) != 1
+#define KVS_AUDIO_G711_MULAW        1
+#define KVS_AUDIO_G711_ALAW         0
+#define KVS_AUDIO_OPUS              0
+#if (KVS_AUDIO_G711_MULAW+KVS_AUDIO_G711_ALAW+KVS_AUDIO_OPUS) != 1
 #error only one of audio format should be set
 #endif
 

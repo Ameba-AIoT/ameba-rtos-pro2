@@ -27,6 +27,7 @@
 #define WOWLAN_GPIO_WDT      1
 #endif
 #define WOWLAN_CONNECTIVITY_CHECK     0
+#define WOWLAN_11V_EN     0
 //Clock, 1: 4MHz, 0: 100kHz
 #define CLOCK 0
 //SLEEP_DURATION, 120s
@@ -387,6 +388,10 @@ void tcp_app_task(void *param)
 	if (set_arpreqenable) {
 		wifi_wowlan_set_arpreq_keepalive(0, 0); // arp0, null1
 	}
+
+#if WOWLAN_11V_EN
+	wifi_set_802_11v_bss_pkt_offload();
+#endif
 
 	//dynamic dtim
 	uint8_t level = rtl8735b_get_dynamic_dtim_level();
@@ -809,6 +814,9 @@ void fPS(void *arg)
 			printf("set_pnoenable=%02d", atoi(argv[2]));
 			set_pnoenable = atoi(argv[2]);
 		}
+	} else if (strcmp(argv[1], "drift_param") == 0) {
+		extern void rtl8735b_set_bcn_drift_identify_param(u8 times, u8 count);
+		rtl8735b_set_bcn_drift_identify_param(atoi(argv[2]), atoi(argv[3]));
 	}
 }
 
@@ -953,6 +961,26 @@ void main(void)
 					//	extern uint8_t rtw_hal_read_ch_pno_scan_from_txfifo(uint8_t reason);
 					//	channel = rtw_hal_read_ch_pno_scan_from_txfifo(wowlan_wake_reason);
 					//	printf("\r\nwake up from pno and camp on ch %d\r\n", channel);
+				} else if (wowlan_wake_reason == RX_HW_PATTERN_PKT) {
+					wlan_mcu_ok = 0;
+					uint32_t packet_len = 0;
+					u8 type, category, action;
+					uint8_t *wakeup_packet = rtl8735b_read_wakeup_packet(&packet_len, wowlan_wake_reason);
+					type = *(wakeup_packet);
+					category = *(wakeup_packet + 24);
+					action = *(wakeup_packet + 25);
+					//check action frame(0xd0) and 11v(Category code/Action code)
+					if ((type == 0xd0) && (category == 0x0a) && (action == 0x07)) {
+						RTW_API_INFO("[%s] Wakeup from 11v\n\r", __FUNCTION__);
+						uint8_t bssid[6];
+						uint8_t channel = 0;
+						//Get btm from 11v to get channel / bssid
+						memcpy(bssid, wakeup_packet + 33, 6);
+						channel = *(wakeup_packet + 44);
+						extern void wifi_set_11v_ch_bssid(uint8_t channel, uint8_t *bssid);
+						wifi_set_11v_ch_bssid(channel, bssid);
+					}
+					free(wakeup_packet);
 				} else if (wowlan_wake_reason == FW_PNO_TIMEOUT) {
 					printf("\r\nwake up from pno and no channel can't be scan\r\n");
 				} else if (wowlan_wake_reason == FW_PNO_RECV_BCN_WAKEUP) {

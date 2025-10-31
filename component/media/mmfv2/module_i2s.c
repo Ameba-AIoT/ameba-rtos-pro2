@@ -825,5 +825,5 @@ i2s_params_t default_i2s_params = {
 	.i2s_direction      = I2S_TRX_BOTH,
 	.rx_byte_swap       = 0,
 	.tx_byte_swap       = 0,
-	.pin_group_num      = 1,
+	.pin_group_num      = 0,
 };

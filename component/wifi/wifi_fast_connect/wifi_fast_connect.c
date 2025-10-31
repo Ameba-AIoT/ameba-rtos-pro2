@@ -206,6 +206,22 @@ int write_fast_connect_data_to_flash(unsigned int offer_ip, unsigned int server_
 	return RTW_SUCCESS;
 }
 
+static uint8_t wr_11v_enable = 0;
+static uint8_t wr_11v_channel = 0;
+static uint8_t wr_11v_bssid[6] = {0};
+void wifi_set_11v_ch_bssid(uint8_t channel, uint8_t *bssid)
+{
+	char empty_bssid[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+	if (memcmp(wr_11v_bssid, empty_bssid, 6)) {
+		wr_11v_enable = 1;
+		memcpy(wr_11v_bssid, bssid, 6);
+		wr_11v_channel = channel;
+		RTW_API_INFO("[%s] wr_11v_bssid: "MAC_FMT", channel: %d\n\r", __FUNCTION__, MAC_ARG(wr_11v_bssid), channel);
+	} else {
+		RTW_API_INFO("[%s] bssid: "MAC_FMT", channel: %d\n\r", __FUNCTION__, MAC_ARG(bssid), channel);
+	}
+}
+
 static uint8_t pno_wr_enable = 0;
 static uint8_t pno_wr_channel = 0;
 void wifi_set_pno_reconnect_channel(uint8_t channel)
@@ -354,6 +370,13 @@ int wifi_do_fast_connect(void)
 		} else {
 			channel = data->channel;
 		}
+
+		if (wr_11v_enable) {
+			channel = wr_11v_channel;
+			rtw_memcpy(wifi.bssid.octet, wr_11v_bssid, 6);
+			RTW_API_INFO("[%s] wr_11v_bssid: "MAC_FMT", wr_11v_channel: %d\n\r", __FUNCTION__, MAC_ARG(wr_11v_bssid), wr_11v_channel);
+		}
+
 		key_id = channel >> 28;
 		channel &= 0xff;
 		security_type = data->security_type;

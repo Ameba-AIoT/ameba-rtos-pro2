@@ -149,6 +149,7 @@ typedef struct {
 	rtw_wps_type_t          wps_type;         /**< WPS type                                                                  */
 	unsigned int                      channel;          /**< Radio channel that the AP beacon was received on                          */
 	rtw_802_11_band_t       band;             /**< Radio band                                                                */
+	unsigned char country_code[2]; /**< country_code in Probe Response/Beacon */
 #ifdef CONFIG_P2P_NEW
 	unsigned char			p2p_role;
 #endif
@@ -544,6 +545,9 @@ struct  wifi_user_conf {
 	unsigned char chn5G_num;
 	unsigned char regulation2_4G;
 	unsigned char regulation5G;
+
+	unsigned char wifi_11v_enabled;
+	unsigned char wifi_11r_enabled;
 } ;
 extern  struct wifi_user_conf wifi_user_config;
 

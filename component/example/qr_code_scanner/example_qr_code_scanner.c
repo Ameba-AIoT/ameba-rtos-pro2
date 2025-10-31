@@ -84,10 +84,10 @@ void yuv_snapshot_init(void *ctx)
 	int iq_addr, sensor_addr;
 	isp_info_t info;
 
-	int voe_heap_size = video_buf_calc(1, V1_WIDTH, V1_HEIGHT, V1_BPS, 1,
-									   0, 0, 0, 0, 0,
-									   0, 0, 0, 0, 0,
-									   0, 0, 0);
+	int voe_heap_size = video_voe_presetting(1, V1_WIDTH, V1_HEIGHT, V1_BPS, 1,
+						0, 0, 0, 0, 0,
+						0, 0, 0, 0, 0,
+						0, 0, 0);
 
 	int sensor_id_value = 0;
 	for (int i = 0; i < SENSOR_MAX; i++) {

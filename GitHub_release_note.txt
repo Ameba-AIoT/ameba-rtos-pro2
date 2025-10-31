@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: b84bf90be0f2a481b408e8c6ee1a3d43663aa301
+* [amebapro2][wlan] fix dhcp rebinding incorrect checksum
+
 SHA-1: d22d5c8d264511d4889b603a1f2f53b48592409d
 * [amebapro2][ai glass] Update AI glass application code
 

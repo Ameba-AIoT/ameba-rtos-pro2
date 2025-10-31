@@ -133,6 +133,21 @@ int wifi_wowlan_set_arp_rsp_keep_alive(int enable)
 }
 #endif
 
+void wifi_set_802_11v_bss_pkt_offload(void)
+{
+	wowlan_pattern_t bss_pattern;
+	memset(&bss_pattern, 0, sizeof(wowlan_pattern_t));
+
+	uint8_t identify_80211v[6] = {0x08, 0x00, 0x02, 0x01, 0x01, 0x76};
+	uint8_t data[6] = {0xa, 0x7, 0x0, 0x0, 0x0, 0x0};
+	const uint8_t data_mask[6] = {0xc0, 0x0, 0x0, 0x0, 0x0, 0x0};
+	memcpy(&(bss_pattern.eth_sa), data, 6);
+	memcpy(&(bss_pattern.eth_da), identify_80211v, 6);
+	memcpy((&bss_pattern.mask), data_mask, 6);
+
+	wifi_wowlan_set_pattern(bss_pattern);
+}
+
 #ifdef CONFIG_WOWLAN_TCP_KEEP_ALIVE
 
 extern void rtw_set_tcp_protocol_keepalive(uint32_t idle_ms, uint32_t interval_ms, uint8_t count, uint8_t power_bit);

@@ -63,6 +63,15 @@ list(
 	${prj_root}/src/test_model/model_mobilenetv2.c
 )
 
+
+##AINR
+list(
+	APPEND app_sources
+	${prj_root}/src/test_model/ainr/ainr.c
+	${prj_root}/src/test_model/ainr/ulaw_encode_lookup.S
+	${prj_root}/src/test_model/ainr/ulaw_decode_lookup.S
+)
+
 #NN utils
 list(
 	APPEND scn_sources
@@ -74,6 +83,7 @@ list(
 	${prj_root}/src/test_model/nn_utils/class_name.c
 
 	${prj_root}/src/test_model/roi_delta_qp/roi_delta_qp.c
+	${prj_root}/src/test_model/nnlite/nnlite_api.c
 )
 
 #USER
@@ -145,6 +155,8 @@ endif()
 list(
 	APPEND scn_inc_path
 	${app_example_inc_path}
+	${prj_root}/src/test_model/ainr
+	${prj_root}/src/test_model/nnlite
 	${prj_root}/src/test_model/svm
 	${prj_root}/src/test_model
 	${prj_root}/src

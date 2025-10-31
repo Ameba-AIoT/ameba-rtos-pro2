@@ -206,7 +206,7 @@ void example_kvs_webrtc_mmf_thread(void *param)
 		goto example_kvs_webrtc_cleanup;
 	}
 
-#if (AUDIO_G711_MULAW || AUDIO_G711_ALAW)
+#if (KVS_AUDIO_G711_MULAW || KVS_AUDIO_G711_ALAW)
 	g711e_ctx = mm_module_open(&g711_module);
 	if (g711e_ctx) {
 		mm_module_ctrl(g711e_ctx, CMD_G711_SET_PARAMS, (int)&g711e_params);
@@ -217,7 +217,7 @@ void example_kvs_webrtc_mmf_thread(void *param)
 		printf("G711 open fail\n\r");
 		goto example_kvs_webrtc_cleanup;
 	}
-#elif AUDIO_OPUS
+#elif KVS_AUDIO_OPUS
 	opusc_ctx = mm_module_open(&opusc_module);
 	if (opusc_ctx) {
 		mm_module_ctrl(opusc_ctx, CMD_OPUSC_SET_PARAMS, (int)&opusc_params);
@@ -233,9 +233,9 @@ void example_kvs_webrtc_mmf_thread(void *param)
 	siso_audio_a1 = siso_create();
 	if (siso_audio_a1) {
 		siso_ctrl(siso_audio_a1, MMIC_CMD_ADD_INPUT, (uint32_t)audio_ctx, 0);
-#if (AUDIO_G711_MULAW || AUDIO_G711_ALAW)
+#if (KVS_AUDIO_G711_MULAW || KVS_AUDIO_G711_ALAW)
 		siso_ctrl(siso_audio_a1, MMIC_CMD_ADD_OUTPUT, (uint32_t)g711e_ctx, 0);
-#elif AUDIO_OPUS
+#elif KVS_AUDIO_OPUS
 		siso_ctrl(siso_audio_a1, MMIC_CMD_ADD_OUTPUT, (uint32_t)opusc_ctx, 0);
 		siso_ctrl(siso_audio_a1, MMIC_CMD_SET_STACKSIZE, 24 * 1024, 0);
 #endif
@@ -251,9 +251,9 @@ void example_kvs_webrtc_mmf_thread(void *param)
 		miso_ctrl(miso_kvs_webrtc_v1_a1, MMIC_CMD_SET_SECURE_CONTEXT, 1, 0);
 #endif
 		miso_ctrl(miso_kvs_webrtc_v1_a1, MMIC_CMD_ADD_INPUT0, (uint32_t)video_v1_ctx, 0);
-#if (AUDIO_G711_MULAW || AUDIO_G711_ALAW)
+#if (KVS_AUDIO_G711_MULAW || KVS_AUDIO_G711_ALAW)
 		miso_ctrl(miso_kvs_webrtc_v1_a1, MMIC_CMD_ADD_INPUT1, (uint32_t)g711e_ctx, 0);
-#elif AUDIO_OPUS
+#elif KVS_AUDIO_OPUS
 		miso_ctrl(miso_kvs_webrtc_v1_a1, MMIC_CMD_ADD_INPUT1, (uint32_t)opusc_ctx, 0);
 #endif
 		miso_ctrl(miso_kvs_webrtc_v1_a1, MMIC_CMD_ADD_OUTPUT, (uint32_t)kvs_webrtc_v1_a1_ctx, 0);
@@ -265,7 +265,7 @@ void example_kvs_webrtc_mmf_thread(void *param)
 	printf("miso_kvs_webrtc_v1_a1 started\n\r");
 
 #ifdef ENABLE_AUDIO_SENDRECV
-#if (AUDIO_G711_MULAW || AUDIO_G711_ALAW)
+#if (KVS_AUDIO_G711_MULAW || KVS_AUDIO_G711_ALAW)
 	g711d_ctx = mm_module_open(&g711_module);
 	if (g711d_ctx) {
 		mm_module_ctrl(g711d_ctx, CMD_G711_SET_PARAMS, (int)&g711d_params);
@@ -276,7 +276,7 @@ void example_kvs_webrtc_mmf_thread(void *param)
 		printf("G711 open fail\n\r");
 		goto example_kvs_webrtc_cleanup;
 	}
-#elif AUDIO_OPUS
+#elif KVS_AUDIO_OPUS
 	opusd_ctx = mm_module_open(&opusd_module);
 	if (opusd_ctx) {
 		mm_module_ctrl(opusd_ctx, CMD_OPUSD_SET_PARAMS, (int)&opusd_only_params);
@@ -292,9 +292,9 @@ void example_kvs_webrtc_mmf_thread(void *param)
 	siso_webrtc_a2 = siso_create();
 	if (siso_webrtc_a2) {
 		siso_ctrl(siso_webrtc_a2, MMIC_CMD_ADD_INPUT, (uint32_t)kvs_webrtc_v1_a1_ctx, 0);
-#if (AUDIO_G711_MULAW || AUDIO_G711_ALAW)
+#if (KVS_AUDIO_G711_MULAW || KVS_AUDIO_G711_ALAW)
 		siso_ctrl(siso_webrtc_a2, MMIC_CMD_ADD_OUTPUT, (uint32_t)g711d_ctx, 0);
-#elif AUDIO_OPUS
+#elif KVS_AUDIO_OPUS
 		siso_ctrl(siso_webrtc_a2, MMIC_CMD_ADD_OUTPUT, (uint32_t)opusd_ctx, 0);
 		siso_ctrl(siso_webrtc_a2, MMIC_CMD_SET_STACKSIZE, 24 * 1024, 0);
 #endif
@@ -306,9 +306,9 @@ void example_kvs_webrtc_mmf_thread(void *param)
 
 	siso_a2_audio = siso_create();
 	if (siso_a2_audio) {
-#if (AUDIO_G711_MULAW || AUDIO_G711_ALAW)
+#if (KVS_AUDIO_G711_MULAW || KVS_AUDIO_G711_ALAW)
 		siso_ctrl(siso_a2_audio, MMIC_CMD_ADD_INPUT, (uint32_t)g711d_ctx, 0);
-#elif AUDIO_OPUS
+#elif KVS_AUDIO_OPUS
 		siso_ctrl(siso_a2_audio, MMIC_CMD_ADD_INPUT, (uint32_t)opusd_ctx, 0);
 #endif
 		siso_ctrl(siso_a2_audio, MMIC_CMD_ADD_OUTPUT, (uint32_t)audio_ctx, 0);
@@ -345,10 +345,10 @@ example_kvs_webrtc_cleanup:
 	kvs_webrtc_v1_a1_ctx = mm_module_close(kvs_webrtc_v1_a1_ctx);
 	video_v1_ctx = mm_module_close(video_v1_ctx);
 	audio_ctx = mm_module_close(audio_ctx);
-#if (AUDIO_G711_MULAW || AUDIO_G711_ALAW)
+#if (KVS_AUDIO_G711_MULAW || KVS_AUDIO_G711_ALAW)
 	g711e_ctx = mm_module_close(g711e_ctx);
 	g711d_ctx = mm_module_close(g711d_ctx);
-#elif AUDIO_OPUS
+#elif KVS_AUDIO_OPUS
 	opusc_ctx = mm_module_close(opusc_ctx);
 	opusd_ctx = mm_module_close(opusd_ctx);
 #endif

@@ -33,6 +33,8 @@
 #if defined(APP_LE_EXT_ADV_SCAN_SUPPORT) && APP_LE_EXT_ADV_SCAN_SUPPORT
 #include <gap_ext_scan.h>
 #endif
+int ble_central_app_max_links = 0;
+
 /** @defgroup  CENTRAL_CLIENT_APP Central Client Application
     * @brief This file handles BLE central client application routines.
     * @{
@@ -238,7 +240,7 @@ void ble_central_app_handle_conn_state_evt(uint8_t conn_id, T_GAP_CONN_STATE new
 			APP_PRINT_ERROR2("ble_central_app_handle_conn_state_evt: connection lost, conn_id %d, cause 0x%x", conn_id,
 							 disc_cause);
 		}
-
+		ble_central_app_max_links--;
 		printf("Disconnect conn_id %d, cause 0x%x\r\n", conn_id, disc_cause);
 		memset(&ble_central_app_link_table[conn_id], 0, sizeof(T_APP_LINK));
 	}
@@ -248,6 +250,7 @@ void ble_central_app_handle_conn_state_evt(uint8_t conn_id, T_GAP_CONN_STATE new
 		le_get_conn_addr(conn_id, ble_central_app_link_table[conn_id].bd_addr,
 						 (void *)&ble_central_app_link_table[conn_id].bd_type);
 		printf("Connected success conn_id %d\r\n", conn_id);
+		ble_central_app_max_links++;
 #if F_BT_LE_5_0_SET_PHY_SUPPORT
 		{
 			uint8_t tx_phy;

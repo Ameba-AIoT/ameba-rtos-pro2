@@ -66,6 +66,16 @@ enum encode_type {
 	VIDEO_H264_JPEG
 };
 
+//rc error code
+#define RC_SUCESS		0
+#define RC_FAIL			BIT(0)
+#define RC_ERR_FPS		BIT(1)
+#define RC_ERR_ISPFPS	BIT(2)
+#define RC_ERR_GOP		BIT(3)
+#define RC_ERR_BPS		BIT(4)
+#define RC_ERR_QP		BIT(5)
+#define RC_ERR_QPI		BIT(6)
+
 //#define USE_ISP_RETENTION_DATA
 #ifdef USE_ISP_RETENTION_DATA
 typedef struct isp_retention_data_s {

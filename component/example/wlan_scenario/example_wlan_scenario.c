@@ -1499,10 +1499,13 @@ static rtw_result_t scan_result_handler(unsigned int scanned_AP_num, void *user_
 			   (scanned_ap_info->security == RTW_SECURITY_WEP_PSK) ? "WEP" :
 			   (scanned_ap_info->security == RTW_SECURITY_WPA_TKIP_PSK) ? "WPA TKIP" :
 			   (scanned_ap_info->security == RTW_SECURITY_WPA_AES_PSK) ? "WPA AES" :
+			   (scanned_ap_info->security == RTW_SECURITY_WPA_MIXED_PSK) ? "WPA Mixed" :
 			   (scanned_ap_info->security == RTW_SECURITY_WPA2_AES_PSK) ? "WPA2 AES" :
 			   (scanned_ap_info->security == RTW_SECURITY_WPA2_TKIP_PSK) ? "WPA2 TKIP" :
 			   (scanned_ap_info->security == RTW_SECURITY_WPA2_MIXED_PSK) ? "WPA2 Mixed" :
-			   (scanned_ap_info->security == RTW_SECURITY_WPA_WPA2_MIXED) ? "WPA/WPA2 AES" :
+			   (scanned_ap_info->security == RTW_SECURITY_WPA_WPA2_TKIP_PSK) ? "WPA/WPA2 TKIP" :
+			   (scanned_ap_info->security == RTW_SECURITY_WPA_WPA2_AES_PSK) ? "WPA/WPA2 AES" :
+			   (scanned_ap_info->security == RTW_SECURITY_WPA_WPA2_MIXED_PSK) ? "WPA/WPA2 Mixed" :
 			   (scanned_ap_info->security == RTW_SECURITY_WPA3_AES_PSK) ? "WPA3 AES" :
 			   (scanned_ap_info->security == RTW_SECURITY_WPA2_WPA3_MIXED) ? "WP2/WPA3 AES" :
 			   "Unknown");

@@ -895,6 +895,14 @@ hal_status_t hal_rtl_ssi_interrupt_init_write(phal_ssi_adaptor_t phal_ssi_adapto
 	return HAL_OK;
 }
 
+/**
+
+        \addtogroup hs_hal_spic_ram_func Flash Controller HAL RAM APIs
+        \ingroup hs_hal_spic
+        \brief The flash controller HAL APIs. Functions become an interface between API functions and ROM codes.
+        @{
+*/
+
 /** \brief Description of hal_rtl_ssi_set_sclk
  *
  *    hal_rtl_ssi_set_sclk is used to set operting frequency of the SPI device.
@@ -919,9 +927,9 @@ hal_status_t hal_rtl_ssi_set_sclk(phal_ssi_adaptor_t phal_ssi_adaptor, u32 clk_r
 	u8  index = phal_ssi_adaptor->index;
 
 	if (index == 0 || index == 1) {
-		bus_clk = 50000000;
+		bus_clk = 62500000;
 	} else {
-		bus_clk = 100000000;
+		bus_clk = 125000000;
 	}
 
 	max_ssi_clk = bus_clk >> 1;
