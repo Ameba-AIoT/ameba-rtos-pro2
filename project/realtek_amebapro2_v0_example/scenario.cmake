@@ -26,6 +26,7 @@ list(
     ${sdk_root}/component/media/mmfv2/module_fileloader.c
     ${sdk_root}/component/media/mmfv2/module_filesaver.c
     ${sdk_root}/component/media/mmfv2/module_queue.c
+	${sdk_root}/component/media/mmfv2/module_web_viewer.c
 )
 
 #NN module

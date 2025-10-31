@@ -51,6 +51,7 @@ include(./libmd.cmake OPTIONAL)
 include(./libfaultlog.cmake OPTIONAL)
 include(./libeap.cmake OPTIONAL)
 include(./libiperf3.cmake OPTIONAL)
+include(./libwebsocket_viewer.cmake OPTIONAL)
 
 if(BUILD_LIB)
 	message(STATUS "build libraries")
@@ -851,6 +852,8 @@ list(
 
 	${sdk_root}/component/wifi/wpa_supplicant/src/
 	${sdk_root}/component/wifi/wpa_supplicant/src/crypto
+	
+	${sdk_root}/component/application/websocket_viewer
 )
 
 target_include_directories( ${app} PUBLIC ${app_inc_path} )
@@ -907,6 +910,7 @@ list(
 	md
 	eap	
 	faultlog
+	websocket_viewer
 	${soclib}
 )
 

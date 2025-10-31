@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: de2f3436128cec16fc37fd7facb45fb31fdaaacb
+* [amebapro2][video] WebSocket viewer
+
 SHA-1: b84bf90be0f2a481b408e8c6ee1a3d43663aa301
 * [amebapro2][wlan] fix dhcp rebinding incorrect checksum
 
