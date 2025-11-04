@@ -686,6 +686,12 @@ int lifetime_recording_initialize(uint8_t record_filename_length, const char *fi
 	lr_video_params.rc_mode = ai_record_param->rc_mode;
 	lr_video_params.rotation = ai_record_param->rotation;
 	AI_GLASS_MSG("LifeTime Record Max Time = %d\r\n", lr_mp4_params.record_length);
+
+	if (lr_video_params.rotation == 1 || lr_video_params.rotation == 2) {
+		lr_mp4_params.width = ai_record_param->height;
+		lr_mp4_params.height = ai_record_param->width;
+	}
+	
 #if AUDIO_SRC==AUDIO_INTERFACE
 	lr_audio_ctx = mm_module_open(&audio_module);
 	memcpy((void *)&audio_params, (void *)&default_audio_params, sizeof(audio_params_t));

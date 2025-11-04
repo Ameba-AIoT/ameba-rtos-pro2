@@ -58,6 +58,7 @@ typedef enum {
 	STATE_IDLE,          // 0
 	STATE_RECORDING,     // 1
 	STATE_END_RECORDING, // 2
+	STATE_STREAMING,
 	STATE_ERROR,         // Add more states if needed
 } MP4State;
 
@@ -254,6 +255,8 @@ void lifetime_recording_deinitialize(void);
 int media_update_record_time(uint16_t record_length);
 
 //streaming
+int  lifetime_streaming_initialize(void);
+void lifetime_streaming_deinitialize(void);
 int wifi_streaming_initialize(void);
 void wifi_streaming_deinitialize(void);
 void print_stream_data(const ai_glass_stream_param_t *params);

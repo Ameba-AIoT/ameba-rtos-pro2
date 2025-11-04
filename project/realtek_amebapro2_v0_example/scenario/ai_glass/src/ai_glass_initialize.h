@@ -17,6 +17,6 @@ extern volatile int critical_process_started;
 extern void ai_glass_init_external_disk(void);
 
 // Definition for ota method
-#define OTA_EMMC 1 
+#define OTA_EMMC 0 
 
 #endif //#ifndef __AI_GLASS_INITIALIZE_H__

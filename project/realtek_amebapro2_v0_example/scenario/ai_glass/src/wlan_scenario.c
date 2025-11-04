@@ -1103,7 +1103,7 @@ static void media_getfile_cb(struct httpd_conn *conn)
 				}
 				total_read += bytes_read;
 
-				if (total_read >= (4 * 1024 * 1024)) {
+				if (total_read >= (10 * 1024 * 1024)) {
 					WLAN_SCEN_ERR("Warning: file too large for 4MB buffer!\n");
 					break;
 				}
@@ -1976,6 +1976,8 @@ static void save_ota_wifi_file_to_heap_from_http_cb(struct httpd_conn *conn)
 			wifi_ota_buffer = (uint8_t *)malloc(5 * 1024 * 1024);  // 5MB
 		} else if (strncmp(wifi_version, "boot_ota_v", strlen("boot_ota_v")) == 0) {
 			wifi_ota_buffer = (uint8_t *)malloc(500 * 1024);  // 500KB
+		} else if (strncmp(wifi_version, "nn_ota_v", strlen("nn_ota_v")) == 0) {
+			wifi_ota_buffer = (uint8_t *)malloc(1000 * 1024);  // 500KB
 		} else {
 			WLAN_SCEN_ERR("Unknown OTA file: %s\n", wifi_version);
 			goto endofparser;
@@ -2107,6 +2109,11 @@ static void save_ota_wifi_file_to_heap_from_http_cb(struct httpd_conn *conn)
 			g_heap_ota_data->boot_length = wifi_ota_write_offset;
 			strncpy(g_heap_ota_data->boot_filename, wifi_version, sizeof(g_heap_ota_data->boot_filename)-1);
 			g_heap_ota_data->boot_filename[sizeof(g_heap_ota_data->boot_filename)-1] = '\0';
+		} else if (strncmp(wifi_version, "nn_ota_v", strlen("nn_ota_v")) == 0) {
+			g_heap_ota_data->nn_data = wifi_ota_buffer;
+			g_heap_ota_data->nn_length = wifi_ota_write_offset;
+			strncpy(g_heap_ota_data->nn_filename, wifi_version, sizeof(g_heap_ota_data->nn_filename)-1);
+			g_heap_ota_data->nn_filename[sizeof(g_heap_ota_data->nn_filename)-1] = '\0';
 		} else {
 			WLAN_SCEN_ERR("Unknown OTA file: %s\n", wifi_version);
 			goto endofparser;

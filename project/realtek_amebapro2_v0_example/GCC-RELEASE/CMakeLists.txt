@@ -171,6 +171,9 @@ add_custom_target(
 	COMMAND ${CMAKE_COMMAND} -E copy ./firmware_isp_iq.bin ./isp_iq_ota.bin
 	COMMAND ${CHKSUM} ./isp_iq_ota.bin
 	
+	COMMAND ${CMAKE_COMMAND} -E copy ./boot.bin ./boot_ota.bin
+	COMMAND ${CHKSUM} ./boot_ota.bin
+	
 	DEPENDS plain_img
 	DEPENDS auto_model_cfg
 	DEPENDS ${ELF2BIN}
