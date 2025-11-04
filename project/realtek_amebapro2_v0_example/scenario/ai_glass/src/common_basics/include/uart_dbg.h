@@ -11,6 +11,7 @@
 #define	_COMMON_DBG_UART_SRV_       0x00000001
 #define	_COMMON_DBG_UART_CMD_       0x00000002
 #define	_COMMON_DBG_SLIDING_WIN_    0x00000004
+#define	_COMMON_DBG_MODULE_STREAM_  0x00000006
 
 extern uint32_t ConfigDebugCommonErr;
 extern uint32_t ConfigDebugCommonWarn;
@@ -97,6 +98,25 @@ extern uint32_t ConfigDebugCommonInfo;
     do { \
         if (ConfigDebugCommonInfo & _COMMON_DBG_SLIDING_WIN_) \
             printf("[SLIDING WIN INFO] " format, ##__VA_ARGS__); \
+    } while(0)
+
+//streaming
+#define MODULE_STREAM_ERR(format, ...) \
+    do { \
+        if (ConfigDebugCommonErr & _COMMON_DBG_MODULE_STREAM_) \
+            printf("[MODULE STREAM ERR] " format, ##__VA_ARGS__); \
+    } while(0)
+
+#define MODULE_STREAM_MSG(format, ...) \
+    do { \
+        if (ConfigDebugCommonMsg & _COMMON_DBG_MODULE_STREAM_) \
+            printf("[MODULE STREAM MSG] " format, ##__VA_ARGS__); \
+    } while(0)
+
+#define MODULE_STREAM_INFO(format, ...) \
+    do { \
+        if (ConfigDebugCommonInfo & _COMMON_DBG_MODULE_STREAM_) \
+            printf("[MODULE STREAM INFO] " format, ##__VA_ARGS__); \
     } while(0)
 
 #endif //#ifndef __UART_DBG_H__

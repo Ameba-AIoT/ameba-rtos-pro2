@@ -44,12 +44,10 @@ typedef struct streaming_ctx_s {
     SlidingWindow *window;
     uint32_t window_size;
     bool streaming_active;
-    bool sender_thread_done;
     sliding_pkt_t spacket;
     uint32_t total_bytes_sent;
     int (*end_streaming_cb)(void);
     uint32_t timestamp;
-    uint32_t fps;
 } streaming_ctx_t;
 
 extern mm_module_t streaming_module;

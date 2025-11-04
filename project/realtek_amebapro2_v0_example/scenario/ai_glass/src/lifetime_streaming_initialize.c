@@ -248,8 +248,6 @@ int lifetime_streaming_initialize(void) {
 		AI_GLASS_ERR("miso open fail for video streaming\n\r");
 		goto lifetime_streaming_initialize_fail;
 	}
-	current_state = STATE_STREAMING;
-	AI_GLASS_INFO("miso(videochn0_aac_streaming) started\n\r");
 
 #if AUDIO_SRC==AUDIO_INTERFACE
 	mm_module_ctrl(ls_audio_ctx, CMD_AUDIO_APPLY, 0);
@@ -270,6 +268,8 @@ int lifetime_streaming_initialize(void) {
 		goto lifetime_streaming_initialize_fail;
 	}
 #endif
+	current_state = STATE_STREAMING;
+	AI_GLASS_INFO("miso(videochn0_aac_streaming) started\n\r");
 	mm_module_ctrl(ls_video_ctx, CMD_VIDEO_APPLY, V1_CHANNEL);	// start channel 1
 
 	return 0;
