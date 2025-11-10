@@ -1983,6 +1983,7 @@ int heap_update_ota(uint8_t *buffer, uint32_t length)
     _file_checksum file_checksum;
     file_checksum.u = 0;
 	uint32_t fw_timest;
+	static uint8_t last_wifi_progress = 0xFF;
 
     // Determine boot selection
     boot_sel = sys_get_boot_sel();
@@ -2057,6 +2058,7 @@ int heap_update_ota(uint8_t *buffer, uint32_t length)
 			printf("OTA was cancelled!\n");
 			ret = -2;
 			progress = 0;
+			last_wifi_progress = 0xFF;
 			goto update_ota_exit;
 		}
         // Update progress percentage
@@ -2064,7 +2066,11 @@ int heap_update_ota(uint8_t *buffer, uint32_t length)
             progress = (unsigned char)(((uint64_t)idx * 100) / length);
             if (progress > 99) progress = 99;
         }
-		uart_resp_get_sys_upgrade((uint8_t) 1, progress);
+		if (progress != last_wifi_progress) {
+			last_wifi_progress = progress;
+			uart_resp_get_sys_upgrade((uint8_t) 1, progress);
+			printf("[HEAP OTA Progress] Sent progress update: %u%% \n", progress);
+		}
         printf("[Firmware updating] ============================== updating: %d / %lu Bytes (%d%%)\n",
                idx, (length - 4), progress);
 #else
@@ -2099,6 +2105,7 @@ update_ota_exit:
     if (buf) {
         update_free(buf);
     }
+
     return ret;
 }
 
