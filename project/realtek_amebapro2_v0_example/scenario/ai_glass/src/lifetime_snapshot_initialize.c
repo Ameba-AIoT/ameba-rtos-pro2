@@ -692,10 +692,6 @@ static void high_resolution_snapshot_save(char *file_path, int proc_raw_idx, int
 			goto snapshot_fail;
 		}
 	}
-	if (param != NULL) {
-		uint8_t status = AI_GLASS_DEVICE_WORKING_IN_PROG; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
-		uart_resp_snapshot(param, status);
-	}
 	mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
 
 #if SAVE_DBG_IMG	
@@ -761,7 +757,10 @@ static void high_resolution_snapshot_take(char *file_path, uartcmdpacket_t *para
 		AI_GLASS_ERR("Err: allocate buffer to process 12M snapshot\r\n");
 		goto snapshot_fail;
 	}
-	
+	if (param != NULL) {
+		uint8_t status = AI_GLASS_DEVICE_WORKING_IN_PROG; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
+		uart_resp_snapshot(param, status);
+	}
 	AI_GLASS_MSG("get 12M NV16 done time %lu\r\n", mm_read_mediatime_ms());
 	raw_taken += 1;
 	lfsnap_status = LIFESNAP_GET;
