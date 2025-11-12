@@ -608,7 +608,7 @@ int video_boot_open(int ch_index, video_boot_params_t *v_stream)
 		hal_video_set_isp_init_items(ch, &init_items);
 	}
 
-	if (video_boot_stream.dyn_region_enable) {
+	if (video_boot_stream.init_max_dyn_region_en) {
 		hal_video_isp_set_init_iq_mode(ch, 1);
 		hal_video_set_max_dyn_region_en(ch, 1);
 	}

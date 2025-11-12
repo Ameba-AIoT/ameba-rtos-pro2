@@ -218,9 +218,9 @@ video_boot_stream_t video_boot_stream = {
 		.fcs = 0, //not support fcs
 	},
 #if USE_VIDEO_HR_FLOW
-	.dyn_region_enable = 1,
+	.init_max_dyn_region_en = 1,
 #else
-	.dyn_region_enable = 0,
+	.init_max_dyn_region_en = 0,
 #endif
 };
 //#define FCS_PARTITION //Use the FCS data to change the parameter from bootloader.If mark the marco, it will use the FTL config.

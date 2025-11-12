@@ -1474,10 +1474,14 @@ void video_init_peri(void)
 		}
 
 		// Enable Sensor PWR
-		hal_gpio_init(&sensor_en_gpio, g_video_peri_info.pwr_ctrl_pin);
-		hal_gpio_set_dir(&sensor_en_gpio, GPIO_OUT);
-		hal_gpio_write(&sensor_en_gpio, 1);
-		video_dprintf(VIDEO_LOG_INF, "set sensor pwr 0x%02x \n", g_video_peri_info.pwr_ctrl_pin);
+		if(video_pre_init_param.sens_pwr_dis) {
+			video_dprintf(VIDEO_LOG_INF, "disable sensor power\n");
+		} else {
+			hal_gpio_init(&sensor_en_gpio, g_video_peri_info.pwr_ctrl_pin);
+			hal_gpio_set_dir(&sensor_en_gpio, GPIO_OUT);
+			hal_gpio_write(&sensor_en_gpio, 1);
+			video_dprintf(VIDEO_LOG_INF, "set sensor pwr 0x%02x \n", g_video_peri_info.pwr_ctrl_pin);
+		}
 		// Enable GPIO
 		hal_sys_peripheral_en(GPIO_SYS, ENABLE);
 		hal_pinmux_register(g_video_peri_info.rst_pin, PID_GPIO); //reset pin
@@ -1862,7 +1866,7 @@ void video_pre_init_procedure(int ch, video_pre_init_params_t *parm)
 
 #if USE_VIDEO_HR_FLOW
 
-	if (parm->dyn_region_enable) {
+	if (parm->init_max_dyn_region_en) {
 		hal_video_isp_set_init_iq_mode(ch, 1);
 		hal_video_set_max_dyn_region_en(ch, 1);
 	}
@@ -4590,13 +4594,19 @@ int video_get_error_group(int error_id)
 }
 
 #if USE_VIDEO_HR_FLOW
-int video_get_dir_wdr_level(int ch, int *level) //only for hr flow
+void video_get_dir_wdr_level(int ch, uint8_t *level) //only for hr flow
 {
-	return hal_video_get_dir_wdr_level(ch, level);
+	if(hal_video_get_dir_wdr_level(ch, level) != OK) {
+		video_dprintf(VIDEO_LOG_MSG, "video_get_dir_wdr_level fail. default set 50\r\n");
+		*level = 50;
+	}
 }
 
-int video_get_max_dyn_region_idx(int ch, enum hal_isp_ae_region *idx) //only for hr flow
+void video_get_max_dyn_region_idx(int ch, enum hal_isp_ae_region *idx) //only for hr flow
 {
-	return hal_video_get_max_dyn_region_idx(ch, idx);
+	if(hal_video_get_max_dyn_region_idx(ch, idx) != OK) {
+		video_dprintf(VIDEO_LOG_MSG, "video_get_max_dyn_region_idx fail. default set REGION_UPPER_LEFT\r\n");
+		*idx = REGION_UPPER_LEFT;
+	}
 }
 #endif

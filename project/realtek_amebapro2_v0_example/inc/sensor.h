@@ -153,7 +153,7 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_OS02H10]          = {1920, 1080, 30},
 	[SENSOR_OV13B10]  	      = {2096,  1560, 30},
 	[SENSOR_OV13B10_12M]      = {4032,  3024, 10},
-	[SENSOR_OV13B10_12M_SEQ]  = {2032,  3024, 5} //width = 2016 + 16(overlap)
+	[SENSOR_OV13B10_12M_SEQ]  = {2032,  1532, 5} //width = 2016 + 16(overlap) //height = 1512 + 20
 };
 
 #define SENSOR_MAX         4

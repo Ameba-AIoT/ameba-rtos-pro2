@@ -493,7 +493,7 @@ int hal_video_config_isp_calibration(int iq_cali_flag);
 int hal_video_set_isp_stream_fps(int ch, uint32_t fps);
 int hal_video_isp_zoom_filter_coef_init(int ch, u8* buf);
 int hal_video_isp_verify_info(int ch, struct verify_ctrl_config v_cfg);
-int hal_video_get_dir_wdr_level(int ch, int *level);
+int hal_video_get_dir_wdr_level(int ch, u8 *level);
 int hal_video_get_max_dyn_region_idx(int ch, enum hal_isp_ae_region *idx);
 
 extern hal_video_adapter_t vv_adapter;

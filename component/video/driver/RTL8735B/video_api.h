@@ -207,9 +207,10 @@ typedef struct video_pre_init_params_s {
 	uint32_t video_meta_extend_total_size;//the extend meta total size
 	uint32_t meta_enable_extend;//Add the 3A info at I frame
 	uint32_t meta_gop_duration;//Setup times to the I frame by gop duration.
+	uint32_t sens_pwr_dis;//disable sensor power
 
 #if USE_VIDEO_HR_FLOW
-	uint32_t dyn_region_enable;
+	uint32_t init_max_dyn_region_en;
 	//only use for high resolution flow.
 	uint32_t isp_init_raw; //enable first image in raw format
 	uint32_t isp_raw_mode_tnr_dis; //disable isp tnr function
@@ -569,9 +570,9 @@ void video_fill_exif_tags_from_struct(const ExifParams *params);
 int video_get_error_group(int error_id);
 
 #if USE_VIDEO_HR_FLOW
-int video_get_dir_wdr_level(int ch, int *level);
+void video_get_dir_wdr_level(int ch, uint8_t *level);
 
-int video_get_max_dyn_region_idx(int ch, enum hal_isp_ae_region *idx);
+void video_get_max_dyn_region_idx(int ch, enum hal_isp_ae_region *idx);
 #endif
 //////////////////////
 #define VOE_NAND_FLASH_OFFSET 0x8000000

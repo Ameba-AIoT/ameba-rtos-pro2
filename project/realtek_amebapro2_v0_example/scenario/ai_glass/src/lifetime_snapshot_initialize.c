@@ -130,6 +130,7 @@ static SemaphoreHandle_t jpeg_get_sema = NULL;
 #if defined(ENABLE_META_INFO)
 static video_meta_t metadata;
 
+// static enum hal_isp_ae_region max_dyn_region_idx = 0; // Data range: 0 ~ 3. 0: upper left, 1: upper right, 2: lower left, 3: lower right.
 static int tiled_nv12_cnt = 0;
 
 //Exif information
@@ -249,6 +250,8 @@ static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t dat
 			AI_GLASS_MSG("file_path:%s_%d.jpg  data_addr:%ld  data_size:%ld \r\n", file_path, img_idx, data_addr, data_size);
 		}
 		AI_GLASS_MSG("get liftime snapshot frame encode done time %lu\r\n", mm_read_mediatime_ms());
+		init_params.sens_pwr_dis = 1;
+		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
 		ls_video_params.params.direct_output = 0;
 		ls_video_params.params.width = out_img_width;
 		ls_video_params.params.height = out_img_height;
@@ -449,7 +452,7 @@ static void config_verification_path_buf_4c(struct verify_ctrl_config *v_cfg, co
 
 	for (uint8_t i = 0; i < VERIFY_NUM; i++) {
 		const uint8_t split_num = i < DUMMY_FRAME_NUM ? 0 : (i - DUMMY_FRAME_NUM) / 2;
-		const uint8_t split_id = (split_num + dyn_region_idx) % SPLIT_RAW_NUM;
+		const uint8_t split_id = (split_num + max_dyn_region_idx) % SPLIT_RAW_NUM;
 
 		uint16_t center_x, center_y;
 		switch (split_id) {
@@ -574,9 +577,9 @@ static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32
 		tiled_raws[i] = (uint8_t *)splited_raw_image[raw_index].phy_addr[i];
 	}
 	cap_raw_tiling_with_remosaic_4c((uint8_t*)data_addr, tiled_raws, out_img_width, out_img_height, out_img_overlap_width, out_img_overlap_height, REMOSAIC_DISABLE, REMOSAIC_DIRECT_MODE, GR);
-	for(int i = 0; i < SPLIT_RAW_NUM; i++) {
+	/*for(int i = 0; i < SPLIT_RAW_NUM; i++) {
 		printf("tiled_raws_%d: 0x%x\r\n", i, tiled_raws[i]);
-	}
+	}*/
 	get_raw_data = 1;
 	return;
 }
@@ -592,7 +595,7 @@ static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32
 static enum file_process_status file_proc_stat = PROCESS_DONE;
 static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
-	AI_GLASS_INFO("[%s] 0x%lx, data len = %lu\r\n", __FUNCTION__, data_addr, data_size);
+	// AI_GLASS_INFO("[%s] 0x%lx, data len = %lu\r\n", __FUNCTION__, data_addr, data_size);
 	uint8_t *img_buf = (uint8_t *)data_addr;
 	uint32_t out_size;
 	switch (file_proc_stat)
@@ -603,7 +606,7 @@ static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32
 	case MERGE_LL_NV12_1:
 	case MERGE_LR_NV12_1:
 		if (tiled_nv12_cnt < DUMMY_FRAME_NUM) {
-			printf("[file_process] Skip %d dummy frame...\r\n", tiled_nv12_cnt + 1);
+			// printf("[file_process] Skip %d dummy frame...\r\n", tiled_nv12_cnt + 1);
 		} else {
 			file_proc_stat++;
 		}
@@ -656,7 +659,8 @@ static void high_resolution_snapshot_save(char *file_path, int proc_raw_idx, int
 	init_params.isp_raw_mode_tnr_dis = 0;
 	init_params.dyn_iq_mode = 1;
 	init_params.init_isp_items.init_wdr_mode = WDR_DIRECT;
-	init_params.dyn_region_enable = 0;
+	init_params.init_max_dyn_region_en = 0;
+	init_params.sens_pwr_dis = 1;
 	init_params.init_isp_items.init_mirrorflip = 0xf0; // not flip when use sequence
 
 	//switch to verify sequece driver
@@ -675,7 +679,7 @@ static void high_resolution_snapshot_save(char *file_path, int proc_raw_idx, int
 	// // merge output 2 * 6M nv12 to 12M nv12 image
 	// save_yuv_option = MERGE_LEFT_NV12_SKIP_FIRST;
 	//merge output 4 * 3M nv12 to 12M nv12 image
-	file_proc_stat = MERGE_UL_NV12_1 + dyn_region_idx * 2; //decide process order with dyn_region_idx
+	file_proc_stat = MERGE_UL_NV12_1 + max_dyn_region_idx * 2; //decide process order with max_dyn_region_idx
 	tiled_nv12_cnt = 0;
 	timeout_count = 0;
 	video_set_isp_ch_buf(JPEG_CHANNEL, 2);
@@ -1051,7 +1055,8 @@ int lifetime_hr_snapshot_initialize(isp_info_sync_t *isp_info)
 	init_params.isp_raw_mode_tnr_dis = 1;
 	init_params.video_drop_enable = 0;
 	init_params.dyn_iq_mode = 0;
-	init_params.dyn_region_enable = 0;
+	init_params.init_max_dyn_region_en = 0;
+	init_params.sens_pwr_dis = 0;
 	ls_video_params.params.stream_id = JPEG_CHANNEL;
 	ls_video_params.params.rotation = SNAPSHOT_12M_ROTATION;
 	ls_video_params.params.type = VIDEO_NV16;
