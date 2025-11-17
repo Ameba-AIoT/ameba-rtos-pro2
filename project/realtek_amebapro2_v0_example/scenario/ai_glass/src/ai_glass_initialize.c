@@ -1513,6 +1513,42 @@ static void parser_stream_param(ai_glass_stream_param_t *rec_buf, uint8_t *raw_b
 {
     if (rec_buf) {
 		// Streaming type and resolution
+		rec_buf->type   	= raw_buf[0];
+		rec_buf->resolution = raw_buf[1];
+
+		// Width and Height
+		rec_buf->width  = raw_buf[2] | (raw_buf[3] << 8);
+		rec_buf->height = raw_buf[4] | (raw_buf[5] << 8);
+
+		// FPS and BPS
+		rec_buf->fps 	= raw_buf[6] | (raw_buf[7] << 8) | (raw_buf[8] << 16) | (raw_buf[9] << 24);
+		rec_buf->bps    = raw_buf[10] | (raw_buf[11] << 8) | (raw_buf[12] << 16) | (raw_buf[13] << 24);
+
+		// QP
+		rec_buf->minQp  = raw_buf[14] | (raw_buf[15] << 8);
+		rec_buf->maxQp  = raw_buf[16] | (raw_buf[17] << 8);
+
+		// Rotation and RC mode
+		rec_buf->rotation = raw_buf[18];
+		rec_buf->rc_mode  = raw_buf[19];
+
+		// Set ROI, level, profile, cavlc to defaults (since packet does not carry them)
+		rec_buf->roi.xmin = 0;
+		rec_buf->roi.ymin = 0;
+		rec_buf->roi.xmax = 1;
+		rec_buf->roi.ymax = 1;
+		rec_buf->gop      = raw_buf[6] | (raw_buf[7] << 8) | (raw_buf[8] << 16) | (raw_buf[9] << 24);
+		rec_buf->level    = DEFAULT_STREAM_LEVEL;
+		rec_buf->profile  = DEFAULT_STREAM_PROFILE;
+		rec_buf->cavlc    = DEFAULT_STREAM_CAVLC;
+	} 
+    
+}
+
+static void parser_rtsp_stream_param(ai_glass_stream_param_t *rec_buf, uint8_t *raw_buf)
+{
+    if (rec_buf) {
+		// Streaming type and resolution
 		rec_buf->type   	= raw_buf[4];
 		rec_buf->resolution = raw_buf[5];
 
@@ -2490,7 +2526,7 @@ static void ai_glass_rtsp_live_start(uartcmdpacket_t *param)
 	//STEP 2: Set stream parameters
 	ai_glass_stream_param_t temp_stream_param = {0};
 	uint8_t *video_params = uart_parser_stream_info(param);
-	parser_stream_param(&temp_stream_param, video_params);
+	parser_rtsp_stream_param(&temp_stream_param, video_params);
 	AI_GLASS_INFO("Get Stream Data\r\n");
 	print_stream_data(&temp_stream_param);
 	if (media_update_stream_params(&temp_stream_param) != MEDIA_OK) {
