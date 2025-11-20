@@ -146,14 +146,14 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_IMX471_12M_SEQ]   = {2032, 3024, 5}, //width = 2016 + 16(overlap)
 	[SENSOR_IMX681]           = {2000, 1500, 30},
 	[SENSOR_IMX681_12M]       = {4016, 3012, 4},
-	[SENSOR_IMX681_12M_SEQ]   = {2032, 3012, 4}, //width = 2008 + 24(overlap)
+	[SENSOR_IMX681_12M_SEQ]   = {2032, 1532, 4}, //width = 2008 + 24(overlap) //height = 1506 + 26
 	[SENSOR_FIXP_5M]          = {2592, 1944, 30}, //fix pattern
 	[SENSOR_FIXP_2K]          = {2560, 1440, 30},
 	[SENSOR_SC5356_2M]        = {1088, 1944, 30},
 	[SENSOR_OS02H10]          = {1920, 1080, 30},
-	[SENSOR_OV13B10]  	      = {2104,  1560, 30},
+	[SENSOR_OV13B10]  	      = {2096,  1560, 30},
 	[SENSOR_OV13B10_12M]      = {4032,  3024, 10},
-	[SENSOR_OV13B10_12M_SEQ]  = {2032,  3024, 5} //width = 2016 + 16(overlap)
+	[SENSOR_OV13B10_12M_SEQ]  = {2032,  1532, 5} //width = 2016 + 16(overlap) //height = 1512 + 20
 };
 
 #define SENSOR_MAX         5

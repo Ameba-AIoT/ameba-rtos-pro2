@@ -3,8 +3,10 @@
 #include <nnlite_api.h>
 
 #define PACKED_CHANNELS 4
-#define MODEL_INPUT_SIZE_H 256
-#define MODEL_INPUT_SIZE_W 256
+// MODEL_INPUT_SIZE_H=256 → DDR: 4 MB, Time: ~4.5 s
+// MODEL_INPUT_SIZE_H=512 → DDR: 12 MB, Time: ~2.5 s
+#define MODEL_INPUT_SIZE_H 512
+#define MODEL_INPUT_SIZE_W MODEL_INPUT_SIZE_H
 #define OVERLAP_H 4
 #define OVERLAP_W 4
 #define MIXUP_FACTOR MIXUP_FACTOR_025
@@ -21,16 +23,16 @@ typedef struct {
 } time_eval;
 
 typedef struct {
-	time_eval ulaw_encode;
-	time_eval ulaw_decode;
 	time_eval nn_inference;
-	time_eval mixup;
-	time_eval patch;
+	time_eval planar_to_nchw;
+	time_eval mixup_decode;
+	time_eval patch_to_nchw;
 	time_eval tile;
 } ainr_time_stats_t;
 
 typedef struct {
 	nnlite_ctx_t *nnlite_ctx;
+	nnlite_ctx_t *planar_to_nchw_ctx;
 	ainr_time_stats_t time_stats;
 	int image_w;
 	int image_h;

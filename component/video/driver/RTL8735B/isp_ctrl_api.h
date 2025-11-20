@@ -9,7 +9,8 @@ struct ctrl_range {
 enum isp_wdr_mode {
 	WDR_DISABLE = 0,
 	WDR_MANUAL,
-	WDR_AUTO
+	WDR_AUTO,
+	WDR_DIRECT		//only for hr flow
 };
 
 enum isp_flicker_mode {

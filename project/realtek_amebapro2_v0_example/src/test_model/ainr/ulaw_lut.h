@@ -370,3 +370,32 @@ void ainr_ulaw_decode_fast(const uint8_t *input, uint16_t *output, size_t len)
 		*output++ = ulaw_decode_lut[*input++];
 	}
 }
+extern void ulaw_mixup_decode_asm_8(const uint8_t *denoised_input, const uint8_t *original_input, uint16_t *output, size_t len, const uint16_t *lut);
+static inline void ainr_mixup_and_decode_fast(const uint8_t *denoised_input, const uint8_t *original_input, uint16_t *output, size_t len) {
+    size_t n = len;
+
+    
+    if (n >= 8) {
+        size_t count_8 = n & ~7; 
+        ulaw_mixup_decode_asm_8(denoised_input, original_input, output, count_8, ulaw_decode_lut);
+
+        
+        denoised_input += count_8;
+        original_input += count_8;
+        output += count_8;
+        n -= count_8;
+    }
+
+    
+    while (n--) {
+        
+        uint8_t mixed_index = (((uint16_t)(*denoised_input) * 3 + (*original_input)) >> 2);
+        
+        *output = ulaw_decode_lut[mixed_index];
+
+        
+        denoised_input++;
+        original_input++;
+        output++;
+    }
+}

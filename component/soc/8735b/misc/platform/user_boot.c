@@ -2,6 +2,7 @@
 #include "hal_spic.h"
 
 uint8_t bl_log_cust_ctrl = ENABLE;
+uint8_t bl_nand_cont_rd_cust_ctrl = DISABLE;
 
 uint8_t user_boot_fw_selection(fw_img_user_export_info_type_t *pfw_img_user_export_info)
 {

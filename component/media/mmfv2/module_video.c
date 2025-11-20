@@ -1015,6 +1015,16 @@ int video_voe_presetting(int v1_enable, int v1_w, int v1_h, int v1_bps, int v1_s
 						 int v4_enable, int v4_w, int v4_h)
 {
 	int voe_heap_size = 0;
+	
+	if(voe_boot_fsc_status()) {
+		video_boot_stream_t *isp_fcs_info;
+		video_get_fcs_info(&isp_fcs_info); //Get the fcs info
+		memcpy(&info, &(isp_fcs_info->isp_info), sizeof(isp_fcs_info->isp_info));
+		video_set_isp_info(&info);
+		printf("[%s] fcs fps:%d  w:%d  h:%d   \r\n", __FUNCTION__, info.sensor_fps, info.sensor_width, info.sensor_height);
+		//fcs mode already calculate voe heap
+		return isp_fcs_info->voe_heap_size;
+	}
 
 #if MULTI_SENSOR
 	info.sensor_fps    = 0;
@@ -1071,6 +1081,16 @@ int video_voe_presetting_by_params(const void *v1_params, int v1_jpg_only_shapsh
 								   int v3_jpg_only_shapshot, const void *v4_params)
 {
 	int voe_heap_size = 0;
+	
+	if(voe_boot_fsc_status()) {
+		video_boot_stream_t *isp_fcs_info;
+		video_get_fcs_info(&isp_fcs_info); //Get the fcs info
+		memcpy(&info, &(isp_fcs_info->isp_info), sizeof(isp_fcs_info->isp_info));
+		video_set_isp_info(&info);
+		printf("[%s] fcs fps:%d  w:%d  h:%d   \r\n", __FUNCTION__, info.sensor_fps, info.sensor_width, info.sensor_height);
+		//fcs mode already calculate voe heap
+		return isp_fcs_info->voe_heap_size;
+	}
 
 #if MULTI_SENSOR
 	info.sensor_fps    = 0;

@@ -216,7 +216,12 @@ video_boot_stream_t video_boot_stream = {
 		.direct_output = 0,
 		.use_static_addr = 0,
 		.fcs = 0, //not support fcs
-	}
+	},
+#if USE_VIDEO_HR_FLOW
+	.init_max_dyn_region_en = 1,
+#else
+	.init_max_dyn_region_en = 0,
+#endif
 };
 //#define FCS_PARTITION //Use the FCS data to change the parameter from bootloader.If mark the marco, it will use the FTL config.
 extern hal_snafc_adaptor_t boot_snafc_adpt;

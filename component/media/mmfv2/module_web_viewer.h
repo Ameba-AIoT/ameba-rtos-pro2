@@ -7,6 +7,8 @@
 #include "web_service.h"
 
 #define CMD_WEB_VIEWER_APPLY     	MM_MODULE_CMD(0x00)  // WEBSOCKET VIEWER START
+#define CMD_WEB_VIEWER_SET_BUF     	MM_MODULE_CMD(0x01)  // WEBSOCKET VIEWER BUFFER
+#define CMD_WEB_VIEWER_SET_LEN     	MM_MODULE_CMD(0x02)  // WEBSOCKET VIEWER BUFFER LEN
 
 typedef struct wview_ctx_s {
 	void *parent;

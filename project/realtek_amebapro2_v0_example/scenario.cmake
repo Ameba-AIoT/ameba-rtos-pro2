@@ -71,6 +71,7 @@ list(
 	${prj_root}/src/test_model/ainr/ainr.c
 	${prj_root}/src/test_model/ainr/ulaw_encode_lookup.S
 	${prj_root}/src/test_model/ainr/ulaw_decode_lookup.S
+	${prj_root}/src/test_model/ainr/ulaw_mixup_decode_lookup.S
 )
 
 #NN utils

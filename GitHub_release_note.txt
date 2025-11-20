@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 83316f31c74b4ff2e5396ca89ce91c09693d066c
+* [amebapro2][video] WebSocket viewer source
+
 SHA-1: de2f3436128cec16fc37fd7facb45fb31fdaaacb
 * [amebapro2][video] WebSocket viewer
 

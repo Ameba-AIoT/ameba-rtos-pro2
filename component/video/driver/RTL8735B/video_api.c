@@ -108,7 +108,7 @@ int video_load_fw(unsigned int sensor_start_addr);
 unsigned char *video_load_sensor(unsigned int sensor_start_addr);
 unsigned char *video_load_iq(unsigned int iq_start_addr);
 static void isp_set_dn_initial_mode(int ch, int mode);
-int video_get_voe_version(void);
+static int video_get_voe_version(void);
 static void video_rc_callback(int ch, bps_stbl_ctrl_t *bps_stbl_ctrl, uint32_t frame_size);
 
 /////////////////////////////////
@@ -1027,6 +1027,26 @@ void video_set_isp_info(isp_info_t *info)
 	isp_info.hdr_enable = info->hdr_enable;
 }
 
+void video_set_sensor_fps(int max_fps, int min_fps)
+{
+	if(min_fps > max_fps) {
+		video_dprintf(VIDEO_LOG_ERR, "invalid sensor fps setting\r\n");
+		return;
+	}
+	int cur_min_fps = 0;
+	isp_get_min_fps(&cur_min_fps);
+	if(max_fps >= cur_min_fps) {
+		//If raise sensor fps. raise maxfps first.
+		isp_set_max_fps(max_fps);
+		isp_set_min_fps(min_fps);
+	} else {
+		//If lower sensor fps. lower minfps first.
+		isp_set_min_fps(min_fps);
+		isp_set_max_fps(max_fps);
+	}
+	isp_info.sensor_fps = max_fps;
+}
+
 int video_set_voe_heap(int heap_addr, int heap_size, int use_malloc)
 {
 #if 0
@@ -1474,10 +1494,14 @@ void video_init_peri(void)
 		}
 
 		// Enable Sensor PWR
-		hal_gpio_init(&sensor_en_gpio, g_video_peri_info.pwr_ctrl_pin);
-		hal_gpio_set_dir(&sensor_en_gpio, GPIO_OUT);
-		hal_gpio_write(&sensor_en_gpio, 1);
-		video_dprintf(VIDEO_LOG_INF, "set sensor pwr 0x%02x \n", g_video_peri_info.pwr_ctrl_pin);
+		if(video_pre_init_param.sens_pwr_dis) {
+			video_dprintf(VIDEO_LOG_INF, "disable sensor power\n");
+		} else {
+			hal_gpio_init(&sensor_en_gpio, g_video_peri_info.pwr_ctrl_pin);
+			hal_gpio_set_dir(&sensor_en_gpio, GPIO_OUT);
+			hal_gpio_write(&sensor_en_gpio, 1);
+			video_dprintf(VIDEO_LOG_INF, "set sensor pwr 0x%02x \n", g_video_peri_info.pwr_ctrl_pin);
+		}
 		// Enable GPIO
 		hal_sys_peripheral_en(GPIO_SYS, ENABLE);
 		hal_pinmux_register(g_video_peri_info.rst_pin, PID_GPIO); //reset pin
@@ -1861,6 +1885,12 @@ void video_pre_init_procedure(int ch, video_pre_init_params_t *parm)
 	}
 
 #if USE_VIDEO_HR_FLOW
+
+	if (parm->init_max_dyn_region_en) {
+		hal_video_isp_set_init_iq_mode(ch, 1);
+		hal_video_set_max_dyn_region_en(ch, 1);
+	}
+	
 	if (parm->isp_init_raw) {
 		//for trigger first raw
 		video_dprintf(VIDEO_LOG_INF, "hal_video_isp_init_raw(%d, 1)\r\n", ch);
@@ -1882,6 +1912,10 @@ void video_pre_init_procedure(int ch, video_pre_init_params_t *parm)
 		video_dprintf(VIDEO_LOG_INF, "%d %d %d %d\r\n", parm->zoom_coef[ISP_ZOOM_FILTER_COEF_NUM - 1], parm->zoom_coef[ISP_ZOOM_FILTER_COEF_NUM - 2],
 					  parm->zoom_coef[ISP_ZOOM_FILTER_COEF_NUM - 3], parm->zoom_coef[ISP_ZOOM_FILTER_COEF_NUM - 4]);
 		hal_video_isp_zoom_filter_coef_init(ch, &(parm->zoom_coef[0]));
+	}
+	
+	if(parm->init_isp_items.init_wdr_mode == WDR_DIRECT) {
+		hal_video_set_dir_wdr_level(ch, parm->init_isp_items.init_wdr_level);
 	}
 
 	hal_video_isp_init_dyn_iq_mode(ch, parm->dyn_iq_mode);
@@ -2032,6 +2066,13 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 	}
 
 	if (isp_boot->fcs_status == 1 && isp_boot->fcs_setting_done == 0 && video_check_fcs(v_stream->stream_id) == 1) {
+		if ((codec & (CODEC_HEVC | CODEC_H264)) != 0) {
+			if (video_rc_init(v_stream) != OK) {
+				video_dprintf(VIDEO_LOG_ERR, "ch%d rc task init fail\r\n", ch);
+				status = NOK;
+				goto EXIT;
+			}
+		}
 		hal_video_set_fps(isp_boot->video_params[ch].fps, ch); // for count the enc offset of the fcs channel
 		if (hal_video_out_cb(video_output_cb, 4096, (uint32_t)ctx, ch) != OK) {
 			video_dprintf(VIDEO_LOG_ERR, "hal_video_cb_register fail\n");
@@ -2054,13 +2095,6 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 		} else if (codec & CODEC_RGB) {
 			voe_info.ch_info[ch].isp_fps = isp_boot->video_params[ch].fps;
 			hal_video_out_mode(ch, TYPE_RGB, MODE_ENABLE);
-		}
-		if ((codec & (CODEC_HEVC | CODEC_H264)) != 0) {
-			if (video_rc_init(v_stream) != OK) {
-				video_dprintf(VIDEO_LOG_ERR, "ch%d rc task init fail\r\n", ch);
-				status = NOK;
-				goto EXIT;
-			}
 		}
 		hal_video_fcs_ch(count);
 		if (count == isp_boot->fcs_channel) {
@@ -2425,7 +2459,6 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 	}
 
 	voe_info.ch_info[ch].stream_is_open = 1;
-	video_get_voe_version();
 #if FASTOSD_EN
 	if (v_stream->fast_osd_en) {
 		rts_osd_fast_start_enable(ch, 0);
@@ -2554,6 +2587,8 @@ hal_video_adapter_t *video_init(int iq_start_addr, int sensor_start_addr)
 	if (video_open_close_mutex == NULL) {
 		rtw_mutex_init(&video_open_close_mutex);
 	}
+	voe_info.iq_addr = iq_start_addr;
+	voe_info.sensor_addr = sensor_start_addr;
 	if (hal_voe_ready() != OK) {
 		extern int __voe_code_start__[];
 		if (!hal_voe_fcs_check_OK()) {
@@ -2645,6 +2680,8 @@ hal_video_adapter_t *video_init(int iq_start_addr, int sensor_start_addr)
 		res = hal_video_init((uint32_t *)voe_info.voe_heap_addr, voe_info.voe_heap_size);
 		if (res != OK) {
 			video_dprintf(VIDEO_LOG_ERR, "hal_video_init fail\n");
+			voe_info.iq_addr = 0;
+			voe_info.sensor_addr = 0;
 			return NULL;
 		}
 
@@ -2652,16 +2689,6 @@ hal_video_adapter_t *video_init(int iq_start_addr, int sensor_start_addr)
 
 	}
 	if (isp_boot->fcs_status == 1 && video_open_status() == 0) {
-		unsigned char *sensor_addr = NULL;
-		unsigned char *iq_addr = NULL;
-		sensor_addr = video_load_sensor(sensor_start_addr);
-		memcpy(snr_voe_ver, sensor_addr, 24);
-		iq_addr = video_load_iq(iq_start_addr);
-		video_dprintf(VIDEO_LOG_MSG, "sensor timestamp: %04d/%02d/%02d\r\n", *(unsigned short *)(sensor_addr + 0), sensor_addr[2], sensor_addr[3]);
-		video_dprintf(VIDEO_LOG_MSG, "iq timestamp: %04d/%02d/%02d %02d:%02d:%02d\r\n", *(unsigned short *)(iq_addr + 12), iq_addr[14], iq_addr[15], iq_addr[16],
-					  iq_addr[17], *(unsigned short *)(iq_addr + 18));
-		memcpy(iq_timestamp, iq_addr + 12, 8);
-		memcpy(iq_cus_ver, iq_addr + 23, 8);
 		voe_info.voe_heap_addr = isp_boot->voe_heap_addr;
 		voe_info.voe_heap_size = isp_boot->voe_heap_size;
 		video_dprintf(VIDEO_LOG_INF, "voe_info.voe_heap_addr %x voe_info.voe_heap_size %x\r\n", voe_info.voe_heap_addr, voe_info.voe_heap_size);
@@ -3119,7 +3146,7 @@ static unsigned char *video_load_cal_iq(unsigned int cal_iq_start_addr)
 	return cal_iq_buf;
 }
 
-int video_get_voe_version()
+static int video_get_voe_version()
 {
 	unsigned int fw_size = 0;
 	void *fp = NULL;
@@ -3165,13 +3192,15 @@ void video_get_version()
 {
 	char version[] = {0xff, 0xff, 0xff, 0xff};
 	video_get_voe_version();
-
 	version[0] = voe_ver[13] - 48;
 	version[1] = voe_ver[15] - 48;
 	version[2] = voe_ver[17] - 48;
 	version[3] = voe_ver[19] - 48;
 	printf("voe_ver: %d.%d.%d.%d \r\n", version[0], version[1], version[2], version[3]);
 
+	unsigned char *sensor_addr = NULL;
+	sensor_addr = video_load_sensor(voe_info.sensor_addr);
+	memcpy(snr_voe_ver, sensor_addr, 24);
 	version[0] = snr_voe_ver[17] - 48;
 	version[1] = snr_voe_ver[19] - 48;
 	version[2] = snr_voe_ver[21] - 48;
@@ -3180,8 +3209,13 @@ void video_get_version()
 	printf("sensor_timestamp: %04d/%02d/%02d \r\n", *(unsigned short *)(snr_voe_ver + 0), snr_voe_ver[2], snr_voe_ver[3]);
 
 	printf("fcs_version: 0x%04X \r\n", fcs_version);
+	
+	unsigned char *iq_addr = NULL;
+	iq_addr = video_load_iq(voe_info.iq_addr);
+	memcpy(iq_timestamp, iq_addr + 12, 8);
 	printf("iq_timestamp: %04d/%02d/%02d %02d:%02d:%02d\r\n", *(unsigned short *)(iq_timestamp + 0), iq_timestamp[2], iq_timestamp[3], iq_timestamp[4],
 		   iq_timestamp[5], *(unsigned short *)(iq_timestamp + 6));
+	memcpy(iq_cus_ver, iq_addr + 23, 8);
 	printf("iq_cus_ver: 0x%02X \r\n", iq_cus_ver[0]);
 }
 
@@ -4578,3 +4612,21 @@ int video_get_error_group(int error_id)
 	//1:VOE, 2:ISP flow, 3: Driver, 4: Mod, 5: OSD
 	return error_id >> 27 & 0xF;
 }
+
+#if USE_VIDEO_HR_FLOW
+void video_get_dir_wdr_level(int ch, uint8_t *level) //only for hr flow
+{
+	if(hal_video_get_dir_wdr_level(ch, level) != OK) {
+		video_dprintf(VIDEO_LOG_MSG, "video_get_dir_wdr_level fail. default set 50\r\n");
+		*level = 50;
+	}
+}
+
+void video_get_max_dyn_region_idx(int ch, enum hal_isp_ae_region *idx) //only for hr flow
+{
+	if(hal_video_get_max_dyn_region_idx(ch, idx) != OK) {
+		video_dprintf(VIDEO_LOG_MSG, "video_get_max_dyn_region_idx fail. default set REGION_UPPER_LEFT\r\n");
+		*idx = REGION_UPPER_LEFT;
+	}
+}
+#endif
