@@ -2285,7 +2285,7 @@ static void ai_glass_set_ap_mode(uartcmdpacket_t *param)
 	uint8_t password[MAX_AP_PASSWORD_LEN] = {0};
 	wifi_cfg.password = password;
 
-	if (mode == 1) {
+	if (mode == 1 || mode == 3) {
 		ai_glass_init_external_disk();
 		if (wifi_enable_ap_mode(AI_GLASS_AP_SSID, AI_GLASS_AP_PASSWORD, AI_GLASS_AP_CHANNEL, 20) == WLAN_SET_OK) {
 			wifi_get_ap_setting(&wifi_cfg);
@@ -2383,7 +2383,7 @@ static void ai_glass_set_sta_mode(uartcmdpacket_t *param)
 		connect_param.pscan_option = (unsigned char)PSCAN_FAST_SURVEY;
 	}
 
-	if (new_mode == 1 || new_mode == 2) {
+	if (new_mode == 1 || new_mode == 2 || new_mode == 4) {
 		// Only proceed if current mode is 0 (AP -> STA transition)
 		if (g_current_wifi_mode == 0) {
 			// Init emmc and try to connect to STA
@@ -2492,36 +2492,10 @@ static void ai_glass_get_pic_data_sliding_window_ack(uartcmdpacket_t *param)
 static void ai_glass_rtsp_live_start(uartcmdpacket_t *param)
 {
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_RTSP_LIVE_START\r\n");
-    //STEP 1: Set AP mode
-	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
-    uint8_t mode = query_pkt->data_buf[0];
+
 	uint8_t result = AI_GLASS_CMD_COMPLETE;
-	rtw_softap_info_t wifi_cfg = {0};
-	uint8_t password[MAX_AP_PASSWORD_LEN] = {0};
-	wifi_cfg.password = password;
-
-	if (mode == 1) {
-		ai_glass_init_external_disk();
-		if (wifi_enable_ap_mode(AI_GLASS_AP_SSID, AI_GLASS_AP_PASSWORD, AI_GLASS_AP_CHANNEL, 20) == WLAN_SET_OK) {
-			wifi_get_ap_setting(&wifi_cfg);
-			result = AI_GLASS_CMD_COMPLETE;
-		} else {
-			result = AI_GLASS_PROC_FAIL;
-		}
-	} else if (mode == 0) {
-		if (wifi_disable_ap_mode() == WLAN_SET_OK) {
-			result = AI_GLASS_CMD_COMPLETE;
-		} else {
-			result = AI_GLASS_PROC_FAIL;
-		}
-	} else {
-		result = AI_GLASS_PARAMS_ERR;
-	}
-	AI_GLASS_MSG("RTSP STREAM] SET MODE %d done %lu\r\n", mode, mm_read_mediatime_ms());
-
-	if (mode == 1 && result == AI_GLASS_CMD_COMPLETE) {
-		deinitial_media(); // To save power
-	}
+    //STEP 1: Deinitialize media
+	deinitial_media();
 
 	//STEP 2: Set stream parameters
 	ai_glass_stream_param_t temp_stream_param = {0};
@@ -2538,7 +2512,7 @@ static void ai_glass_rtsp_live_start(uartcmdpacket_t *param)
 	wifi_streaming_initialize();
 	result = AI_GLASS_CMD_COMPLETE;
 	//STEP 4: Respond status
-	uart_resp_rtsp_live_start(param, &wifi_cfg, MAX_AP_SSID_VALUE_LEN, MAX_AP_PASSWORD_LEN, result);
+	uart_resp_rtsp_live_start(param, result);
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_LIVE_START END\r\n");
 }
 
