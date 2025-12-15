@@ -6,7 +6,7 @@
 #include "module_video.h"
 #include "module_audio.h"
 #include "module_i2s.h"
-#include "module_aac.h"
+#include "module_opusc.h"
 #include "module_mp4.h"
 #include "log_service.h"
 #include "sensor.h"
@@ -55,12 +55,12 @@ static const char *example = "ai_glass_lifetime_recording";
 //lr means lifetime recording
 static mm_context_t *lr_video_ctx  = NULL;
 static mm_context_t *lr_audio_ctx = NULL;
-static mm_context_t *lr_aac_ctx = NULL;
+static mm_context_t *lr_opusc_ctx = NULL;
 static mm_context_t *lr_mp4_ctx = NULL;
 
 //Linkers
-static mm_siso_t *lr_siso_audio_aac = NULL;
-static mm_miso_t *lr_miso_video_aac_mp4 = NULL;
+static mm_siso_t *lr_siso_audio_opusc = NULL;
+static mm_miso_t *lr_miso_video_opusc_mp4 = NULL;
 
 static video_params_t lr_video_params = {
 	.stream_id = MAIN_STREAM_ID,
@@ -117,17 +117,20 @@ static int i2s_samplerate2index(int samplerate)
 }
 #endif
 
-static aac_params_t aac_params = {
-	.sample_rate = AUDIO_SAMPLE_RATE,
+static opusc_params_t opusc_rtsp_params = {
+	.sample_rate = 16000,
 	.channel = 1,
-	.trans_type = AAC_TYPE_ADTS,
-	.object_type = AAC_AOT_LC,
-	.bitrate = 32000,
+	.bit_length = 16,			//16 recommand
+	.complexity = 5,			//0~10
+	.bitrate = 25000,			//default 25000
+	.use_framesize = 40,		//needs to the same or bigger than AUDIO_DMA_PAGE_SIZE/(sample_rate/1000)/2 but less than 60
+	.enable_vbr = 1,
+	.vbr_constraint = 0,
+	.packetLossPercentage = 0,
+	.opus_application = OPUS_APPLICATION_AUDIO
 
-	.mem_total_size = 10 * 1024,
-	.mem_block_size = 128,
-	.mem_frame_size = 1024
 };
+
 
 static mp4_params_t lr_mp4_params = {
 	.sample_rate = AUDIO_SAMPLE_RATE,
@@ -722,20 +725,20 @@ int lifetime_recording_initialize(uint8_t record_filename_length, const char *fi
 	}
 #endif
 
-	lr_aac_ctx = mm_module_open(&aac_module);
-	if (lr_aac_ctx) {
-		mm_module_ctrl(lr_aac_ctx, CMD_AAC_SET_PARAMS, (int)&aac_params);
-		mm_module_ctrl(lr_aac_ctx, MM_CMD_SET_QUEUE_LEN, 30);
-		mm_module_ctrl(lr_aac_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
-		mm_module_ctrl(lr_aac_ctx, CMD_AAC_INIT_MEM_POOL, 0);
-		mm_module_ctrl(lr_aac_ctx, CMD_AAC_APPLY, 0);
+	lr_opusc_ctx = mm_module_open(&opusc_module);
+	if (lr_opusc_ctx) {
+		mm_module_ctrl(lr_opusc_ctx, CMD_OPUSC_SET_PARAMS, (int)&opusc_rtsp_params);
+		mm_module_ctrl(lr_opusc_ctx, MM_CMD_SET_QUEUE_LEN, 6);
+		mm_module_ctrl(lr_opusc_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_STATIC);
+		mm_module_ctrl(lr_opusc_ctx, CMD_OPUSC_APPLY, 0);
 	} else {
-		AI_GLASS_ERR("AAC open fail\n\r");
+		AI_GLASS_ERR("OPUSC open fail\n\r");
 		goto lifetime_recording_initialize_fail;
 	}
 
 	lr_mp4_ctx = mm_module_open(&mp4_module);
-	lr_mp4_params.mp4_audio_format = AUDIO_AAC;
+	lr_mp4_params.mp4_audio_format = AUDIO_OPUS;
+	lr_mp4_params.mp4_audio_duration = 40;
 
 	if (lr_mp4_ctx) {
 		mm_module_ctrl(lr_mp4_ctx, CMD_MP4_SET_PARAMS, (int)&lr_mp4_params);
@@ -773,25 +776,25 @@ int lifetime_recording_initialize(uint8_t record_filename_length, const char *fi
 		goto lifetime_recording_initialize_fail;
 	}
 
-	lr_siso_audio_aac = siso_create();
-	if (lr_siso_audio_aac) {
-		siso_ctrl(lr_siso_audio_aac, MMIC_CMD_ADD_INPUT, (uint32_t)lr_audio_ctx, 0);
-		siso_ctrl(lr_siso_audio_aac, MMIC_CMD_ADD_OUTPUT, (uint32_t)lr_aac_ctx, 0);
-		siso_ctrl(lr_siso_audio_aac, MMIC_CMD_SET_TASKPRIORITY, 4, 0);
-		siso_ctrl(lr_siso_audio_aac, MMIC_CMD_SET_STACKSIZE, 44 * 1024, 0);
-		siso_start(lr_siso_audio_aac);
+	lr_siso_audio_opusc = siso_create();
+	if (lr_siso_audio_opusc) {
+		siso_ctrl(lr_siso_audio_opusc, MMIC_CMD_ADD_INPUT, (uint32_t)lr_audio_ctx, 0);
+		siso_ctrl(lr_siso_audio_opusc, MMIC_CMD_ADD_OUTPUT, (uint32_t)lr_opusc_ctx, 0);
+		siso_ctrl(lr_siso_audio_opusc, MMIC_CMD_SET_TASKPRIORITY, 4, 0);
+		siso_ctrl(lr_siso_audio_opusc, MMIC_CMD_SET_STACKSIZE, 24 * 1024, 0);
+		siso_start(lr_siso_audio_opusc);
 	} else {
 		AI_GLASS_ERR("lr siso audio aac open fail\n\r");
 		goto lifetime_recording_initialize_fail;
 	}
 
-	lr_miso_video_aac_mp4 = miso_create();
-	if (lr_miso_video_aac_mp4) {
-		miso_ctrl(lr_miso_video_aac_mp4, MMIC_CMD_ADD_INPUT0, (uint32_t)lr_video_ctx, 0);
-		miso_ctrl(lr_miso_video_aac_mp4, MMIC_CMD_ADD_INPUT1, (uint32_t)lr_aac_ctx, 0);
-		miso_ctrl(lr_miso_video_aac_mp4, MMIC_CMD_ADD_OUTPUT0, (uint32_t)lr_mp4_ctx, 0);
-		miso_ctrl(lr_miso_video_aac_mp4, MMIC_CMD_SET_TASKPRIORITY, 4, 0);
-		miso_start(lr_miso_video_aac_mp4);
+	lr_miso_video_opusc_mp4 = miso_create();
+	if (lr_miso_video_opusc_mp4) {
+		miso_ctrl(lr_miso_video_opusc_mp4, MMIC_CMD_ADD_INPUT0, (uint32_t)lr_video_ctx, 0);
+		miso_ctrl(lr_miso_video_opusc_mp4, MMIC_CMD_ADD_INPUT1, (uint32_t)lr_opusc_ctx, 0);
+		miso_ctrl(lr_miso_video_opusc_mp4, MMIC_CMD_ADD_OUTPUT0, (uint32_t)lr_mp4_ctx, 0);
+		miso_ctrl(lr_miso_video_opusc_mp4, MMIC_CMD_SET_TASKPRIORITY, 4, 0);
+		miso_start(lr_miso_video_opusc_mp4);
 	} else {
 		AI_GLASS_ERR("miso open fail for video recording\n\r");
 		goto lifetime_recording_initialize_fail;
@@ -830,10 +833,10 @@ void lifetime_recording_deinitialize(void)
 {
 	//Pause Linker
 	//Pause individual audio
-	siso_pause(lr_siso_audio_aac);
+	siso_pause(lr_siso_audio_opusc);
 
 	//Pause MP4 recording / RTSP Stream
-	miso_pause(lr_miso_video_aac_mp4, MM_OUTPUT0);
+	miso_pause(lr_miso_video_opusc_mp4, MM_OUTPUT0);
 
 	//Stop module
 	if (lr_video_ctx != NULL) {
@@ -848,23 +851,23 @@ void lifetime_recording_deinitialize(void)
 		mm_module_ctrl(lr_audio_ctx, CMD_I2S_SET_TRX, 0);
 	}
 #endif
-	if (lr_aac_ctx != NULL) {
-		mm_module_ctrl(lr_aac_ctx, CMD_AAC_STOP, 0);
+	if (lr_opusc_ctx != NULL) {
+		mm_module_ctrl(lr_opusc_ctx, CMD_OPUSC_STOP, 0);
 	}
 	if (lr_mp4_ctx != NULL) {
 		mm_module_ctrl(lr_mp4_ctx, CMD_MP4_STOP_IMMEDIATELY, 0);
 	}
 	//Delete linker
-	siso_delete(lr_siso_audio_aac);
-	lr_siso_audio_aac = NULL;
-	miso_delete(lr_miso_video_aac_mp4);
-	lr_miso_video_aac_mp4 = NULL;
+	siso_delete(lr_siso_audio_opusc);
+	lr_siso_audio_opusc = NULL;
+	miso_delete(lr_miso_video_opusc_mp4);
+	lr_miso_video_opusc_mp4 = NULL;
 
 	//Close module
 	mm_module_close(lr_audio_ctx);
 	lr_audio_ctx = NULL;
-	mm_module_close(lr_aac_ctx);
-	lr_aac_ctx = NULL;
+	mm_module_close(lr_opusc_ctx);
+	lr_opusc_ctx = NULL;
 	mm_module_close(lr_mp4_ctx);
 	lr_mp4_ctx = NULL;
 	mm_module_close(lr_video_ctx);
