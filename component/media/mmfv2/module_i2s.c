@@ -57,6 +57,16 @@ static uint8_t dma_rxdata1[RX_PAGE_SIZE * RX_PAGE_NUM]__attribute__((aligned(0x2
 #define AUDIO_TX_I2S_QUEUE_LENGTH (20)
 #define AUDIO_RX_I2S_QUEUE_LENGTH (20)
 
+static inline int16_t amplify_pcm16_q15(int16_t s, int32_t gain_q15)
+{
+    int32_t v = (s * gain_q15) >> 15;
+
+    if (v > 32767)  v = 32767;
+    if (v < -32768) v = -32768;
+
+    return (int16_t)v;
+}
+
 static uint32_t byteSwap32(uint32_t num)
 {
 	return ((num >> 24) & 0x000000FF) | ((num >> 8) & 0x0000FF00) | ((num << 8) & 0x00FF0000) | ((num << 24) & 0xFF000000);
@@ -358,6 +368,16 @@ static void i2s_rx_handle_thread(void *param)
 				uint32_t output_buf_size = RX_PAGE_SIZE;
 				convert_rx_data((uint8_t *)output_item->data_addr, &(ctx->i2s_rx_cache.buffer.data[i2s_start_idx]), &(output_buf_size), &(i2s_rx_byte), ctx);
 				output_item->size = RX_PAGE_SIZE - output_buf_size;
+				
+				// Digital amplification
+				int16_t *pcm = (int16_t *)output_item->data_addr;
+				uint32_t samples = output_item->size / sizeof(int16_t);
+
+				for (uint32_t i = 0; i < samples; i++) {
+					pcm[i] = amplify_pcm16_q15(pcm[i], 500000);  //Adjust this for amplification of i2s audio
+				}
+				// End of digital amplification
+
 				output_item->timestamp = ctx->i2s_rx_cache.buffer.timestamp;
 				output_item->hw_timestamp = ctx->i2s_rx_cache.buffer.hw_timestamp;
 				output_item->type = AV_CODEC_ID_PCM_RAW;
