@@ -1929,7 +1929,7 @@ static void ai_glass_get_pic_data(uartcmdpacket_t *param)
 static void ai_glass_get_trans_pic_stop(uartcmdpacket_t *param)
 {
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_TRANS_PIC_STOP\r\n");
-	if (dual_snapshot == 1) {
+	if (dual_snapshot == 1 && ((uart_service_get_bt_role() == AI_GLASS_BT_ROLE_LEFT) || (uart_service_get_bt_role() == AI_GLASS_BT_ROLE_RIGHT))) {
 		vTaskDelay(pdMS_TO_TICKS(2000));
 	}
 	uart_resp_get_trans_pic_stop(param);
