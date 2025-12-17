@@ -96,6 +96,17 @@ volatile int total_burst = 1;
 #include "msc/inc/usbd_msc_config.h"
 #include "msc/inc/usbd_msc.h"
 #include "fatfs_ramdisk_api.h"
+
+//log ext disk
+#include "stdio_port_func.h"
+
+#if EXTDISK_LOG
+static void (*wputc)(phal_uart_adapter_t puart_adapter, uint8_t tx_data) = hal_uart_wputc;
+static FILE *g_emmc_log_fp = NULL;
+static bool g_emmc_log_enabled = false;
+extern hal_uart_adapter_t log_uart;
+#endif
+
 static int usb_msc_device_init(void)
 {
 	return 0;
@@ -157,6 +168,17 @@ exit:
 		}
 	}
 }
+
+#if EXTDISK_LOG
+// eMMC-only logging function
+static void log_emmc_putc(void *arg, char c)
+{
+    if (g_emmc_log_enabled && g_emmc_log_fp) {
+        extdisk_fwrite(&c, 1, 1, g_emmc_log_fp);
+		extdisk_fflush(g_emmc_log_fp);
+    }
+}
+#endif
 
 static void aiglass_mass_storage_deinit(void)
 {
@@ -387,147 +409,6 @@ static int ota_file_exists(char *version_str, char ota_versions[2][16])
 	}
 }
 
-#if OTA_EMMC
-// Check OTA files exists and get OTA filename from EMMC
-static int ota_filenames_exists(char ota_filenames[3][32], char *version_str, uint8_t mode)
-{
-#define OTA_FILE_WIFI_PREFIX "wifi_ota_v"
-#define OTA_FILE_BT_PREFIX   "bt_ota_v"
-#define OTA_FILE_BOOT_PREFIX "boot_ota_v"
-#define OTA_FILE_EXTENSION   ".bin"
-
-	ai_glass_init_external_disk();
-
-	if (extdisk_get_init_status() != 1) {
-		AI_GLASS_ERR("OTA get filename: External disk is not initialized.\n");
-		return 0;
-	}
-
-	if (mode != 0x02 && mode != 0x03 && mode != 0x04) {
-        AI_GLASS_ERR("OTA get filename: Unsupported mode 0x%02X\n", mode);
-        return 0;
-    }
-
-	uint16_t file_count = 0;
-	const char *extensions[] = {OTA_FILE_EXTENSION};
-
-	// Get file list in JSON format
-	cJSON *file_list = extdisk_get_filelist("/", &file_count, extensions, 1, NULL);
-
-	if (!file_list) {
-		AI_GLASS_ERR("OTA get filename: Unable to retrieve file list.\r\n");
-		return 0;
-	}
-	
-	AI_GLASS_MSG("Raw JSON response: %s\n", cJSON_Print(file_list)); // Debugging
-
-	int found_wifi = 0, found_bt = 0, found_boot = 0;
-
-	// Extract "contents" array from JSON
-	cJSON *contents = cJSON_GetObjectItem(file_list, "contents");
-	if (!cJSON_IsArray(contents)) {
-		AI_GLASS_ERR("OTA get filename 'contents' array missing or invalid.\r\n");
-		cJSON_Delete(file_list);
-		return 0;
-	}
-
-	// Iterate over the JSON "contents" array
-	cJSON *file_item = NULL;
-	cJSON_ArrayForEach(file_item, contents) {
-		cJSON *name_obj = cJSON_GetObjectItem(file_item, "name");
-		if (!cJSON_IsString(name_obj)) {
-			continue;
-		}
-
-		char *filename = name_obj->valuestring;
-		AI_GLASS_MSG("Found file: %s\r\n", filename); // Debugging
-
-		if ((mode == 0x02 || mode == 0x03) && !found_wifi && strncmp(filename, OTA_FILE_WIFI_PREFIX, strlen(OTA_FILE_WIFI_PREFIX)) == 0) {
-            char *start = filename + strlen(OTA_FILE_WIFI_PREFIX);
-            char *end = strstr(start, ".bin");
-            if (end) {
-                size_t len = end - start;
-                if (len < 16) {
-                    char ver_buf[16] = {0};
-                    strncpy(ver_buf, start, len);
-                    ver_buf[len] = '\0';
-
-                    if (strcmp(ver_buf, version_str) == 0) {
-                        found_wifi = 1;
-                        strncpy(ota_filenames[0], filename, 32);
-						AI_GLASS_MSG("Found WiFi OTA filename: %s\n", ota_filenames[0]);
-                    }
-                }
-            }
-        } 
-		
-		if ((mode == 0x04) && !found_bt && strncmp(filename, OTA_FILE_BT_PREFIX, strlen(OTA_FILE_BT_PREFIX)) == 0) {
-            char *start = filename + strlen(OTA_FILE_BT_PREFIX);
-            char *end = strstr(start, ".bin");
-            if (end) {
-                size_t len = end - start;
-                if (len < 16) {
-                    char ver_buf[16] = {0};
-                    strncpy(ver_buf, start, len);
-                    ver_buf[len] = '\0';
-
-                    if (strcmp(ver_buf, version_str) == 0) {
-                        found_bt = 1;
-                        strncpy(ota_filenames[1], filename, 32);
-						AI_GLASS_MSG("Found BT OTA filename: %s\n", ota_filenames[1]);
-                    }
-                }
-            }
-        }
-
-		if ((mode == 0x03) && !found_boot && strncmp(filename, OTA_FILE_BOOT_PREFIX, strlen(OTA_FILE_BOOT_PREFIX)) == 0) {
-            char *start = filename + strlen(OTA_FILE_BOOT_PREFIX);
-            char *end = strstr(start, ".bin");
-            if (end) {
-                size_t len = end - start;
-                if (len < 16) {
-                    char ver_buf[16] = {0};
-                    strncpy(ver_buf, start, len);
-                    ver_buf[len] = '\0';
-
-                    if (strcmp(ver_buf, version_str) == 0) {
-                        found_boot = 1;
-                        strncpy(ota_filenames[3], filename, 32);
-						AI_GLASS_MSG("Found Bootloader OTA filename: %s\n", ota_filenames[3]);
-                    }
-                }
-            }
-        }
-
-		if (mode == 0x02) {
-			if (found_wifi) {
-				break;  // Break when expected file is found based on mode
-			}
-		}
-		else if (mode == 0x03) {
-			if ((found_wifi && found_boot)) {
-				break;  // Break when expected file is found based on mode
-			}
-		}
-		else if (mode == 0x04) {
-			if (found_bt) {
-				break;  // Break when expected file is found based on mode
-			}
-		}
-	}
-
-	cJSON_Delete(file_list);
-
-	if ((mode == 0x02 && found_wifi) || (mode == 0x04 && found_bt) || (mode == 0x03 && found_wifi && found_boot)) {
-    	return 1; // found
-	} else {
-		AI_GLASS_ERR("OTA get filename: Required OTA file missing (mode=0x%02X, WiFi: %d, BT: %d)\r\n", mode, found_wifi, found_bt);
-		return 0; // not found
-	}
-
-}
-
-#else
 // Check if heap OTA filename matches the requested version
 static int heap_ota_version_matches(uint8_t mode, const char *version_str)
 {
@@ -535,9 +416,10 @@ static int heap_ota_version_matches(uint8_t mode, const char *version_str)
     #define OTA_FILE_BT_PREFIX   "bt_ota_v"
     #define OTA_FILE_BOOT_PREFIX "boot_ota_v"
 	#define OTA_FILE_NN_PREFIX "nn_ota_v"
+	#define OTA_FILE_ISP_IQ_PREFIX "isp_iq_ota_v"
     #define OTA_FILE_EXTENSION   ".bin"
 
-    int found_wifi = 0, found_bt = 0, found_boot = 0, found_nn = 0;
+    int found_wifi = 0, found_bt = 0, found_boot = 0, found_nn = 0, found_isp_iq = 0;
 
     if (!g_heap_ota_data) {
         AI_GLASS_ERR("Heap OTA data not initialized.\n");
@@ -545,7 +427,7 @@ static int heap_ota_version_matches(uint8_t mode, const char *version_str)
     }
 
     // Check WiFi OTA
-    if ((mode == 0x02 || mode == 0x03 || mode == 0x0A || mode == 0x0B) && strncmp(g_heap_ota_data->wifi_filename, OTA_FILE_WIFI_PREFIX, strlen(OTA_FILE_WIFI_PREFIX)) == 0) {
+    if ((mode == 0x02 || mode == 0x03 || mode == 0x0A || mode == 0x0B || mode == 0x12 || mode == 0x013 || mode == 0x1A || mode == 0x1B) && strncmp(g_heap_ota_data->wifi_filename, OTA_FILE_WIFI_PREFIX, strlen(OTA_FILE_WIFI_PREFIX)) == 0) {
 
         char *start = g_heap_ota_data->wifi_filename + strlen(OTA_FILE_WIFI_PREFIX);
         char *end = strstr(start, OTA_FILE_EXTENSION);
@@ -563,7 +445,7 @@ static int heap_ota_version_matches(uint8_t mode, const char *version_str)
     }
 
     // Check Bootloader OTA
-    if ((mode == 0x03 || mode == 0x0B) && strncmp(g_heap_ota_data->boot_filename, OTA_FILE_BOOT_PREFIX, strlen(OTA_FILE_BOOT_PREFIX)) == 0) {
+    if ((mode == 0x03 || mode == 0x0B || mode == 0x13 || mode == 0x1B) && strncmp(g_heap_ota_data->boot_filename, OTA_FILE_BOOT_PREFIX, strlen(OTA_FILE_BOOT_PREFIX)) == 0) {
 
         char *start = g_heap_ota_data->boot_filename + strlen(OTA_FILE_BOOT_PREFIX);
         char *end = strstr(start, OTA_FILE_EXTENSION);
@@ -589,7 +471,7 @@ static int heap_ota_version_matches(uint8_t mode, const char *version_str)
     }
 
 	 // Check NN OTA
-    if ((mode == 0x0A || mode == 0x0B) && strncmp(g_heap_ota_data->nn_filename, OTA_FILE_NN_PREFIX, strlen(OTA_FILE_NN_PREFIX)) == 0) {
+    if ((mode == 0x0A || mode == 0x0B || mode == 0x1A || mode == 0x1B) && strncmp(g_heap_ota_data->nn_filename, OTA_FILE_NN_PREFIX, strlen(OTA_FILE_NN_PREFIX)) == 0) {
     	char *start = g_heap_ota_data->nn_filename + strlen(OTA_FILE_NN_PREFIX);
         char *end = strstr(start, OTA_FILE_EXTENSION);
         if (end) {
@@ -605,16 +487,32 @@ static int heap_ota_version_matches(uint8_t mode, const char *version_str)
         }
     }
 
+	 // Check ISP IQ OTA
+    if ((mode == 0x12 || mode == 0x13 || mode == 0x1A || mode == 0x1B) && strncmp(g_heap_ota_data->isp_iq_filename, OTA_FILE_ISP_IQ_PREFIX, strlen(OTA_FILE_ISP_IQ_PREFIX)) == 0) {
+    	char *start = g_heap_ota_data->isp_iq_filename + strlen(OTA_FILE_ISP_IQ_PREFIX);
+        char *end = strstr(start, OTA_FILE_EXTENSION);
+        if (end) {
+            size_t len = end - start;
+            if (len < 16) {
+                char ver_buf[16] = {0};
+                strncpy(ver_buf, start, len);
+                ver_buf[len] = '\0';
+                if (strcmp(ver_buf, version_str) == 0) {
+					found_isp_iq = 1;
+				}
+            }
+        }
+    }
+
     // Final check based on mode
-    if ((mode == 0x02 && found_wifi) || (mode == 0x03 && found_wifi && found_boot) || (mode == 0x04 && found_bt) || (mode == 0x0A && found_wifi && found_nn) || (mode == 0x0B && found_wifi && found_boot && found_nn)) {
+    if ((mode == 0x02 && found_wifi) || (mode == 0x03 && found_wifi && found_boot) || (mode == 0x04 && found_bt) || (mode == 0x0A && found_wifi && found_nn) || (mode == 0x0B && found_wifi && found_boot && found_nn)
+	 || (mode == 0x12 && found_wifi && found_isp_iq) || (mode == 0x13 && found_wifi && found_boot && found_isp_iq) || (mode == 0x1A && found_wifi && found_nn && found_isp_iq) || (mode == 0x1B && found_wifi && found_boot && found_nn && found_isp_iq)) {
         return 1; // version matches
     }
 
-    AI_GLASS_ERR("OTA file name mismatch (mode=0x%02X, WiFi: %d, Boot: %d, NN: %d , BT: %d)\n", mode, found_wifi, found_boot, found_nn, found_bt);
+    AI_GLASS_ERR("OTA file name mismatch (mode=0x%02X, WiFi: %d, Boot: %d, NN: %d, ISP IQ: %d, BT: %d)\n", mode, found_wifi, found_boot, found_nn, found_isp_iq, found_bt);
     return 0;
 }
-
-#endif
 
 static int clear_ota_signature(void)
 {
@@ -799,275 +697,13 @@ static int clear_ota_signature(void)
 	return 1;
 }
 
-#if OTA_EMMC
-//8430
-static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
-{
-	AI_GLASS_INFO("get UART_TX_OPC_CMD_TRANSFER_UPGRADE_DATA\r\n");
-
-	deinitial_media();
-
-	critical_process_started = 1;
-
-	info = uart_parser_version_and_upgradetype(param);
-
-	AI_GLASS_INFO("Upgrade type: %u, Version: %u.%u.%u.%u\n",
-       info.upgradetype,
-       info.version[0], info.version[1], info.version[2], info.version[3]);
-
-	uint8_t status = AI_GLASS_CMD_COMPLETE;
-	uart_resp_request_sys_upgrade(status);
-	AI_GLASS_INFO("After 8430 CMD acknowledgement\r\n");
-
-	if(info.upgradetype == 0x02) {
-		AI_GLASS_INFO("Start WiFI OTA\r\n");
-
-		// Convert received version to a string
-		snprintf(version_str, sizeof(version_str), "%u.%u.%u.%u",
-			 info.version[0], info.version[1],
-			 info.version[2], info.version[3]);
-		
-		AI_GLASS_INFO("WIFI version to be upgrade to: %s\r\n", version_str);
-
-		char ota_filenames[3][32] = {0};
-
-		if (ota_filenames_exists(ota_filenames, version_str, info.upgradetype)) {
-
-			char full_wifi_path[64];
-
-			sprintf(full_wifi_path, "%s:/%s", ai_glass_disk_name, ota_filenames[0]);
-
-			int ret = -1;
-			ret = ext_storage_update_ota(full_wifi_path);
-			if (!ret) {
-				AI_GLASS_MSG("\n\r Ready to reboot\n");
-				// uart_resp_request_sys_upgrade(status);
-				ota_platform_reset();
-			} else {
-				AI_GLASS_ERR("\n\r OTA Process Failed\n");
-				status = AI_GLASS_OTA_PROCESS_FAILED;
-				uart_resp_request_sys_upgrade(status);
-			}
-			
-		} else {
-			AI_GLASS_ERR("OTA file name not found.\n");
-			status = AI_GLASS_OTA_FILE_NOT_EXISTED;
-			uart_resp_request_sys_upgrade(status);
-		}
-	}
-
-	else if (info.upgradetype == 0x04) {
-		AI_GLASS_INFO("Start BT OTA\r\n");
-
-		// Convert received version to a string
-		snprintf(version_str, sizeof(version_str), "%u.%u.%u.%u",
-			 info.version[0], info.version[1],
-			 info.version[2], info.version[3]);
-		
-		AI_GLASS_INFO("BT version to be upgrade to: %s\r\n", version_str);
-	
-		status = AI_GLASS_CMD_COMPLETE;
-		uart_resp_start_bt_soc_fw_upgrade_ack(status);
-		AI_GLASS_INFO("Send 631 CMD, waiting BT response of 631.\r\n");
-	}
-
-	else if (info.upgradetype == 0x03) {
-		AI_GLASS_INFO("Start WIFI Bootloader and WIFI OTA\r\n");
-
-		// Convert received version to a string
-		snprintf(version_str, sizeof(version_str), "%u.%u.%u.%u",
-			 info.version[0], info.version[1],
-			 info.version[2], info.version[3]);
-		
-		AI_GLASS_INFO("Bootloader and WIFI version to be upgrade to: %s\r\n", version_str);
-
-		char ota_filenames[3][32] = {0};
-
-		if (ota_filenames_exists(ota_filenames, version_str, info.upgradetype)) {
-
-			char boot_wifi_path[64];
-
-			sprintf(boot_wifi_path, "%s:/%s", ai_glass_disk_name, ota_filenames[3]);
-
-			int ret = -1;
-			ret = ext_storage_update_boot_ota(boot_wifi_path);
-			if (!ret) {
-				AI_GLASS_MSG("\n\r Bootloader OTA done. Continue to upgrade wifi firmware...\r\n");
-				char full_wifi_path[64];
-
-				sprintf(full_wifi_path, "%s:/%s", ai_glass_disk_name, ota_filenames[0]);
-
-				int ret = -1;
-				ret = ext_storage_update_ota(full_wifi_path);
-				if (!ret) {
-					AI_GLASS_MSG("\n\r Ready to reboot\n");
-					// uart_resp_request_sys_upgrade(status);
-					ota_platform_reset();
-				} else {
-					AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
-					status = AI_GLASS_OTA_PROCESS_FAILED;
-					uart_resp_request_sys_upgrade(status);
-				}
-			} else {
-				AI_GLASS_ERR("\n\r OTA Bootloader Process Failed\n");
-				status = AI_GLASS_OTA_PROCESS_FAILED;
-				uart_resp_request_sys_upgrade(status);
-			}
-		} else {
-			AI_GLASS_ERR("OTA file name not found.\n");
-			status = AI_GLASS_OTA_FILE_NOT_EXISTED;
-			uart_resp_request_sys_upgrade(status);
-		}
-	}
-
-	AI_GLASS_INFO("end of UART_TX_OPC_CMD_TRANSFER_UPGRADE_DATA\r\n");
-	
-}
-
-// 631
-static void ai_glass_resp_bt_fw_upgrade(uartcmdpacket_t *param)
-{
-	AI_GLASS_INFO("get UART_TX_OPC_CMD_START_BT_SOC_FW_UPGRADE\r\n");
-
-		cancel_bt_upgrade = 0;  // Reset cancel flag on entry
-		
-		int packet_count = 0;
-
-		uint32_t sendtime = mm_read_mediatime_ms();
-		ai_glass_init_external_disk();
-		if (extdisk_get_init_status() != 1) {
-			AI_GLASS_ERR("Error: External disk is not initialized.\n");
-			return;
-		}
-
-		wifi_off();
-		vTaskDelay(20);
-
-		AI_GLASS_INFO("Disabled WIFI\r\n");
-
-		AI_GLASS_INFO("Sending bluetooth binary via UART...\r\n");
-
-		char ota_filenames[3][32] = {0};
-		if (ota_filenames_exists(ota_filenames, version_str, info.upgradetype)) {
-
-			char full_bt_path[64];
-			sprintf(full_bt_path, "/%s", ota_filenames[1]);
-
-			// Currently using a hardcoded data_buffer size of 1541 bytes
-			uint8_t data_buffer[1541] = {0};
-
-			// Open the OTA file from eMMC
-			FILE *ota_file = extdisk_fopen(full_bt_path, "rb");
-			if (!ota_file) {
-				AI_GLASS_ERR("Error: Failed to open bluetooth binary on eMMC!\n");
-				return;
-			}
-
-			uint16_t tmp_uart_pic_size = uart_service_get_pic_size() - EMPTY_PACKET_LEN;
-			uint16_t data_length = 0;
-			#if UPDATE_UPGRADE_PROGRESS_TO_8773
-				int total_bytes_sent = 0;
-				uart_resp_get_sys_upgrade((uint8_t) 2, (uint8_t) 0);
-				extdisk_fseek(ota_file, 0, SEEK_END); 
-				int file_size = extdisk_ftell(ota_file);
-				AI_GLASS_MSG("BT FW File_size: %d\r\n", file_size);
-				extdisk_fseek(ota_file, 0, SEEK_SET); 		
-			#endif
-
-			while (1) {
-				if (cancel_bt_upgrade) {
-					AI_GLASS_INFO("BT upgrade cancelled by command!\r\n");
-					bt_progress = 0;
-					packet_count = 0;
-					#if UPDATE_UPGRADE_PROGRESS_TO_8773
-					AI_GLASS_INFO("FW rollback...\r\n");
-					if (clear_ota_signature()) {
-						uint8_t status = AI_GLASS_CMD_COMPLETE;
-						uart_resp_set_wifi_fw_rollback(status);
-						uart_resp_cancel_sys_upgrade(status);
-						AI_GLASS_INFO("FW rollback done\r\n");
-					}
-					else {
-						uint8_t status = AI_GLASS_SCEN_ERR;
-						uart_resp_set_wifi_fw_rollback(status);
-						uart_resp_cancel_sys_upgrade(status);
-						AI_GLASS_ERR("FW rollback failed\r\n");
-					}
-					#endif
-					break;
-				}
-
-				memset(data_buffer, 0, tmp_uart_pic_size);
-				int bytesRead = extdisk_fread(data_buffer, 1, tmp_uart_pic_size, ota_file);
-
-				if (bytesRead <= 0) {
-					if (ferror(ota_file)) {
-						AI_GLASS_ERR("Error: File read failed!\n");
-					} else {
-						AI_GLASS_INFO("End of file reached.\n");
-					}
-					break;
-				}
-				data_length = bytesRead;
-
-				#if UPDATE_UPGRADE_PROGRESS_TO_8773
-					total_bytes_sent += data_length;
-					packet_count++;
-					AI_GLASS_INFO("Total_bytes_sent: %u\r\n", total_bytes_sent);
-
-					static uint8_t last_bt_progress = 0xFF; 
-				
-				if (file_size > 0) {
-					bt_progress = (uint8_t)(((total_bytes_sent * 100) / file_size));
-					AI_GLASS_INFO("BT progress: %u\r\n", bt_progress);
-					if (bt_progress > 99) {
-						bt_progress = 99;
-					}
-				}
-				// Send update only when progress changes
-				if (bt_progress != last_bt_progress) {
-					last_bt_progress = bt_progress;
-					uart_resp_get_sys_upgrade((uint8_t) 2, bt_progress);
-					AI_GLASS_INFO("BT progress update: %u%% after %d packets\r\n", bt_progress, packet_count);
-				}
-				#endif
-
-				AI_GLASS_MSG("[8735(2) Sending] Data Length: %d bytes, Data[0-2]: %02X %02X %02X\n", data_length, data_buffer[0], data_buffer[1], data_buffer[2]);
-
-				uart_resp_transfer_upgrade_data(data_buffer, data_length);
-				vTaskDelay(pdMS_TO_TICKS(10));
-				// Prevent packet loss by adding delay between UART transmissions.
-				if (extdisk_feof(ota_file)) {
-					uart_resp_get_sys_upgrade((uint8_t) 2, (uint8_t) 100);
-					AI_GLASS_MSG("Send BT progress status 100\r\n");
-					break;
-				}
-			}
-			extdisk_fclose(ota_file);
-			// Add delay to ensure all UART data packets are fully sent before starting BT SoC OTA.
-			// Without this delay, the last packet may be lost, causing an incomplete OTA binary and OTA failure.
-			vTaskDelay(5000);
-			AI_GLASS_INFO("Firmware transfer completed.\r\n");
-			uint32_t endtime = mm_read_mediatime_ms();
-			uint32_t transfertime = endtime - sendtime;
-			uart_resp_finish_bt_soc_fw_upgrade();
-			bt_progress = 0;
-			AI_GLASS_MSG("End of START_BT_SOC_FW_UPGRADE_RESP = %lu\r\n", transfertime);
-			
-		}
-		AI_GLASS_INFO("end of UART_TX_OPC_CMD_START_BT_SOC_FW_UPGRADE\r\n");
-		critical_process_started = 0;
-}
-
-#else
-
 static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 {
     AI_GLASS_INFO("get UART_TX_OPC_CMD_TRANSFER_UPGRADE_DATA\r\n");
 
     // Print heap OTA info if it exists
     if (g_heap_ota_data && (g_heap_ota_data->wifi_data || g_heap_ota_data->bt_data)) {
-        AI_GLASS_INFO("Heap OTA WiFi file: %s, size: %u, Heap OTA BOOT file: %s, size: %u, Heap OTA BT version: %s, size: %u, Heap OTA NN file: %s, size: %u\n",
+        AI_GLASS_INFO("Heap OTA WiFi file: %s, size: %u, Heap OTA BOOT file: %s, size: %u, Heap OTA BT version: %s, size: %u, Heap OTA NN file: %s, size: %u, Heap OTA ISP IQ file: %s, size: %u\n",
                       g_heap_ota_data->wifi_filename,
                       g_heap_ota_data->wifi_length,
 					  g_heap_ota_data->boot_filename,
@@ -1075,7 +711,9 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 					  g_heap_ota_data->bt_version,
                       g_heap_ota_data->bt_length,
 					  g_heap_ota_data->nn_filename,
-                      g_heap_ota_data->nn_length);
+                      g_heap_ota_data->nn_length,
+					  g_heap_ota_data->isp_iq_filename,
+                      g_heap_ota_data->isp_iq_length);
     } else {
         AI_GLASS_INFO("No heap OTA data available.\n");
     }
@@ -1116,7 +754,6 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 					}
 					
 					uart_resp_get_power_state(param, power_result);
-					//ota_platform_reset();
 				} else {
 					AI_GLASS_ERR("\n\r OTA Process Failed\n");
 					power_result = AI_GLASS_WIFI_OTA_FAILED;
@@ -1172,7 +809,6 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 						power_result = UART_PWR_WIFI_OTA_SUCCESS;
 					}
 					uart_resp_get_power_state(param, power_result);
-					//ota_platform_reset();
 				} else {
 					AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
 					power_result = AI_GLASS_WIFI_OTA_FAILED;
@@ -1215,7 +851,6 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 						power_result = UART_PWR_WIFI_OTA_SUCCESS;
 					}
 					uart_resp_get_power_state(param, power_result);
-					//ota_platform_reset();
 				} else {
 					AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
 					power_result = AI_GLASS_WIFI_OTA_FAILED;
@@ -1260,12 +895,208 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 							power_result = UART_PWR_WIFI_OTA_SUCCESS;
 						}
 						uart_resp_get_power_state(param, power_result);
-						//ota_platform_reset();
 					} else {
 						AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
 						power_result = AI_GLASS_WIFI_OTA_FAILED;
 						uart_resp_get_power_state(param, power_result);
 					}
+				} else {
+					AI_GLASS_ERR("\n\r OTA NN Process Failed\n");
+					power_result = AI_GLASS_WIFI_OTA_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
+			} else {
+				AI_GLASS_ERR("\n\r OTA Bootloader Process Failed\n");
+				power_result = AI_GLASS_WIFI_OTA_FAILED;
+				uart_resp_get_power_state(param, power_result);
+			}
+		} else {
+			AI_GLASS_ERR("OTA file name not found.\n");
+			status = AI_GLASS_OTA_FILE_NOT_EXISTED;
+			uart_resp_request_sys_upgrade(status);
+		}
+	} else if (info.upgradetype == 0x12) {
+		AI_GLASS_INFO("Start WIFI ISP IQ and WIFI OTA\r\n");
+
+		// Convert received version to a string
+		snprintf(version_str, sizeof(version_str), "%u.%u.%u.%u",
+				 info.version[0], info.version[1],
+				 info.version[2], info.version[3]);
+
+		AI_GLASS_INFO("ISP IQ and WIFI version to be upgrade to: %s\r\n", version_str);
+
+		if (heap_ota_version_matches(info.upgradetype, version_str)) {
+			int ret = -1;
+			ret = heap_update_isp_iq_ota(g_heap_ota_data->isp_iq_data, g_heap_ota_data->isp_iq_length);
+			if (!ret) {
+				AI_GLASS_MSG("\n\r ISP_IQ OTA done. Continue to upgrade wifi firmware...\r\n");
+				int ret = -1;
+				ret = heap_update_ota(g_heap_ota_data->wifi_data, g_heap_ota_data->wifi_length);
+				if (!ret) {
+					AI_GLASS_MSG("\n\r Ready to reboot\n");
+					if (g_heap_ota_data && (g_heap_ota_data->bt_data != NULL)) {
+						power_result = UART_PWR_WIFI_OTA_SUCCESS_BT_OTA_READY;
+					} else {
+						power_result = UART_PWR_WIFI_OTA_SUCCESS;
+					}
+					uart_resp_get_power_state(param, power_result);
+				} else {
+					AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
+					power_result = AI_GLASS_WIFI_OTA_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
+			} else {
+			AI_GLASS_ERR("\n\r OTA ISP IQ Process Failed\n");
+			power_result = AI_GLASS_WIFI_OTA_FAILED;
+			uart_resp_get_power_state(param, power_result);
+			}
+		} else {
+			AI_GLASS_ERR("OTA file name not found.\n");
+			status = AI_GLASS_OTA_FILE_NOT_EXISTED;
+			uart_resp_request_sys_upgrade(status);
+		}
+	} else if (info.upgradetype == 0x13) {
+		AI_GLASS_INFO("Start WIFI ISP IQ, WIFI Bootloader and WIFI OTA\r\n");
+
+		// Convert received version to a string
+		snprintf(version_str, sizeof(version_str), "%u.%u.%u.%u",
+				 info.version[0], info.version[1],
+				 info.version[2], info.version[3]);
+
+		AI_GLASS_INFO("ISP IQ, BOOT and WIFI version to be upgrade to: %s\r\n", version_str);
+
+		if (heap_ota_version_matches(info.upgradetype, version_str)) {
+			int ret = -1;
+			ret = heap_update_boot_ota(g_heap_ota_data->boot_data, g_heap_ota_data->boot_length);
+			if (!ret) {
+				AI_GLASS_MSG("\n\r Bootloader OTA done. Continue to upgrade ISP IQ wifi firmware...\r\n");
+				int ret = -1;
+				ret = heap_update_isp_iq_ota(g_heap_ota_data->isp_iq_data, g_heap_ota_data->isp_iq_length);
+				if (!ret) {
+					AI_GLASS_MSG("\n\r ISP_IQ OTA done. Continue to upgrade wifi firmware...\r\n");
+					int ret = -1;
+					ret = heap_update_ota(g_heap_ota_data->wifi_data, g_heap_ota_data->wifi_length);
+					if (!ret) {
+						AI_GLASS_MSG("\n\r Ready to reboot\n");
+						if (g_heap_ota_data && (g_heap_ota_data->bt_data != NULL)) {
+							power_result = UART_PWR_WIFI_OTA_SUCCESS_BT_OTA_READY;
+						} else {
+							power_result = UART_PWR_WIFI_OTA_SUCCESS;
+						}
+						uart_resp_get_power_state(param, power_result);
+					} else {
+						AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
+						power_result = AI_GLASS_WIFI_OTA_FAILED;
+						uart_resp_get_power_state(param, power_result);
+					}
+				} else {
+				AI_GLASS_ERR("\n\r OTA ISP IQ Process Failed\n");
+				power_result = AI_GLASS_WIFI_OTA_FAILED;
+				uart_resp_get_power_state(param, power_result);
+				}
+			} else {
+				AI_GLASS_ERR("\n\r OTA Bootloader Process Failed\n");
+				power_result = AI_GLASS_WIFI_OTA_FAILED;
+				uart_resp_get_power_state(param, power_result);
+			}
+		} else {
+			AI_GLASS_ERR("OTA file name not found.\n");
+			status = AI_GLASS_OTA_FILE_NOT_EXISTED;
+			uart_resp_request_sys_upgrade(status);
+		}
+	} else if (info.upgradetype == 0x1A) {
+		AI_GLASS_INFO("Start WIFI NN, WIFI ISP IQ and WIFI OTA\r\n");
+
+		// Convert received version to a string
+		snprintf(version_str, sizeof(version_str), "%u.%u.%u.%u",
+				 info.version[0], info.version[1],
+				 info.version[2], info.version[3]);
+
+		AI_GLASS_INFO("NN, ISP IQ and WIFI version to be upgrade to: %s\r\n", version_str);
+
+		if (heap_ota_version_matches(info.upgradetype, version_str)) {
+			int ret = -1;
+			ret = heap_update_nn_ota(g_heap_ota_data->nn_data, g_heap_ota_data->nn_length);
+			if (!ret) {
+				AI_GLASS_MSG("\n\r NN OTA done. Continue to upgrade ISP IQ wifi firmware...\r\n");
+				int ret = -1;
+				ret = heap_update_isp_iq_ota(g_heap_ota_data->isp_iq_data, g_heap_ota_data->isp_iq_length);
+				if (!ret) {
+					AI_GLASS_MSG("\n\r ISP_IQ OTA done. Continue to upgrade wifi firmware...\r\n");
+					int ret = -1;
+					ret = heap_update_ota(g_heap_ota_data->wifi_data, g_heap_ota_data->wifi_length);
+					if (!ret) {
+						AI_GLASS_MSG("\n\r Ready to reboot\n");
+						if (g_heap_ota_data && (g_heap_ota_data->bt_data != NULL)) {
+							power_result = UART_PWR_WIFI_OTA_SUCCESS_BT_OTA_READY;
+						} else {
+							power_result = UART_PWR_WIFI_OTA_SUCCESS;
+						}
+						uart_resp_get_power_state(param, power_result);
+					} else {
+						AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
+						power_result = AI_GLASS_WIFI_OTA_FAILED;
+						uart_resp_get_power_state(param, power_result);
+					}
+				} else {
+					AI_GLASS_ERR("\n\r OTA ISP IQ Process Failed\n");
+					power_result = AI_GLASS_WIFI_OTA_FAILED;
+					uart_resp_get_power_state(param, power_result);
+					}
+			} else {
+				AI_GLASS_ERR("\n\r OTA NN Process Failed\n");
+				power_result = AI_GLASS_WIFI_OTA_FAILED;
+				uart_resp_get_power_state(param, power_result);
+			}
+		} else {
+			AI_GLASS_ERR("OTA file name not found.\n");
+			status = AI_GLASS_OTA_FILE_NOT_EXISTED;
+			uart_resp_request_sys_upgrade(status);
+		}
+	} else if (info.upgradetype == 0x1B) {
+		AI_GLASS_INFO("Start WIFI NN, WIFI Bootloader, WIFI ISP IQ and WIFI OTA\r\n");
+
+		// Convert received version to a string
+		snprintf(version_str, sizeof(version_str), "%u.%u.%u.%u",
+				 info.version[0], info.version[1],
+				 info.version[2], info.version[3]);
+
+		AI_GLASS_INFO("NN, BOOT, ISP IQ and WIFI version to be upgrade to: %s\r\n", version_str);
+
+		if (heap_ota_version_matches(info.upgradetype, version_str)) {
+			int ret = -1;
+			ret = heap_update_boot_ota(g_heap_ota_data->boot_data, g_heap_ota_data->boot_length);
+			if (!ret) {
+				AI_GLASS_MSG("\n\r Bootloader OTA done. Continue to upgrade NN wifi firmware...\r\n");
+				int ret = -1;
+				ret = heap_update_nn_ota(g_heap_ota_data->nn_data, g_heap_ota_data->nn_length);
+				if (!ret) {
+					AI_GLASS_MSG("\n\r NN OTA done. Continue to upgrade ISP IQ wifi firmware...\r\n");
+					int ret = -1;
+					ret = heap_update_isp_iq_ota(g_heap_ota_data->isp_iq_data, g_heap_ota_data->isp_iq_length);
+					if (!ret) {
+						AI_GLASS_MSG("\n\r ISP_IQ OTA done. Continue to upgrade wifi firmware...\r\n");
+						int ret = -1;
+						ret = heap_update_ota(g_heap_ota_data->wifi_data, g_heap_ota_data->wifi_length);
+						if (!ret) {
+							AI_GLASS_MSG("\n\r Ready to reboot\n");
+							if (g_heap_ota_data && (g_heap_ota_data->bt_data != NULL)) {
+								power_result = UART_PWR_WIFI_OTA_SUCCESS_BT_OTA_READY;
+							} else {
+								power_result = UART_PWR_WIFI_OTA_SUCCESS;
+							}
+							uart_resp_get_power_state(param, power_result);
+							//ota_platform_reset();
+						} else {
+							AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
+							power_result = AI_GLASS_WIFI_OTA_FAILED;
+							uart_resp_get_power_state(param, power_result);
+						}
+					} else {
+						AI_GLASS_ERR("\n\r OTA ISP IQ Process Failed\n");
+						power_result = AI_GLASS_WIFI_OTA_FAILED;
+						uart_resp_get_power_state(param, power_result);
+						}
 				} else {
 					AI_GLASS_ERR("\n\r OTA NN Process Failed\n");
 					power_result = AI_GLASS_WIFI_OTA_FAILED;
@@ -1399,23 +1230,6 @@ static void ai_glass_resp_bt_fw_upgrade(uartcmdpacket_t *param)
     critical_process_started = 0;
 }
 
-#endif
-
-#if OTA_EMMC
-// UART_TX_OPC_CMD_FINISH_BT_SOC_FW_UPGRADE 633
-static void ai_glass_resp_bt_fw_finish(uartcmdpacket_t *param)
-{
-	critical_process_started = 1;
-	AI_GLASS_INFO("get UART_TX_OPC_CMD_FINISH_BT_SOC_FW_UPGRADE\r\n");
-	if (extdisk_delete_bin_files()) {
-		AI_GLASS_MSG("Delete OTA files\r\n");
-	}
-	AI_GLASS_INFO("end of UART_TX_OPC_CMD_FINISH_BT_SOC_FW_UPGRADE\r\n");
-	critical_process_started = 0;
-
-}
-
-#else
 static void ai_glass_resp_bt_fw_finish(uartcmdpacket_t *param)
 {
 	critical_process_started = 1;
@@ -1425,7 +1239,6 @@ static void ai_glass_resp_bt_fw_finish(uartcmdpacket_t *param)
 	critical_process_started = 0;
 
 }
-#endif
 
 // For UART_RX_OPC_CMD_SET_WIFI_FW_ROLLBACK 8415
 static void ai_glass_wifi_fw_rollback(uartcmdpacket_t *param)
@@ -1457,7 +1270,6 @@ static void ai_glass_get_power_down(uartcmdpacket_t *param)
 {
 	uint8_t result = AI_GLASS_CMD_COMPLETE;
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_POWER_DOWN %lu\r\n", mm_read_mediatime_ms());
-	vTaskDelay(pdMS_TO_TICKS(400));
 	// Wait until the video is down
 	if (xSemaphoreTake(video_proc_sema, POWER_DOWN_TIMEOUT) != pdTRUE) {
 		AI_GLASS_WARN("AI glass is snapshot or record, power down fail %lu\r\n", mm_read_mediatime_ms());
@@ -2617,22 +2429,81 @@ void uart_fun_regist(void)
 	uart_service_add_table(rx_opcode_basic_items, sizeof(rx_opcode_basic_items) / sizeof(rx_opcode_basic_items[0]));
 }
 
+#if EXTDISK_LOG
+void ai_glass_extdisk_log_start(void)
+{
+	if (g_emmc_log_enabled) {
+        AI_GLASS_INFO("[AIGLASS] eMMC log already active, skipping start.\n");
+        return;
+    }
+
+    AI_GLASS_INFO("[AIGLASS] Starting eMMC log...\n");
+
+    ai_glass_init_external_disk();
+
+    g_emmc_log_fp = extdisk_fopen("uart_log.txt", "a+");
+    if (!g_emmc_log_fp) {
+        AI_GLASS_ERR("[AIGLASS] Failed to open log file on eMMC!\n");
+        return;
+    }
+
+    g_emmc_log_enabled = true;
+
+    // Hook stdio port to eMMC-only output
+    stdio_port_init_s((void *)&log_uart, (stdio_putc_t)log_emmc_putc, (stdio_getc_t)&hal_uart_rgetc);
+    stdio_port_init_ns((void *)&log_uart, (stdio_putc_t)log_emmc_putc, (stdio_getc_t)&hal_uart_rgetc);
+
+    AI_GLASS_INFO("[AIGLASS] eMMC logging active: uart_log.txt\n");
+}
+
+void ai_glass_extdisk_log_stop(void)
+{
+	if (!g_emmc_log_enabled) {
+        AI_GLASS_INFO("[AIGLASS] eMMC log not active, skipping stop.\n");
+        return;
+    }
+	
+    AI_GLASS_INFO("[AIGLASS] Stopping eMMC log...\n");
+    g_emmc_log_enabled = false;
+
+    if (g_emmc_log_fp) {
+        extdisk_fclose(g_emmc_log_fp);
+        g_emmc_log_fp = NULL;
+    }
+
+    // Restore UART-only output
+    stdio_port_init_s((void *)&log_uart, (stdio_putc_t)wputc, (stdio_getc_t)&hal_uart_rgetc);
+    stdio_port_init_ns((void *)&log_uart, (stdio_putc_t)wputc, (stdio_getc_t)&hal_uart_rgetc);
+
+    printf("[AIGLASS] eMMC logging stopped.\n");
+}
+
+#endif
+
 void ai_glass_service_thread(void *param)
 {
+#if EXTDISK_LOG
+	media_filesystem_init();
+	ai_glass_log_init();
+	ai_glass_get_fw_version();
+	printf("[FOR OTA BOOTLOADER CHECK DIFFERENCE] count = %x\r\n",(*((volatile uint32_t *) 0xe0001004)));
+#endif 
 	AI_GLASS_MSG("ai_glass_service_thread start %lu\r\n", mm_read_mediatime_ms());
 
 	initial_media_parameters();
 	AI_GLASS_MSG("media system done %lu\r\n", mm_read_mediatime_ms());
-
+#if !EXTDISK_LOG 
 	// cost about 60ms into this function
 	media_filesystem_init();
+#endif 
 	media_filesystem_setup_gpstime(0, 0); // Set up GPS start time to prevent failed for file system
 	ai_glass_init_ram_disk();
 	//ai_glass_init_external_disk(); // init EMMC here will cause 160 ms delay
 	//extdisk_save_file_cntlist();
 	AI_GLASS_MSG("vfs system done %lu\r\n", mm_read_mediatime_ms());
+#if !EXTDISK_LOG 
 	ai_glass_log_init();
-
+#endif 
 	uart_service_init(UART_TX, UART_RX, UART_BAUDRATE);
 
 	send_response_timer = xTimerCreate("send_response_timer", 100 / portTICK_PERIOD_MS, pdFALSE, NULL, mp4_send_response_callback);
@@ -2680,7 +2551,9 @@ exit:
 
 void ai_glass_init(void)
 {
+#if !EXTDISK_LOG 
 	ai_glass_get_fw_version();
+#endif
 	if (xTaskCreate(ai_glass_service_thread, ((const char *)"example_uart_service_thread"), 4096, NULL, tskIDLE_PRIORITY + 5, NULL) != pdPASS) {
 		AI_GLASS_ERR("\n\r%s xTaskCreate(example_uart_service_thread) failed", __FUNCTION__);
 	}
@@ -3104,6 +2977,9 @@ void ai_glass_log_init(void)
 {
 #if defined(ENABLE_TEST_CMD) && ENABLE_TEST_CMD
 	log_service_add_table(at_ai_glass_items, sizeof(at_ai_glass_items) / sizeof(at_ai_glass_items[0]));
+#endif
+#if EXTDISK_LOG
+	ai_glass_extdisk_log_start();
 #endif
 }
 

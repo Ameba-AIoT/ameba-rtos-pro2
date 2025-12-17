@@ -140,6 +140,10 @@ Note: this baudrate will have strong influence to the process time but need to s
 - HTTPS_PORT: the port when open https as server, default 8080
 - HTTP_OTA_TEST: enable simple OTA flow for 8735
 
+12. ai_glass_initialize.h
+	#define EXTDISK_LOG   0 //Default close to view uart-log
+	#define EXTDISK_LOG   1 //Save log in external disk then send to mobile app for viewing
+
 ## 12M Sensor Init Configuration ##
 
 1. Please modify sensor driver setting and enable FCS bootup.

@@ -31,6 +31,7 @@ int extdisk_fclose(FILE *stream);
 size_t extdisk_fread(void *ptr, size_t size, size_t count, FILE *stream);
 size_t extdisk_fwrite(const void *ptr, size_t size, size_t count, FILE *stream);
 int extdisk_fseek(FILE *stream, long int offset, int origin);
+int extdisk_fflush(FILE *stream);
 int extdisk_ftell(FILE *stream);
 int extdisk_feof(FILE *stream);
 int extdisk_remove(const char *filename);

@@ -119,6 +119,7 @@ int ext_storage_update_boot_ota(char *filename);
 int heap_update_ota(uint8_t *buffer, uint32_t length);
 int heap_update_boot_ota(uint8_t *buffer, uint32_t length);
 int heap_update_nn_ota(uint8_t *buffer, uint32_t length);
+int heap_update_isp_iq_ota(uint8_t *buffer, uint32_t length);
 #endif
 
 #endif

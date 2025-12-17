@@ -54,13 +54,16 @@ typedef struct {
 	uint8_t *boot_data;
 	uint8_t *bt_data;
 	uint8_t *nn_data;
+	uint8_t *isp_iq_data;
     uint32_t wifi_length;
 	uint32_t boot_length;
 	uint32_t bt_length;
 	uint32_t nn_length;
+	uint32_t isp_iq_length;
 	char wifi_filename[32];
     char boot_filename[32];
 	char nn_filename[32];
+	char isp_iq_filename[32];
     char bt_version[18];
 } heap_ota_data_t;
 

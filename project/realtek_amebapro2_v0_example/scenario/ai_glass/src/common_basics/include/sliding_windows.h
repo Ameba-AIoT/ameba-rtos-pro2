@@ -47,6 +47,9 @@ typedef struct {
 	uint8_t reserve2;
 	uint16_t length;
 	uint8_t *payload;
+	uint32_t timestamp;
+	uint8_t type;
+	uint16_t timebase;
 } payload_info_t;
 
 typedef struct {

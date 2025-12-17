@@ -6,7 +6,6 @@
 #include "module_video.h"
 #include "module_rtsp2.h"
 #include "module_audio.h"
-// #include "module_aac.h"
 #include "module_i2s.h"
 #include "module_opusc.h"
 #include "log_service.h"
@@ -24,7 +23,6 @@
 static mm_context_t *streaming_video_ctx = NULL;
 static mm_context_t *streaming_audio_ctx = NULL;
 static mm_context_t *streaming_opusc_ctx = NULL;
-// static mm_context_t *streaming_aac_ctx   = NULL;
 static mm_context_t *streaming_rtsp2_ctx = NULL;
 
 //Linkers
@@ -100,23 +98,10 @@ static opusc_params_t opusc_rtsp_params = {
 
 };
 
-// static aac_params_t aac_params = {
-// 	.sample_rate = AUDIO_SAMPLE_RATE,
-// 	.channel = 1,
-// 	.trans_type = AAC_TYPE_ADTS,
-// 	.object_type = AAC_AOT_LC,
-// 	.bitrate = 32000,
-
-// 	.mem_total_size = 10 * 1024,
-// 	.mem_block_size = 128,
-// 	.mem_frame_size = 1024
-// };
-
 static rtsp2_params_t rtsp2_v1_params = {
 	.type = AVMEDIA_TYPE_VIDEO,
 	.u = {
 		.v = {
-			.codec_id = AV_CODEC_ID_H264,
 			.bps      = DEFAULT_STREAM_BPS
 		}
 	}
@@ -134,18 +119,6 @@ static rtsp2_params_t rtsp2_a_opus_params = {
 	}
 };
 
-
-// static rtsp2_params_t rtsp2_a_params = {
-// 	.type = AVMEDIA_TYPE_AUDIO,
-// 	.u = {
-// 		.a = {
-// 			.codec_id   = AV_CODEC_ID_MP4A_LATM,
-// 			.channel    = 1,
-// 			.samplerate = AUDIO_SAMPLE_RATE
-// 		}
-// 	}
-// };
-
 int wifi_streaming_initialize(void)
 { 
 	ai_glass_stream_param_t *ai_stream_param = NULL;
@@ -155,10 +128,6 @@ int wifi_streaming_initialize(void)
 	ai_stream_param = (ai_glass_stream_param_t *) malloc(sizeof(ai_glass_stream_param_t));
 	memset(ai_stream_param, 0x00, sizeof(ai_glass_stream_param_t));
 	media_get_stream_params(ai_stream_param);
-
-	// if(sensor_idx != -1) {
-	// 	deinitial_media(); 
-	// }
 
 	//Update rtsp video_params
 	rtsp2_v1_params.u.v.fps = ai_stream_param->fps;
@@ -174,6 +143,12 @@ int wifi_streaming_initialize(void)
 	streaming_video_params.rc_mode = ai_stream_param->rc_mode;
 	streaming_video_params.rotation = ai_stream_param->rotation;
 	
+	if(streaming_video_params.type == 0) {
+		rtsp2_v1_params.u.v.codec_id = AV_CODEC_ID_H265;
+	}
+	if(streaming_video_params.type == 1) {
+		rtsp2_v1_params.u.v.codec_id = AV_CODEC_ID_H264;
+	}
 #if AUDIO_SRC==AUDIO_INTERFACE
 	streaming_audio_ctx = mm_module_open(&audio_module);
 	memcpy((void *)&audio_params, (void *)&default_audio_params, sizeof(audio_params_t));
@@ -203,18 +178,6 @@ int wifi_streaming_initialize(void)
 		goto wifi_streaming_initialize_fail;
 	}
 #endif
-
-	// streaming_aac_ctx = mm_module_open(&aac_module);
-	// if(streaming_aac_ctx) {
-	// 	mm_module_ctrl(streaming_aac_ctx, CMD_AAC_SET_PARAMS, (int)&aac_params);
-	// 	mm_module_ctrl(streaming_aac_ctx, MM_CMD_SET_QUEUE_LEN, 6);
-	// 	mm_module_ctrl(streaming_aac_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
-	// 	mm_module_ctrl(streaming_aac_ctx, CMD_AAC_INIT_MEM_POOL, 0);
-	// 	mm_module_ctrl(streaming_aac_ctx, CMD_AAC_APPLY, 0);
-	// } else {
-	// 	AI_GLASS_ERR("aac open fail\n\r");
-	// 	goto wifi_streaming_initialize_fail;
-	// }
 
 	streaming_opusc_ctx = mm_module_open(&opusc_module);
 	if(streaming_opusc_ctx) {
@@ -248,9 +211,6 @@ int wifi_streaming_initialize(void)
 	if (streaming_video_ctx) {
 		media_get_preinit_isp_data(&ai_glass_pre_init_params);
 		mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&ai_glass_pre_init_params);
-		// if(sensor_idx != -1) {
-		// 	mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_SET_SENSOR_ID, sensor_idx);
-		// }
 		mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_SET_PARAMS, (int)&streaming_video_params);
 		mm_module_ctrl(streaming_video_ctx, MM_CMD_SET_QUEUE_LEN, streaming_video_params.fps * 10); //Add the queue buffer to avoid to lost data.
 		mm_module_ctrl(streaming_video_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
@@ -329,9 +289,4 @@ void wifi_streaming_deinitialize(void) {
 	mm_module_close(streaming_opusc_ctx);
 
 	video_voe_release();
-
-	// if(sensor_idx != -1) {
-	// 	sensor_idx = -1;
-	// }
 }
-

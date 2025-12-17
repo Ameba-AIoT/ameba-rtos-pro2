@@ -6,7 +6,7 @@
 #include "module_streaming.h"
 #include "module_audio.h"
 #include "module_i2s.h"
-#include "module_aac.h"
+#include "module_opusc.h"
 
 #include "log_service.h"
 #include "sensor.h"
@@ -18,12 +18,8 @@
 #define V1_BPS 256*1024
 #define V1_RCMODE 2 // 1: CBR, 2: VBR
 #define VIDEO_TYPE VIDEO_H264
-#define VIDEO_CODEC AV_CODEC_ID_H264
-#define AUDIO_CODEC AV_CODEC_ID_MP4A_LATM
-// // Definition of the audio interfcae
-// #define I2S_INTERFACE           0
-// #define AUDIO_INTERFACE         1
-#define VIDEO_AUDIO             0  
+
+#define VIDEO_AUDIO             0
 // Configuration
 #define AUDIO_SAMPLE_RATE       16000 // 48000
 #define AUDIO_SRC               I2S_INTERFACE //AUDIO_INTERFACE
@@ -31,13 +27,13 @@
 
 static mm_context_t *ls_video_ctx           = NULL;
 static mm_context_t *lifetime_streaming_ctx = NULL;
-static mm_context_t *ls_audio_ctx = NULL;
-static mm_context_t *ls_aac_ctx = NULL;
 
 //Linkers
 #if VIDEO_AUDIO
-static mm_siso_t *ls_siso_audio_aac = NULL;
+static mm_context_t *ls_audio_ctx = NULL;
 static mm_miso_t *miso_ai_streaming = NULL;
+static mm_siso_t *ls_siso_audio_opusc = NULL;
+static mm_context_t *ls_opusc_ctx = NULL;
 #else 
 static mm_siso_t *siso_ai_streaming = NULL;
 #endif
@@ -93,17 +89,17 @@ static int i2s_samplerate2index(int samplerate)
 }
 #endif
 
-
-static aac_params_t aac_params = {
+static opusc_params_t opusc_params = {
 	.sample_rate = AUDIO_SAMPLE_RATE,
 	.channel = 1,
-	.trans_type = AAC_TYPE_ADTS,
-	.object_type = AAC_AOT_LC,
-	.bitrate = 32000,
-
-	.mem_total_size = 10 * 1024,
-	.mem_block_size = 128,
-	.mem_frame_size = 1024
+	.bit_length = 16,			//16 recommand
+	.complexity = 5,			//0~10
+	.bitrate = 25000,			//default 25000
+	.use_framesize = 40,		//needs to the same or bigger than AUDIO_DMA_PAGE_SIZE/(sample_rate/1000)/2 but less than 60
+	.enable_vbr = 1,
+	.vbr_constraint = 0,
+	.packetLossPercentage = 0,
+	.opus_application = OPUS_APPLICATION_AUDIO
 };
 #endif
 
@@ -133,15 +129,21 @@ int lifetime_streaming_initialize(void) {
 	media_get_stream_params(stream_param);
     
     AI_GLASS_MSG("==================================== Width : %d, Height: %d, FPS: %d==========================\n",stream_param->width, stream_param->height, stream_param->fps);
-    video_v1_params.resolution = stream_param->resolution;
+    video_v1_params.type = stream_param->type;
+	video_v1_params.resolution = stream_param->resolution;
     video_v1_params.bps = stream_param->bps;
 	video_v1_params.width = stream_param->width;
 	video_v1_params.height = stream_param->height;
 	video_v1_params.fps = stream_param->fps;
 	video_v1_params.gop = stream_param->fps;
 	video_v1_params.rc_mode = stream_param->rc_mode;
-    video_v1_params.rc_mode = stream_param->rc_mode;
     video_v1_params.rotation = stream_param->rotation;
+
+	if(video_v1_params.type == 0) {
+		video_v1_params.level = VCENC_HEVC_LEVEL_4;
+		video_v1_params.profile = VCENC_HEVC_MAIN_PROFILE;
+		video_v1_params.cavlc = 1;
+	};
 
 #if VIDEO_AUDIO
 #if AUDIO_SRC==AUDIO_INTERFACE
@@ -174,16 +176,15 @@ int lifetime_streaming_initialize(void) {
 	}
 #endif
 
-	ls_aac_ctx = mm_module_open(&aac_module);
-	if (ls_aac_ctx) {
-		mm_module_ctrl(ls_aac_ctx, CMD_AAC_SET_PARAMS, (int)&aac_params);
-		mm_module_ctrl(ls_aac_ctx, MM_CMD_SET_QUEUE_LEN, 30);
-		mm_module_ctrl(ls_aac_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
-		mm_module_ctrl(ls_aac_ctx, CMD_AAC_INIT_MEM_POOL, 0);
-		mm_module_ctrl(ls_aac_ctx, CMD_AAC_APPLY, 0);
-	} else {
-		AI_GLASS_ERR("AAC open fail\n\r");
-		goto lifetime_streaming_initialize_fail;
+	ls_opusc_ctx = mm_module_open(&opusc_module);
+		if (ls_opusc_ctx) {
+			mm_module_ctrl(ls_opusc_ctx, CMD_OPUSC_SET_PARAMS, (int)&opusc_params);
+			mm_module_ctrl(ls_opusc_ctx, MM_CMD_SET_QUEUE_LEN, 6);
+			mm_module_ctrl(ls_opusc_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_STATIC);
+			mm_module_ctrl(ls_opusc_ctx, CMD_OPUSC_APPLY, 0);
+		} else {
+			printf("OPUSC open fail\n\r");
+			goto lifetime_streaming_initialize_fail;
 	}
 #endif
 
@@ -217,21 +218,24 @@ int lifetime_streaming_initialize(void) {
         mm_module_ctrl(lifetime_streaming_ctx, CMD_STREAMING_SET_PARAMS, (int)&video_v1_params);
 		mm_module_ctrl(lifetime_streaming_ctx, CMD_STREAMING_SET_APPLY, 0);
 		mm_module_ctrl(lifetime_streaming_ctx, CMD_STREAMING_SET_STREAMING, ON);
+#if VIDEO_AUDIO
+		mm_module_ctrl(lifetime_streaming_ctx, CMD_STREAMING_SET_SAMPLE_RATE, (int)opusc_params.sample_rate);
+#endif
         mm_module_ctrl(lifetime_streaming_ctx, CMD_STREAMING_SET_STOP_CB, (int)end_streaming_cb);
     } else {
         AI_GLASS_ERR("AI streaming module open failed\n");
         goto lifetime_streaming_initialize_fail;
     }
 #if VIDEO_AUDIO
-    ls_siso_audio_aac = siso_create();
-	if (ls_siso_audio_aac) {
-		siso_ctrl(ls_siso_audio_aac, MMIC_CMD_ADD_INPUT, (uint32_t)ls_audio_ctx, 0);
-		siso_ctrl(ls_siso_audio_aac, MMIC_CMD_ADD_OUTPUT, (uint32_t)ls_aac_ctx, 0);
-		siso_ctrl(ls_siso_audio_aac, MMIC_CMD_SET_TASKPRIORITY, 4, 0);
-		siso_ctrl(ls_siso_audio_aac, MMIC_CMD_SET_STACKSIZE, 44 * 1024, 0);
-		siso_start(ls_siso_audio_aac);
+    ls_siso_audio_opusc = siso_create();
+	if (ls_siso_audio_opusc) {
+		siso_ctrl(ls_siso_audio_opusc, MMIC_CMD_ADD_INPUT, (uint32_t)ls_audio_ctx, 0);
+		siso_ctrl(ls_siso_audio_opusc, MMIC_CMD_ADD_OUTPUT, (uint32_t)ls_opusc_ctx, 0);
+		siso_ctrl(ls_siso_audio_opusc, MMIC_CMD_SET_TASKPRIORITY, 4, 0);
+		siso_ctrl(ls_siso_audio_opusc, MMIC_CMD_SET_STACKSIZE, 44 * 1024, 0);
+		siso_start(ls_siso_audio_opusc);
 	} else {
-		AI_GLASS_ERR("lr siso audio aac open fail\n\r");
+		AI_GLASS_ERR("lr siso audio opusc open fail\n\r");
 		goto lifetime_streaming_initialize_fail;
 	}
 #endif
@@ -240,7 +244,7 @@ int lifetime_streaming_initialize(void) {
     miso_ai_streaming = miso_create();
 	if (miso_ai_streaming) {
 		miso_ctrl(miso_ai_streaming, MMIC_CMD_ADD_INPUT0, (uint32_t)ls_video_ctx, 0);
-		miso_ctrl(miso_ai_streaming, MMIC_CMD_ADD_INPUT1, (uint32_t)ls_aac_ctx, 0);
+		miso_ctrl(miso_ai_streaming, MMIC_CMD_ADD_INPUT1, (uint32_t)ls_opusc_ctx, 0);
 		miso_ctrl(miso_ai_streaming, MMIC_CMD_ADD_OUTPUT0, (uint32_t)lifetime_streaming_ctx, 0);
 		miso_ctrl(miso_ai_streaming, MMIC_CMD_SET_TASKPRIORITY, 4, 0);
 		miso_start(miso_ai_streaming);
@@ -269,7 +273,7 @@ int lifetime_streaming_initialize(void) {
 	}
 #endif
 	current_state = STATE_STREAMING;
-	AI_GLASS_INFO("miso(videochn0_aac_streaming) started\n\r");
+	AI_GLASS_INFO("miso(videochn1_opusc_streaming) started\n\r");
 	mm_module_ctrl(ls_video_ctx, CMD_VIDEO_APPLY, V1_CHANNEL);	// start channel 1
 
 	return 0;
@@ -286,8 +290,9 @@ void lifetime_streaming_deinitialize(void) {
 
     //Pause individual audio
 #if VIDEO_AUDIO       
-    if (ls_siso_audio_aac) {
-        siso_pause(ls_siso_audio_aac);
+
+	if (ls_siso_audio_opusc) {
+        siso_pause(ls_siso_audio_opusc);
     }
 
     // Pause linker
@@ -304,9 +309,11 @@ void lifetime_streaming_deinitialize(void) {
 		mm_module_ctrl(ls_audio_ctx, CMD_I2S_SET_TRX, 0);
 	}
 #endif
-	if (ls_aac_ctx != NULL) {
-		mm_module_ctrl(ls_aac_ctx, CMD_AAC_STOP, 0);
+
+	if (ls_opusc_ctx != NULL) {
+		mm_module_ctrl(ls_opusc_ctx, CMD_OPUSC_STOP, 0);
 	}
+	
 #else
 	if (siso_ai_streaming) {
         siso_pause(siso_ai_streaming);
@@ -323,9 +330,9 @@ void lifetime_streaming_deinitialize(void) {
 
     // Delete linker
 #if VIDEO_AUDIO
-    if (ls_siso_audio_aac) {
-        siso_delete(ls_siso_audio_aac);
-	    ls_siso_audio_aac = NULL;
+    if (ls_siso_audio_opusc) {
+        siso_delete(ls_siso_audio_opusc);
+	    ls_siso_audio_opusc = NULL;
     }
 
     if (miso_ai_streaming) {
@@ -346,9 +353,9 @@ void lifetime_streaming_deinitialize(void) {
 	    ls_audio_ctx = NULL;
     }
     
-    if (ls_aac_ctx) {
-        mm_module_close(ls_aac_ctx);
-	    ls_aac_ctx = NULL;
+    if (ls_opusc_ctx) {
+        mm_module_close(ls_opusc_ctx);
+	    ls_opusc_ctx = NULL;
     }
 #endif	
     if (lifetime_streaming_ctx) {

@@ -18,6 +18,7 @@
 #include "vfs.h"
 #include "mmf2_mediatime_8735b.h"
 #include "ai_glass_dbg.h"
+#include "ai_glass_initialize.h"
 
 #define MAX_TAG_LEN                 32
 #define MAX_FILE_LEN                128
@@ -342,6 +343,15 @@ int extdisk_fseek(FILE *stream, long int offset, int origin)
 		return -1;
 	}
 	return fseek(stream, offset, origin);
+}
+
+int extdisk_fflush(FILE *stream)
+{
+	if (!ai_glass_extdisk_done) {
+		FILE_SYS_WARN("External disk is not initialized yet\r\n");
+		return -1;
+	}
+	return fflush(stream);
 }
 
 int extdisk_ftell(FILE *stream)

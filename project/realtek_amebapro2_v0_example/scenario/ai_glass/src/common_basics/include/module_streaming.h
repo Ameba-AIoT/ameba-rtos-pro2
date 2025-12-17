@@ -23,6 +23,7 @@
 #define CMD_STREAMING_SET_BIT_RATE       MM_MODULE_CMD(0x08)
 #define CMD_STREAMING_SET_PACKET_RETRY   MM_MODULE_CMD(0x09)
 #define CMD_STREAMING_SET_APPLY			 MM_MODULE_CMD(0x0a)
+#define CMD_STREAMING_SET_SAMPLE_RATE    MM_MODULE_CMD(0x0b)
 
 // Define types of streaming context or parameters
 #define STREAMING_TYPE_NON_BLOCK         0
@@ -48,6 +49,9 @@ typedef struct streaming_ctx_s {
     uint32_t total_bytes_sent;
     int (*end_streaming_cb)(void);
     uint32_t timestamp;
+    uint16_t timebase;
+    uint32_t video_seq;
+    uint32_t audio_seq;
 } streaming_ctx_t;
 
 extern mm_module_t streaming_module;

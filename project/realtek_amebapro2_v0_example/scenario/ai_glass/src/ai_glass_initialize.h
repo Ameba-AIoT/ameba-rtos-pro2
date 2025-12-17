@@ -16,7 +16,11 @@ extern volatile int critical_process_started;
 
 extern void ai_glass_init_external_disk(void);
 
-// Definition for ota method
-#define OTA_EMMC 0 
+#define EXTDISK_LOG   0
+#if EXTDISK_LOG
+// Functions to manage eMMC logging
+void ai_glass_extdisk_log_start(void);
+void ai_glass_extdisk_log_stop(void);
+#endif
 
 #endif //#ifndef __AI_GLASS_INITIALIZE_H__
