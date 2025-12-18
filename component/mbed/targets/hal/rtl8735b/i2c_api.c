@@ -76,6 +76,10 @@ hal_pin_map mbed_i2c_sda_pin_map[] = {
 	{0xFF,    0xFF} // end of table
 };
 
+_WEAK void i2c_user_config(i2c_t *obj) {
+
+}
+
 void i2c_init(i2c_t *obj, uint32_t sda, uint32_t scl)
 {
 	uint32_t i2c_idx = 0;
@@ -94,6 +98,7 @@ void i2c_init(i2c_t *obj, uint32_t sda, uint32_t scl)
 	dbg_printf("i2c_idx = %d\n\r", i2c_idx);
 	hal_i2c_load_default(&obj->i2c_adp, i2c_idx);
 	obj->i2c_adp.op_mode = I2CModeInterrupt;
+	i2c_user_config(obj);
 	//obj->i2c_adp.pltf_dat.tr_time_out = HP_I2C_TIMEOUT_DISABLE;
 	hal_i2c_init(&obj->i2c_adp, scl, sda);
 }

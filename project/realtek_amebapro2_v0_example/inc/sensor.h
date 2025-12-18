@@ -86,6 +86,9 @@ struct sensor_params_t {
 #define SENSOR_OV13B10        0x3F  //  |   v    |   v    |   -    |   -    |
 #define SENSOR_OV13B10_12M    0x40  //  |   v    |   -    |   -    |   -    |
 #define SENSOR_OV13B10_12M_SEQ 0x41  //  |   v    |   -    |   -    |   -    |
+#define SENSOR_OV12890         0x42  //  |   v    |   v    |   -    |   -    |
+#define SENSOR_OV12890_12M     0x43  //  |   v    |   -    |   -    |   -    |
+#define SENSOR_OV12890_12M_SEQ 0x44  //  |   v    |   -    |   -    |   -    |
 
 static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_DUMMY]        = {1920, 1080, 30},
@@ -153,7 +156,10 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_OS02H10]          = {1920, 1080, 30},
 	[SENSOR_OV13B10]  	      = {2096,  1560, 30},
 	[SENSOR_OV13B10_12M]      = {4032,  3024, 10},
-	[SENSOR_OV13B10_12M_SEQ]  = {2032,  1532, 5} //width = 2016 + 16(overlap) //height = 1512 + 20
+	[SENSOR_OV13B10_12M_SEQ]  = {2032,  1532, 5}, //width = 2016 + 16(overlap) //height = 1512 + 20
+	[SENSOR_OV12890]  	      = {2048,  1536, 30},
+	[SENSOR_OV12890_12M]      = {4032,  3024, 8},
+	[SENSOR_OV12890_12M_SEQ]  = {2032,  1532, 5}, //width = 2016 + 16(overlap) //height = 1512 + 20
 };
 
 #define SENSOR_MAX         5

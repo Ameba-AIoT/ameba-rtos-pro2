@@ -491,6 +491,8 @@ void hal_isp_verify_path_trigger(u32 delay_ms);
 int hal_isp_is_verify_path_last_trigger(void);
 int hal_isp_tuning_iq_nlsc(u32 idx, struct verify_ctrl_config v_cfg);
 void hal_isp_set_zoom_filter_coeff(u8* buff);
+void hal_isp_set_zoom_1x1_up_en(u32 en);
+u32 hal_isp_get_zoom_1x1_up_en(void);
 void hal_isp_set_verify_counter(void);
 u32 hal_isp_get_verify_counter(void);
 int hal_isp_set_statis_irq_en(u32 statis_irq_en);

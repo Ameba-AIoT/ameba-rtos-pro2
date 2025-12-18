@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: da5f2bb73e9e03214e8742655b0b57ab31e0bb76
+* [amebapro2][pir] add pir sensor example
+
 SHA-1: 83316f31c74b4ff2e5396ca89ce91c09693d066c
 * [amebapro2][video] WebSocket viewer source
 

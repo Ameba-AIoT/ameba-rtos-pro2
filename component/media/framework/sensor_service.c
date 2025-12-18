@@ -386,13 +386,12 @@ void sensor_thread(void *param)
 				day_night_mode_switch(gray_mode, auto_pwm_config.led_step[led_idx]);
 			}
 		}
-	}
 #endif
 #if(DEBUG_OSD)
-	sensor_service_osd();
+		sensor_service_osd();
 #endif
-	vTaskDelay(SERVICE_DURATION);
-}
+		vTaskDelay(SERVICE_DURATION);
+	}
 }
 #endif
 

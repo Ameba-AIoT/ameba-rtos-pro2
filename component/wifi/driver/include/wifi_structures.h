@@ -546,6 +546,11 @@ struct  wifi_user_conf {
 	unsigned char regulation2_4G;
 	unsigned char regulation5G;
 
+	/*
+	    The wifi_11v_enabled is used to configure the 11v settings, each bit controls one aspect.
+	bit 0: (0: disable 11v feature, 1:  enable 11v feature)
+	bit 1: (0: disable wifi_connect from the upper layer and enable roaming from the driver, 1:  enable wifi_connect from the upper layer and disable roaming from driver)
+	*/
 	unsigned char wifi_11v_enabled;
 	unsigned char wifi_11r_enabled;
 } ;
