@@ -1511,6 +1511,20 @@ static void ai_glass_set_gps(uartcmdpacket_t *param)
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_SET_GPS\r\n");
 }
 
+static void ai_glass_get_file_cnt(uartcmdpacket_t *param)
+{
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_FILE_CNT\r\n");
+	ai_glass_init_external_disk();
+	uint8_t result = AI_GLASS_CMD_COMPLETE;
+	uint16_t film_num = extdisk_get_filecount(SYS_COUNT_FILM_LABEL);
+	uint16_t snapshot_num = extdisk_get_filecount(SYS_COUNT_PIC_LABEL);
+
+	AI_GLASS_MSG("mp4 file num = %u\r\n", film_num);
+	AI_GLASS_MSG("jpg file num = %u\r\n", snapshot_num);
+	uart_resp_get_file_cnt(param, film_num, snapshot_num, result);
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_GET_FILE_CNT\r\n");
+}
+
 static void ai_glass_snapshot(uartcmdpacket_t *param)
 {
 	uint8_t status = AI_GLASS_CMD_COMPLETE;
@@ -1680,6 +1694,8 @@ lifetimesnapshot:
 		xSemaphoreGive(video_proc_sema);
 	}
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_SNAPSHOT = %lu\r\n", mm_read_mediatime_ms());
+	uartcmdpacket_t dummy_param;
+	ai_glass_get_file_cnt(&dummy_param);
 }
 
 static void ai_glass_get_file_name(uartcmdpacket_t *param)
@@ -1904,6 +1920,8 @@ static void ai_glass_record_start(uartcmdpacket_t *param)
 	}
 
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_RECORD_START\r\n");
+	uartcmdpacket_t dummy_param;
+	ai_glass_get_file_cnt(&dummy_param);
 }
 
 static void ai_glass_audio_start(uartcmdpacket_t *param)
@@ -2033,20 +2051,6 @@ static void ai_glass_audio_stop(uartcmdpacket_t *param)
 	}
 	uart_resp_audio_record_stop(record_stop_status);
 	AI_GLASS_MSG("end of UART_RX_OPC_CMD_AUDIO_STOP %lu\r\n", mm_read_mediatime_ms());
-}
-
-static void ai_glass_get_file_cnt(uartcmdpacket_t *param)
-{
-	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_FILE_CNT\r\n");
-	ai_glass_init_external_disk();
-	uint8_t result = AI_GLASS_CMD_COMPLETE;
-	uint16_t film_num = extdisk_get_filecount(SYS_COUNT_FILM_LABEL);
-	uint16_t snapshot_num = extdisk_get_filecount(SYS_COUNT_PIC_LABEL);
-
-	AI_GLASS_MSG("mp4 file num = %u\r\n", film_num);
-	AI_GLASS_MSG("jpg file num = %u\r\n", snapshot_num);
-	uart_resp_get_file_cnt(param, film_num, snapshot_num, result);
-	AI_GLASS_INFO("end of UART_RX_OPC_CMD_GET_FILE_CNT\r\n");
 }
 
 static void ai_glass_delete_file(uartcmdpacket_t *param)

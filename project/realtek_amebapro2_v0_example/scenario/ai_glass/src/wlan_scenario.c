@@ -2008,6 +2008,18 @@ static void delete_file_cb(struct httpd_conn *conn)
 			extdisk_remove(delete_file_name);
 			extdisk_save_file_cntlist();
 			WLAN_SCEN_MSG("Deleted file %s\r\n", delete_file_name);
+			uartcmdpacket_t dummy_param;
+			memset(&dummy_param, 0, sizeof(dummy_param));
+			AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_FILE_CNT\r\n");
+			ai_glass_init_external_disk();
+			uint8_t result = AI_GLASS_CMD_COMPLETE;
+			uint16_t film_num = extdisk_get_filecount(SYS_COUNT_FILM_LABEL);
+			uint16_t snapshot_num = extdisk_get_filecount(SYS_COUNT_PIC_LABEL);
+
+			AI_GLASS_MSG("mp4 file num = %u\r\n", film_num);
+			AI_GLASS_MSG("jpg file num = %u\r\n", snapshot_num);
+			uart_resp_get_file_cnt(&dummy_param, film_num, snapshot_num, result);
+			AI_GLASS_INFO("end of UART_RX_OPC_CMD_GET_FILE_CNT\r\n");
 		}
 		else {
 			WLAN_SCEN_ERR("File name is not extracted successfully\r\n");
