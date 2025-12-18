@@ -170,12 +170,85 @@ exit:
 }
 
 #if EXTDISK_LOG
-// eMMC-only logging function
+// 16 KB ring buffer for logging
+#define LOG_RING_SIZE (16 * 1024)
+static char log_ring[LOG_RING_SIZE];
+static volatile size_t log_head = 0; // write index
+static volatile size_t log_tail = 0; // read index
+
+// Non-blocking ring write: returns 1 on success, 0 if full
+static inline int log_ring_write(char c)
+{
+    size_t next = (log_head + 1) % LOG_RING_SIZE;
+    if (next == log_tail) {
+        // Ring full -> drop to avoid blocking
+        return 0;
+    }
+    log_ring[log_head] = c;
+    log_head = next;
+    return 1;
+}
+
 static void log_emmc_putc(void *arg, char c)
 {
-    if (g_emmc_log_enabled && g_emmc_log_fp) {
-        extdisk_fwrite(&c, 1, 1, g_emmc_log_fp);
-		extdisk_fflush(g_emmc_log_fp);
+    // Always send to UART (snapshot/record control depends on this)
+    wputc((phal_uart_adapter_t)arg, c);
+
+    // Mirror to RAM ring; never touch disk here
+    if (g_emmc_log_enabled) {
+        (void)log_ring_write(c);
+    }
+}
+#endif
+
+#if EXTDISK_LOG
+static SemaphoreHandle_t log_flush_mutex = NULL;
+static TaskHandle_t log_task_handle = NULL;
+
+// Dequeue up to 'max' bytes into 'out'; returns count
+static size_t log_ring_read_bulk(char *out, size_t max)
+{
+    size_t count = 0;
+    while (count < max && log_tail != log_head) {
+        out[count++] = log_ring[log_tail];
+        log_tail = (log_tail + 1) % LOG_RING_SIZE;
+    }
+    return count;
+}
+
+static void log_task(void *param)
+{
+    char buf[4096];
+    for (;;) {
+        if (!g_emmc_log_enabled || g_emmc_log_fp == NULL) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
+
+        size_t n = log_ring_read_bulk(buf, sizeof(buf));
+        if (n == 0) {
+            vTaskDelay(pdMS_TO_TICKS(20));
+            continue;
+        }
+
+        // Serialize disk writes
+        if (xSemaphoreTake(log_flush_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            // Best effort; if FS is busy, drop instead of blocking
+            int w = extdisk_fwrite(buf, 1, n, g_emmc_log_fp);
+            if (w == (int)n) {
+                // Flush only every N bytes to reduce overhead
+                static size_t bytes_since_flush = 0;
+                bytes_since_flush += n;
+                if (bytes_since_flush >= 8 * 1024) {
+                    extdisk_fflush(g_emmc_log_fp);
+                    bytes_since_flush = 0;
+                }
+            }
+            xSemaphoreGive(log_flush_mutex);
+        }
+
+        // Yield regardless, so we never hog CPU
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
 #endif
@@ -1290,6 +1363,19 @@ static void ai_glass_get_power_down(uartcmdpacket_t *param)
 	ai_glass_init_external_disk();
 	ret = extdisk_save_file_cntlist();
 	AI_GLASS_MSG("Save FILE Cnt List status: %d, %lu\r\n", ret, mm_read_mediatime_ms());
+#if EXTDISK_LOG
+    // Force push all pending logs before shutdown
+    if (g_emmc_log_enabled && g_emmc_log_fp && log_flush_mutex &&
+        xSemaphoreTake(log_flush_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        char buf[4096];
+        size_t n;
+        while ((n = log_ring_read_bulk(buf, sizeof(buf))) > 0) {
+            extdisk_fwrite(buf, 1, n, g_emmc_log_fp);
+        }
+        extdisk_fflush(g_emmc_log_fp);
+        xSemaphoreGive(log_flush_mutex);
+    }
+#endif
 	// Todo: get power down command
 	uart_resp_get_power_down(param, result);
 	xSemaphoreGive(video_proc_sema);
@@ -1677,6 +1763,8 @@ lifetimesnapshot:
 				}
 				critical_process_started = 0;
 				AI_GLASS_MSG("lifetime snapshot deinit done = %lu\r\n", mm_read_mediatime_ms());
+				uartcmdpacket_t dummy_param;
+				ai_glass_get_file_cnt(&dummy_param);
 			} else if (ret == -2) {
 				status = AI_GLASS_BUSY;
 				uart_resp_snapshot(param, status);
@@ -1694,8 +1782,6 @@ lifetimesnapshot:
 		xSemaphoreGive(video_proc_sema);
 	}
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_SNAPSHOT = %lu\r\n", mm_read_mediatime_ms());
-	uartcmdpacket_t dummy_param;
-	ai_glass_get_file_cnt(&dummy_param);
 }
 
 static void ai_glass_get_file_name(uartcmdpacket_t *param)
@@ -1781,6 +1867,8 @@ static void mp4_send_response_callback(struct tmrTimerControl *parm)
 				xSemaphoreGive(send_response_timermutex);
 				uart_resp_record_stop(record_resp_status);
 				AI_GLASS_MSG("mp4_send_response_callback UART_TX_OPC_RESP_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
+				uartcmdpacket_t dummy_param;
+				ai_glass_get_file_cnt(&dummy_param);
 				xSemaphoreGive(video_proc_sema);
 			} else {
 				if (current_state == STATE_RECORDING || current_state == STATE_IDLE) {
@@ -1821,6 +1909,8 @@ static void mp4_send_audio_response_callback(struct tmrTimerControl *parm)
 				xSemaphoreGive(send_audio_response_timermutex);
 				uart_resp_audio_record_stop(record_resp_status);
 				AI_GLASS_MSG("mp4_send_audio_response_callback UART_TX_OPC_RESP_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
+				uartcmdpacket_t dummy_param;
+				ai_glass_get_file_cnt(&dummy_param);
 				xSemaphoreGive(video_proc_sema);
 			} else {
 				if (current_state == STATE_RECORDING || current_state == STATE_IDLE) {
@@ -1920,8 +2010,6 @@ static void ai_glass_record_start(uartcmdpacket_t *param)
 	}
 
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_RECORD_START\r\n");
-	uartcmdpacket_t dummy_param;
-	ai_glass_get_file_cnt(&dummy_param);
 }
 
 static void ai_glass_audio_start(uartcmdpacket_t *param)
@@ -2023,6 +2111,8 @@ static void ai_glass_record_stop(uartcmdpacket_t *param)
 			}
 		}
 	}
+	uartcmdpacket_t dummy_param;
+	ai_glass_get_file_cnt(&dummy_param);
 	uart_resp_record_stop(record_stop_status);
 	AI_GLASS_MSG("end of UART_RX_OPC_CMD_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
 }
@@ -2049,6 +2139,8 @@ static void ai_glass_audio_stop(uartcmdpacket_t *param)
 			}
 		}
 	}
+	uartcmdpacket_t dummy_param;
+	ai_glass_get_file_cnt(&dummy_param);
 	uart_resp_audio_record_stop(record_stop_status);
 	AI_GLASS_MSG("end of UART_RX_OPC_CMD_AUDIO_STOP %lu\r\n", mm_read_mediatime_ms());
 }
@@ -2434,14 +2526,13 @@ void uart_fun_regist(void)
 }
 
 #if EXTDISK_LOG
+
 void ai_glass_extdisk_log_start(void)
 {
-	if (g_emmc_log_enabled) {
+    if (g_emmc_log_enabled) {
         AI_GLASS_INFO("[AIGLASS] eMMC log already active, skipping start.\n");
         return;
     }
-
-    AI_GLASS_INFO("[AIGLASS] Starting eMMC log...\n");
 
     ai_glass_init_external_disk();
 
@@ -2453,34 +2544,55 @@ void ai_glass_extdisk_log_start(void)
 
     g_emmc_log_enabled = true;
 
-    // Hook stdio port to eMMC-only output
+    // Bind stdio to our non-blocking putc
     stdio_port_init_s((void *)&log_uart, (stdio_putc_t)log_emmc_putc, (stdio_getc_t)&hal_uart_rgetc);
     stdio_port_init_ns((void *)&log_uart, (stdio_putc_t)log_emmc_putc, (stdio_getc_t)&hal_uart_rgetc);
+
+    // Create logger infra once
+    if (!log_flush_mutex) {
+        log_flush_mutex = xSemaphoreCreateMutex();
+    }
+    if (!log_task_handle) {
+        xTaskCreate(log_task, "log_task", 2048, NULL, tskIDLE_PRIORITY + 1, &log_task_handle);
+    }
 
     AI_GLASS_INFO("[AIGLASS] eMMC logging active: uart_log.txt\n");
 }
 
 void ai_glass_extdisk_log_stop(void)
 {
-	if (!g_emmc_log_enabled) {
+    if (!g_emmc_log_enabled) {
         AI_GLASS_INFO("[AIGLASS] eMMC log not active, skipping stop.\n");
         return;
     }
-	
-    AI_GLASS_INFO("[AIGLASS] Stopping eMMC log...\n");
+
     g_emmc_log_enabled = false;
+    // Prevent logger from writing while we close the file
+
+    // Drain remaining ring quickly
+    if (g_emmc_log_fp && log_flush_mutex &&
+        xSemaphoreTake(log_flush_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        char buf[4096];
+        size_t n;
+        while ((n = log_ring_read_bulk(buf, sizeof(buf))) > 0) {
+            extdisk_fwrite(buf, 1, n, g_emmc_log_fp);
+        }
+        extdisk_fflush(g_emmc_log_fp);
+        xSemaphoreGive(log_flush_mutex);
+    }
 
     if (g_emmc_log_fp) {
         extdisk_fclose(g_emmc_log_fp);
         g_emmc_log_fp = NULL;
     }
 
-    // Restore UART-only output
+    // Restore UART-only stdio
     stdio_port_init_s((void *)&log_uart, (stdio_putc_t)wputc, (stdio_getc_t)&hal_uart_rgetc);
     stdio_port_init_ns((void *)&log_uart, (stdio_putc_t)wputc, (stdio_getc_t)&hal_uart_rgetc);
 
     printf("[AIGLASS] eMMC logging stopped.\n");
 }
+
 
 #endif
 
