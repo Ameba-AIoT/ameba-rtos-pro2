@@ -1023,7 +1023,7 @@ int lifetime_hr_snapshot_initialize(isp_info_sync_t *isp_info)
 	init_params.init_isp_items.init_saturation = 50;
 	init_params.init_isp_items.init_wdr_mode = 0; // disable WDR for 12M snapshot
 	init_params.init_isp_items.init_mipi_mode = 0;
-	init_params.voe_dbg_disable = 1;
+	init_params.voe_dbg_disable = !APP_VOE_LOG_EN;
 	init_params.isp_ae_enable = 1;
 	init_params.isp_awb_enable = 1;
 	init_params.init_isp_items.init_mirrorflip = 0xf0;

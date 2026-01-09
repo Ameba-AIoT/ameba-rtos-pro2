@@ -704,7 +704,7 @@ void mmf2_video_example_v1_snapshot_hr_init(void)
 	init_params.init_isp_items.init_wdr_mode = WDR_AUTO;
 	init_params.init_isp_items.init_wdr_level = 50;
 	init_params.init_isp_items.init_mipi_mode = 0;
-	init_params.voe_dbg_disable = 1;
+	init_params.voe_dbg_disable = !APP_VOE_LOG_EN;
 	video_v1_ctx = mm_module_open(&video_module);
 	if (video_v1_ctx) {
 		video_v1_params.direct_output = 1;
