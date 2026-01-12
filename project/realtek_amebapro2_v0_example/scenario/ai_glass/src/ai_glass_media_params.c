@@ -163,6 +163,10 @@ static ai_glass_snapshot_param_t life_snapshot_params = {
 	.rotation = DEFAULT_LIFESNAP_ROTATION,
 };
 
+static ai_glass_wifi_param_t wifi_channel_params = {
+       .channel = 0, 
+};
+
 static mm_context_t *video_fake_ctx = NULL;
 
 static video_params_t video_fake_params = {
@@ -602,6 +606,17 @@ static int media_set_stream_params(const ai_glass_stream_param_t *params)
     return ret;
 }
 
+static int media_set_wifi_channel_params(const ai_glass_wifi_param_t *params)
+{
+       if (params) {
+               wifi_channel_params.channel = params->channel;
+               return MEDIA_OK;
+       } else {
+               return MEDIA_FAIL;
+       }
+}
+
+
 static int media_update_record_params_to_flash(const ai_glass_record_param_t *params)
 {
 	// update data to flash
@@ -757,6 +772,43 @@ static int media_update_stream_params_to_flash(const ai_glass_stream_param_t *pa
     }
     return MEDIA_OK;
 }
+
+static int media_update_wifi_channel_params_to_flash(const ai_glass_wifi_param_t *params)
+{
+       unsigned char *wifi_channel_buf = malloc(FLASH_WIFI_CHANNEL_BLOCK_SIZE); 
+       unsigned int flash_addr = 0;
+       if (sys_get_boot_sel() == 0) {
+               flash_addr = FLASH_WIFI_CHANNEL_BLOCK_BASE;
+       } else {
+               // Placeholder for NAND FLASH ADDR in future
+       }
+       if (wifi_channel_buf == NULL) {
+               AI_GLASS_ERR("It can't get the wifi channel buffer\r\n");
+               return MEDIA_FAIL;
+       }
+
+       memset(wifi_channel_buf, 0x00, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
+       wifi_channel_buf[0] = 'A';  // Add tag for identification (AI snapshot params)
+       wifi_channel_buf[1] = 'I';
+       wifi_channel_buf[2] = 'W';
+       wifi_channel_buf[3] = 'I';
+       wifi_channel_buf[4] = 'F';
+       wifi_channel_buf[5] = 'I';
+
+       memcpy(wifi_channel_buf + 6, params, sizeof(ai_glass_wifi_param_t));
+       ftl_common_write(flash_addr, wifi_channel_buf, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
+       memset(wifi_channel_buf, 0xff, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
+       ftl_common_read(flash_addr, wifi_channel_buf, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
+       ai_glass_wifi_param_t *read_data = (ai_glass_wifi_param_t *)(wifi_channel_buf + 6);
+       AI_GLASS_MSG("\r\n[FLASH_WIFI] channel: %d\r\n",
+                                 read_data->channel);
+
+       if (wifi_channel_buf) {
+               free(wifi_channel_buf);
+       }
+       return MEDIA_OK;
+}
+
 
 static int media_get_record_params_from_flash(ai_glass_record_param_t *params)
 {
@@ -1229,6 +1281,18 @@ void initial_media_parameters(void)
         stream_data_update_if_valid(&stream_params, &temp_stream_params);
     }
     media_update_stream_params_to_flash(&stream_params);
+}
+
+int media_update_wifi_channel_params(const ai_glass_wifi_param_t *params)
+{
+	int ret = media_set_wifi_channel_params(params);
+	if (ret == MEDIA_OK) {
+		// update data to flash
+		return media_update_wifi_channel_params_to_flash(params);
+	} else if (ret == MEDIA_NO_NEED_TO_UPDATE) {
+		return MEDIA_OK;
+	}
+	return MEDIA_FAIL;
 }
 
 void deinitial_media(void)

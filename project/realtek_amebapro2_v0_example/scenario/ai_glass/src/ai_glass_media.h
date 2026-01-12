@@ -14,13 +14,17 @@
 #define FLASH_FW_SELECT_ADDR            (FLASH_APP_BASE + 0x1000) // Remain 1K after FLASH_APP_BASE
 #define FLASH_FW_SELECT_SIZE            0x100
 #define FLASH_AI_SNAP_BLOCK_BASE        (FLASH_FW_SELECT_ADDR + FLASH_FW_SELECT_SIZE)
-#define FLASH_AI_SNAP_BLOCK_SIZE        0x200
+#define FLASH_AI_SNAP_BLOCK_SIZE        0x100
 #define FLASH_REC_BLOCK_BASE            (FLASH_AI_SNAP_BLOCK_BASE + FLASH_AI_SNAP_BLOCK_SIZE) //Store the AI Glass Record params
-#define FLASH_REC_BLOCK_SIZE            0x200
+#define FLASH_REC_BLOCK_SIZE            0x100
 #define FLASH_LIFE_SNAP_BLOCK_BASE      (FLASH_REC_BLOCK_BASE + FLASH_REC_BLOCK_SIZE) //Store the AI Glass Snapshot params
-#define FLASH_LIFE_SNAP_BLOCK_SIZE      0x200
+#define FLASH_LIFE_SNAP_BLOCK_SIZE      0x100
 #define FLASH_STREAM_BLOCK_BASE         (FLASH_LIFE_SNAP_BLOCK_BASE + FLASH_LIFE_SNAP_BLOCK_SIZE)
-#define FLASH_STREAM_BLOCK_SIZE         0x200
+#define FLASH_STREAM_BLOCK_SIZE         0x100
+
+//Nor Flash Address to store Wifi Channel info
+#define FLASH_WIFI_CHANNEL_BLOCK_BASE   (FLASH_STREAM_BLOCK_BASE + FLASH_STREAM_BLOCK_SIZE)
+#define FLASH_WIFI_CHANNEL_BLOCK_SIZE   0x50
 
 // Todo: Nand Flash Address To Store Snapshot/Record data
 
@@ -132,6 +136,11 @@ typedef struct ai_glass_stream_param_s {
     uint8_t     profile;    // VCENC_H264_BASE_PROFILE, MAIN_PROFILE, etc.
     uint8_t     cavlc;      // 1 for CAVLC, 0 for CABAC
 } ai_glass_stream_param_t;
+
+//wifi channel info, can add more in future if needed
+typedef struct ai_glass_wifi_param_s {
+       unsigned char channel;
+} ai_glass_wifi_param_t;
 
 typedef struct isp_info_sync_s {
 	uint32_t isp_exposure_time;
@@ -262,6 +271,9 @@ void wifi_streaming_deinitialize(void);
 void print_stream_data(const ai_glass_stream_param_t *params);
 int media_get_stream_params(ai_glass_stream_param_t *params);
 int media_update_stream_params(const ai_glass_stream_param_t *params);
+
+//wifi channel info
+int media_update_wifi_channel_params(const ai_glass_wifi_param_t *params);
 
 // life audio
 int lifetime_audio_initialize(uint8_t record_filename_length, const char *filename);

@@ -715,6 +715,11 @@ static void print_wifi_setting(const char *ifname, rtw_wifi_setting_t *pSetting)
 #endif
     RTW_API_INFO("\n\r      SSID => %s", pSetting->ssid);
     RTW_API_INFO("\n\r   CHANNEL => %d", pSetting->channel);
+
+	ai_glass_wifi_param_t wifi_param = {0};
+    wifi_param.channel = pSetting->channel;
+
+    media_update_wifi_channel_params(&wifi_param);
  
     switch (pSetting->security_type) {
     case RTW_SECURITY_OPEN:
@@ -2104,9 +2109,6 @@ int wifi_enable_sta_mode(rtw_network_info_t *connect_param, int timeout, int ret
 	}
 #endif
 #endif
-	if (connect_param->channel != 0) {
-		wifi_set_channel(connect_param->channel);
-	}
 
 	if (wifi_on(RTW_MODE_STA) < 0) {
 		AI_GLASS_ERR("\n\r[SET STATION MODE] ERROR: wifi_on failed\n");
@@ -2115,11 +2117,50 @@ int wifi_enable_sta_mode(rtw_network_info_t *connect_param, int timeout, int ret
 
 	WLAN_SCEN_WARN("wifi_connect cmd done %lu\r\n", mm_read_mediatime_ms());
 
-	wifi_config_autoreconnect_ms(1, retry, timeout);
+	wifi_config_autoreconnect_ms(0, retry, timeout);
 	int ret = 0;
 
 	if (strcmp((const char *) read_data.psk_essid, (const char *) connect_param->ssid.val) != 0) {
+		
+		unsigned char *wifi_channel_buf = malloc(FLASH_WIFI_CHANNEL_BLOCK_SIZE);
+		if (!wifi_channel_buf) {
+			AI_GLASS_ERR("Failed to allocate memory for wifi_channel_buf\n");
+			return WLAN_SET_FAIL;
+		}
+		unsigned int flash_addr = FLASH_WIFI_CHANNEL_BLOCK_BASE;
+		ftl_common_read(flash_addr, wifi_channel_buf, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
+		
+		ai_glass_wifi_param_t param;
+
+		memcpy(&param, wifi_channel_buf + 6, sizeof(param));
+		printf("WiFi channel = %u\r\n", param.channel);
+		wifi_set_channel(param.channel);
+
+		connect_param->channel = param.channel;
+		connect_param->pscan_option = PSCAN_FAST_SURVEY; 
+	
 		ret = wifi_connect(connect_param, 1);
+		if (ret != RTW_SUCCESS) {
+			WLAN_SCEN_WARN("First wifi_connect failed, try again... %lu\r\n",
+						mm_read_mediatime_ms());
+
+			ret = wifi_connect(connect_param, 1);
+			if (ret != RTW_SUCCESS) {
+				WLAN_SCEN_WARN("Second wifi_connect failed, try again... %lu\r\n",
+							mm_read_mediatime_ms());
+
+				wifi_config_autoreconnect_ms(1, retry, timeout);
+				if (connect_param->channel != 0) {
+					wifi_set_channel(connect_param->channel);
+					connect_param->pscan_option = PSCAN_FAST_SURVEY;
+				}
+
+				ret = wifi_connect(connect_param, 1);
+			}
+		}
+		
+		free(wifi_channel_buf);
+		wifi_channel_buf = NULL;
 
 		WLAN_SCEN_WARN("wifi_connect cmd done %lu\r\n", mm_read_mediatime_ms());
 
