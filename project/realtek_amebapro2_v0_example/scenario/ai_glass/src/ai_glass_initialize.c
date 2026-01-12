@@ -105,7 +105,10 @@ static void (*wputc)(phal_uart_adapter_t puart_adapter, uint8_t tx_data) = hal_u
 static FILE *g_emmc_log_fp = NULL;
 static bool g_emmc_log_enabled = false;
 extern hal_uart_adapter_t log_uart;
+static uint8_t s_log_flush_buf[1024];  // 1KB is plenty; loop until ring empty
 #endif
+
+char burst_filename[160] = {0};
 
 static int usb_msc_device_init(void)
 {
@@ -1367,10 +1370,9 @@ static void ai_glass_get_power_down(uartcmdpacket_t *param)
     // Force push all pending logs before shutdown
     if (g_emmc_log_enabled && g_emmc_log_fp && log_flush_mutex &&
         xSemaphoreTake(log_flush_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        char buf[4096];
         size_t n;
-        while ((n = log_ring_read_bulk(buf, sizeof(buf))) > 0) {
-            extdisk_fwrite(buf, 1, n, g_emmc_log_fp);
+        while ((n = log_ring_read_bulk((char *)s_log_flush_buf, sizeof(s_log_flush_buf))) > 0) {
+            extdisk_fwrite(s_log_flush_buf, 1, n, g_emmc_log_fp);
         }
         extdisk_fflush(g_emmc_log_fp);
         xSemaphoreGive(log_flush_mutex);
@@ -1614,6 +1616,7 @@ static void ai_glass_get_file_cnt(uartcmdpacket_t *param)
 static void ai_glass_snapshot(uartcmdpacket_t *param)
 {
 	uint8_t status = AI_GLASS_CMD_COMPLETE;
+	uint8_t mode = 0;
 	ai_glass_snapshot_param_t ai_snap_params = {0};
 	isp_info_sync_t isp_info = {0};
 	AI_GLASS_MSG("get UART_RX_OPC_CMD_SNAPSHOT = %lu\r\n", mm_read_mediatime_ms());
@@ -1624,9 +1627,22 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 		} else {
 			AI_GLASS_WARN("AI glass snapshot burst, snapshot + 1\r\n");
 			total_burst++;
+			uint8_t *snapshot_param = uart_parser_snapshot_video_info(param, &mode);
+			uint8_t file_name_length = snapshot_param[0];
+				char temp_record_filename_buffer[160] = {0};
+				if (file_name_length > 0 && file_name_length <= 125 && dual_snapshot != 1) {
+					char uart_filename_str[160] = {0};
+					memset(uart_filename_str, 0, file_name_length + 1);
+					memcpy(uart_filename_str, snapshot_param + 1, file_name_length);
+					AI_GLASS_MSG("Filename retrieved from 8773 when snapshot + 1\r\n"); 
+					extdisk_generate_unique_filename("", uart_filename_str, ".jpg", (char *)temp_record_filename_buffer, 160);
+					/* copy into the shared global (no local burst_filename) */ 
+					strncpy(burst_filename, temp_record_filename_buffer, 160 - 1); 
+					burst_filename[160 - 1] = '\0'; 
+					AI_GLASS_MSG("generated filename (burst): %s\r\n", burst_filename);
+				}
 		}
 	} else {
-		uint8_t mode = 0;
 		uint8_t *snapshot_param = uart_parser_snapshot_video_info(param, &mode);
 		AI_GLASS_MSG("%s get mode = %d\r\n", __func__, mode);
 		if (mode == 1) {
@@ -2421,7 +2437,7 @@ static void ai_glass_rtsp_live_start(uartcmdpacket_t *param)
 	result = AI_GLASS_CMD_COMPLETE;
 	//STEP 4: Respond status
 	uart_resp_rtsp_live_start(param, result);
-	AI_GLASS_INFO("get UART_RX_OPC_CMD_LIVE_START END\r\n");
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_RTSP_LIVE_START END\r\n");
 }
 
 void ai_glass_rtsp_live_stop(uartcmdpacket_t *param)
@@ -2561,21 +2577,24 @@ void ai_glass_extdisk_log_start(void)
 
 void ai_glass_extdisk_log_stop(void)
 {
+    // DO NOT print in this path; formatted printing consumes stack
     if (!g_emmc_log_enabled) {
-        AI_GLASS_INFO("[AIGLASS] eMMC log not active, skipping stop.\n");
+        // Optional: avoid print here too
+        // AI_GLASS_INFO("[AIGLASS] eMMC log not active, skipping stop.\n");
         return;
     }
 
-    g_emmc_log_enabled = false;
-    // Prevent logger from writing while we close the file
+    // Freeze the producer
+    if (log_task_handle) vTaskSuspend(log_task_handle);
 
-    // Drain remaining ring quickly
+    g_emmc_log_enabled = false;
+
+    // Drain remaining ring
     if (g_emmc_log_fp && log_flush_mutex &&
         xSemaphoreTake(log_flush_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        char buf[4096];
         size_t n;
-        while ((n = log_ring_read_bulk(buf, sizeof(buf))) > 0) {
-            extdisk_fwrite(buf, 1, n, g_emmc_log_fp);
+        while ((n = log_ring_read_bulk((char *)s_log_flush_buf, sizeof(s_log_flush_buf))) > 0) {
+            extdisk_fwrite(s_log_flush_buf, 1, n, g_emmc_log_fp);
         }
         extdisk_fflush(g_emmc_log_fp);
         xSemaphoreGive(log_flush_mutex);
@@ -2586,13 +2605,29 @@ void ai_glass_extdisk_log_stop(void)
         g_emmc_log_fp = NULL;
     }
 
-    // Restore UART-only stdio
+    // Rebind to UART-only (lightweight)
     stdio_port_init_s((void *)&log_uart, (stdio_putc_t)wputc, (stdio_getc_t)&hal_uart_rgetc);
     stdio_port_init_ns((void *)&log_uart, (stdio_putc_t)wputc, (stdio_getc_t)&hal_uart_rgetc);
 
-    printf("[AIGLASS] eMMC logging stopped.\n");
+    // Avoid prints here to keep stack low
+    if (log_task_handle) vTaskResume(log_task_handle);
 }
 
+
+void ai_glass_log_flush(void)
+{
+    if (g_emmc_log_enabled && g_emmc_log_fp && log_flush_mutex &&
+        xSemaphoreTake(log_flush_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        size_t n, total = 0;
+        while ((n = log_ring_read_bulk((char *)s_log_flush_buf, sizeof(s_log_flush_buf))) > 0) {
+            int w = extdisk_fwrite(s_log_flush_buf, 1, n, g_emmc_log_fp);
+            if (w > 0) total += w;
+        }
+        extdisk_fflush(g_emmc_log_fp);
+        xSemaphoreGive(log_flush_mutex);
+        printf("[AIGLASS] Force flushed %zu bytes to disk\n", total);
+    }
+}
 
 #endif
 
@@ -2711,6 +2746,13 @@ void fDISKFORMAT(void *arg)
 {
 	ai_glass_init_external_disk();
 	AI_GLASS_MSG("Format disk to FAT32\r\n");
+
+#if EXTDISK_LOG
+	
+	ai_glass_extdisk_log_stop();
+
+#endif
+
 	int ret = vfs_user_format(ai_glass_disk_name, VFS_FATFS, EXTDISK_PLATFORM);
 	if (ret == FR_OK) {
 		AI_GLASS_MSG("format successfully\r\n");

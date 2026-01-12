@@ -8,6 +8,7 @@
 #include "module_audio.h"
 #include "module_i2s.h"
 #include "module_opusc.h"
+#include "module_aac.h"
 #include "log_service.h"
 #include "sensor.h"
 #include "ai_glass_dbg.h"
@@ -22,16 +23,23 @@
 //Modules
 static mm_context_t *streaming_video_ctx = NULL;
 static mm_context_t *streaming_audio_ctx = NULL;
-static mm_context_t *streaming_opusc_ctx = NULL;
+// static mm_context_t *streaming_opusc_ctx = NULL;
+static mm_context_t *streaming_aac_ctx   = NULL;
 static mm_context_t *streaming_rtsp2_ctx = NULL;
 
 //Linkers
-static mm_siso_t *siso_streaming_audio_opusc = NULL;
-static mm_miso_t *miso_streaming_video_opusc_rtsp = NULL;
+// static mm_siso_t *siso_streaming_audio_opusc = NULL;
+// static mm_miso_t *miso_streaming_video_opusc_rtsp = NULL;
+
+static mm_siso_t *siso_streaming_audio_aac = NULL;
+static mm_miso_t *miso_streaming_video_aac_rtsp = NULL;
 
 static video_params_t streaming_video_params = {
     .stream_id = MAIN_STREAM_ID,
-    .use_static_addr = 1
+    .use_static_addr = 1,
+	.level = VCENC_H264_LEVEL_4_1,
+	.profile = VCENC_H264_MAIN_PROFILE,
+	.cavlc = 1
 };
 
 #if AUDIO_SRC==AUDIO_INTERFACE
@@ -84,18 +92,30 @@ static int i2s_samplerate2index(int samplerate)
 }
 #endif
 
-static opusc_params_t opusc_rtsp_params = {
-	.sample_rate = 16000,
-	.channel = 1,
-	.bit_length = 16,			//16 recommand
-	.complexity = 5,			//0~10
-	.bitrate = 25000,			//default 25000
-	.use_framesize = 40,		//needs to the same or bigger than AUDIO_DMA_PAGE_SIZE/(sample_rate/1000)/2 but less than 60
-	.enable_vbr = 1,
-	.vbr_constraint = 0,
-	.packetLossPercentage = 0,
-	.opus_application = OPUS_APPLICATION_AUDIO
+// static opusc_params_t opusc_rtsp_params = {
+// 	.sample_rate = 16000,
+// 	.channel = 1,
+// 	.bit_length = 16,			//16 recommand
+// 	.complexity = 5,			//0~10
+// 	.bitrate = 25000,			//default 25000
+// 	.use_framesize = 40,		//needs to the same or bigger than AUDIO_DMA_PAGE_SIZE/(sample_rate/1000)/2 but less than 60
+// 	.enable_vbr = 1,
+// 	.vbr_constraint = 0,
+// 	.packetLossPercentage = 0,
+// 	.opus_application = OPUS_APPLICATION_AUDIO
 
+// };
+
+static aac_params_t aac_params = {
+	.sample_rate = AUDIO_SAMPLE_RATE,
+	.channel = 1,
+	.trans_type = AAC_TYPE_ADTS,
+	.object_type = AAC_AOT_LC,
+	.bitrate = 32000,
+
+	.mem_total_size = 10 * 1024,
+	.mem_block_size = 128,
+	.mem_frame_size = 1024
 };
 
 static rtsp2_params_t rtsp2_v1_params = {
@@ -111,10 +131,10 @@ static rtsp2_params_t rtsp2_a_opus_params = {
 	.type = AVMEDIA_TYPE_AUDIO,
 	.u = {
 		.a = {
-			.codec_id   = AV_CODEC_ID_OPUS,
+			.codec_id   = AV_CODEC_ID_MP4A_LATM,
 			.channel    = 1,
-			.samplerate = 16000,
-			.frame_size = 40	//equal to use_framesize in opusc_rtsp_params
+			.samplerate = AUDIO_SAMPLE_RATE,
+			// .frame_size = 40	//equal to use_framesize in opusc_rtsp_params
 		}
 	}
 };
@@ -179,14 +199,26 @@ int wifi_streaming_initialize(void)
 	}
 #endif
 
-	streaming_opusc_ctx = mm_module_open(&opusc_module);
-	if(streaming_opusc_ctx) {
-		mm_module_ctrl(streaming_opusc_ctx, CMD_OPUSC_SET_PARAMS, (int)&opusc_rtsp_params);
-		mm_module_ctrl(streaming_opusc_ctx, MM_CMD_SET_QUEUE_LEN, 6);
-		mm_module_ctrl(streaming_opusc_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
-		mm_module_ctrl(streaming_opusc_ctx, CMD_OPUSC_APPLY, 0);
+	// streaming_opusc_ctx = mm_module_open(&opusc_module);
+	// if(streaming_opusc_ctx) {
+	// 	mm_module_ctrl(streaming_opusc_ctx, CMD_OPUSC_SET_PARAMS, (int)&opusc_rtsp_params);
+	// 	mm_module_ctrl(streaming_opusc_ctx, MM_CMD_SET_QUEUE_LEN, 6);
+	// 	mm_module_ctrl(streaming_opusc_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
+	// 	mm_module_ctrl(streaming_opusc_ctx, CMD_OPUSC_APPLY, 0);
+	// } else {
+	// 	AI_GLASS_ERR("OPUSC  open fail\n\r");
+	// 	goto wifi_streaming_initialize_fail;
+	// }
+
+	streaming_aac_ctx = mm_module_open(&aac_module);
+	if(streaming_aac_ctx) {
+		mm_module_ctrl(streaming_aac_ctx, CMD_AAC_SET_PARAMS, (int)&aac_params);
+		mm_module_ctrl(streaming_aac_ctx, MM_CMD_SET_QUEUE_LEN, 6);
+		mm_module_ctrl(streaming_aac_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
+		mm_module_ctrl(streaming_aac_ctx, CMD_AAC_INIT_MEM_POOL, 0);
+		mm_module_ctrl(streaming_aac_ctx, CMD_AAC_APPLY, 0);
 	} else {
-		AI_GLASS_ERR("OPUSC  open fail\n\r");
+		AI_GLASS_ERR("aac open fail\n\r");
 		goto wifi_streaming_initialize_fail;
 	}
 
@@ -220,25 +252,49 @@ int wifi_streaming_initialize(void)
 	}
 
 
-	siso_streaming_audio_opusc = siso_create();
-	if (siso_streaming_audio_opusc) {
-		siso_ctrl(siso_streaming_audio_opusc, MMIC_CMD_ADD_INPUT, (uint32_t)streaming_audio_ctx, 0);
-		siso_ctrl(siso_streaming_audio_opusc, MMIC_CMD_ADD_OUTPUT, (uint32_t)streaming_opusc_ctx, 0);
-		siso_ctrl(siso_streaming_audio_opusc, MMIC_CMD_SET_TASKPRIORITY, 4, 0);
-		siso_ctrl(siso_streaming_audio_opusc, MMIC_CMD_SET_STACKSIZE, 24 * 1024, 0);
-		siso_start(siso_streaming_audio_opusc);
+	// siso_streaming_audio_opusc = siso_create();
+	// if (siso_streaming_audio_opusc) {
+	// 	siso_ctrl(siso_streaming_audio_opusc, MMIC_CMD_ADD_INPUT, (uint32_t)streaming_audio_ctx, 0);
+	// 	siso_ctrl(siso_streaming_audio_opusc, MMIC_CMD_ADD_OUTPUT, (uint32_t)streaming_opusc_ctx, 0);
+	// 	siso_ctrl(siso_streaming_audio_opusc, MMIC_CMD_SET_TASKPRIORITY, 4, 0);
+	// 	siso_ctrl(siso_streaming_audio_opusc, MMIC_CMD_SET_STACKSIZE, 24 * 1024, 0);
+	// 	siso_start(siso_streaming_audio_opusc);
+	// } else {
+	// 	AI_GLASS_ERR("lr siso audio opus open fail\n\r");
+	// 	goto wifi_streaming_initialize_fail;
+	// }
+
+	siso_streaming_audio_aac = siso_create();
+	if (siso_streaming_audio_aac) {
+		siso_ctrl(siso_streaming_audio_aac, MMIC_CMD_ADD_INPUT, (uint32_t)streaming_audio_ctx, 0);
+		siso_ctrl(siso_streaming_audio_aac, MMIC_CMD_ADD_OUTPUT, (uint32_t)streaming_aac_ctx, 0);
+		siso_ctrl(siso_streaming_audio_aac, MMIC_CMD_SET_TASKPRIORITY, 4, 0);
+		siso_ctrl(siso_streaming_audio_aac, MMIC_CMD_SET_STACKSIZE, 44 * 1024, 0);
+		siso_start(siso_streaming_audio_aac);
 	} else {
 		AI_GLASS_ERR("lr siso audio aac open fail\n\r");
 		goto wifi_streaming_initialize_fail;
 	}
 
-	miso_streaming_video_opusc_rtsp = miso_create();
-	if (miso_streaming_video_opusc_rtsp) {
-		miso_ctrl(miso_streaming_video_opusc_rtsp, MMIC_CMD_ADD_INPUT0, (uint32_t)streaming_video_ctx, 0);
-		miso_ctrl(miso_streaming_video_opusc_rtsp, MMIC_CMD_ADD_INPUT1, (uint32_t)streaming_opusc_ctx, 0);
-		miso_ctrl(miso_streaming_video_opusc_rtsp, MMIC_CMD_ADD_OUTPUT0, (uint32_t)streaming_rtsp2_ctx, 0);
-		miso_ctrl(miso_streaming_video_opusc_rtsp, MMIC_CMD_SET_TASKPRIORITY, 4, 0);
-		miso_start(miso_streaming_video_opusc_rtsp);
+	// miso_streaming_video_opusc_rtsp = miso_create();
+	// if (miso_streaming_video_opusc_rtsp) {
+	// 	miso_ctrl(miso_streaming_video_opusc_rtsp, MMIC_CMD_ADD_INPUT0, (uint32_t)streaming_video_ctx, 0);
+	// 	miso_ctrl(miso_streaming_video_opusc_rtsp, MMIC_CMD_ADD_INPUT1, (uint32_t)streaming_aac_ctx, 0);
+	// 	miso_ctrl(miso_streaming_video_opusc_rtsp, MMIC_CMD_ADD_OUTPUT0, (uint32_t)streaming_rtsp2_ctx, 0);
+	// 	miso_ctrl(miso_streaming_video_opusc_rtsp, MMIC_CMD_SET_TASKPRIORITY, 4, 0);
+	// 	miso_start(miso_streaming_video_opusc_rtsp);
+	// } else {
+	// 	AI_GLASS_ERR("miso open fail for video streaming\n\r");
+	// 	goto wifi_streaming_initialize_fail;
+	// }
+
+	miso_streaming_video_aac_rtsp = miso_create();
+	if (miso_streaming_video_aac_rtsp) {
+		miso_ctrl(miso_streaming_video_aac_rtsp, MMIC_CMD_ADD_INPUT0, (uint32_t)streaming_video_ctx, 0);
+		miso_ctrl(miso_streaming_video_aac_rtsp, MMIC_CMD_ADD_INPUT1, (uint32_t)streaming_aac_ctx, 0);
+		miso_ctrl(miso_streaming_video_aac_rtsp, MMIC_CMD_ADD_OUTPUT0, (uint32_t)streaming_rtsp2_ctx, 0);
+		miso_ctrl(miso_streaming_video_aac_rtsp, MMIC_CMD_SET_TASKPRIORITY, 4, 0);
+		miso_start(miso_streaming_video_aac_rtsp);
 	} else {
 		AI_GLASS_ERR("miso open fail for video streaming\n\r");
 		goto wifi_streaming_initialize_fail;
@@ -269,24 +325,32 @@ int wifi_streaming_initialize(void)
 void wifi_streaming_deinitialize(void) {
 
 	//Pause Linker
-	miso_pause(miso_streaming_video_opusc_rtsp, MM_OUTPUT);
-	siso_pause(siso_streaming_audio_opusc);
+	// miso_pause(miso_streaming_video_opusc_rtsp, MM_OUTPUT);
+	// siso_pause(siso_streaming_audio_opusc);
+
+	miso_pause(miso_streaming_video_aac_rtsp, MM_OUTPUT);
+	siso_pause(siso_streaming_audio_aac);
 
 	//Stop module
 	mm_module_ctrl(streaming_rtsp2_ctx, CMD_RTSP2_SET_STREAMMING, OFF);
 	mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_STREAM_STOP, streaming_video_params.stream_id);
 	mm_module_ctrl(streaming_audio_ctx, CMD_AUDIO_SET_TRX, 0);
-	mm_module_ctrl(streaming_opusc_ctx, CMD_OPUSC_STOP, 0);
+	// mm_module_ctrl(streaming_opusc_ctx, CMD_OPUSC_STOP, 0);
+	mm_module_ctrl(streaming_aac_ctx, CMD_AAC_STOP, 0);
 
 	//Delete linker
-	miso_delete(miso_streaming_video_opusc_rtsp);
-	siso_delete(siso_streaming_audio_opusc);
+	// miso_delete(miso_streaming_video_opusc_rtsp);
+	// siso_delete(siso_streaming_audio_opusc);
+
+	miso_delete(miso_streaming_video_aac_rtsp);
+	siso_delete(siso_streaming_audio_aac);
 
 	//Close module
 	mm_module_close(streaming_rtsp2_ctx);
 	mm_module_close(streaming_video_ctx);
 	mm_module_close(streaming_audio_ctx);
-	mm_module_close(streaming_opusc_ctx);
+	// mm_module_close(streaming_opusc_ctx);
+	mm_module_close(streaming_aac_ctx);
 
 	video_voe_release();
 }

@@ -17,6 +17,7 @@
 #include "mmf2_mediatime_8735b.h"
 #include "ai_glass_media.h"
 #include "ai_glass_initialize.h"
+#include "ftl_common_api.h"
 
 #define USE_HTTPS                   1
 #define DELETE_FILE_AFTER_UPLOAD    0

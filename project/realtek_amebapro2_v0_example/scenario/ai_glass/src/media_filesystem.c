@@ -206,6 +206,11 @@ static int check_valid_file_and_remove(const char *list_path, const char *filena
 			res = stat(file_path, &finfo);
 
 			if (res == 0) {
+				if (strcmp(filename, "uart_log.txt") == 0) { 
+					// Keep uart_log.txt even if empty 
+					free(file_path);
+					return 0; // or just skip adding it 
+				}
 				if (finfo.st_size == 0) {
 					FILE_SYS_WARN("size 0 is invlaid %s, remove file\r\n", file_path);
 					remove(file_path);

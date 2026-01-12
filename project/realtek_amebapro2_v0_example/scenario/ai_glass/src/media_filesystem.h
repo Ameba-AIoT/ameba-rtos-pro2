@@ -11,6 +11,8 @@
 #define SYS_COUNT_FILM_LABEL        "film"
 #define SYS_COUNT_SYS_LABEL         "sysfile"
 
+extern char burst_filename[160];
+
 enum {
 	DIR_OPEN_FAIL   = -1,
 	MEDIA_FILE_OK   = 0,
