@@ -1992,6 +1992,7 @@ int heap_update_ota(uint8_t *buffer, uint32_t length)
     buf = update_malloc(buf_size);
     if (!buf) {
         printf("\n\r[%s] Failed to allocate buffer\n\r", __FUNCTION__);
+		ret = -3;
         goto update_ota_exit;
     }
 
@@ -2012,6 +2013,7 @@ int heap_update_ota(uint8_t *buffer, uint32_t length)
 
 	if (fw_timest >= ota_timestamp) {
 		printf("\n\r[%s] OTA is older or same, skip update\n\r", __FUNCTION__);
+		ret = -4;
     	goto update_ota_exit;
 	}
 
@@ -2138,6 +2140,7 @@ int heap_update_boot_ota(uint8_t *buffer, uint32_t length)
     buf = update_malloc(buf_size);
     if (!buf) {
         printf("\n\r[%s] Failed to allocate buffer\n\r", __FUNCTION__);
+		ret = -3;
         goto update_ota_exit;
     }
 
@@ -2232,6 +2235,7 @@ int heap_update_nn_ota(uint8_t *buffer, uint32_t length)
     buf = update_malloc(buf_size);
     if (!buf) {
         printf("\n\r[%s] Failed to allocate buffer\n\r", __FUNCTION__);
+		ret = -3;
         goto update_ota_exit;
     }
 
@@ -2326,6 +2330,7 @@ int heap_update_isp_iq_ota(uint8_t *buffer, uint32_t length)
     buf = update_malloc(buf_size);
     if (!buf) {
         printf("\n\r[%s] Failed to allocate buffer\n\r", __FUNCTION__);
+		ret = -3;
         goto update_ota_exit;
     }
 

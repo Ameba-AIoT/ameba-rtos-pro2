@@ -830,6 +830,18 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 					}
 					
 					uart_resp_get_power_state(param, power_result);
+				} else if (ret == -2){
+					AI_GLASS_ERR("\n\r Received OTA process cancellation\n");
+					power_result = AI_GLASS_WIFI_CANCEL_OTA_PROCESS;
+					uart_resp_get_power_state(param, power_result);
+				} else if (ret == -3){
+					AI_GLASS_ERR("\n\r Wifi OTA malloc failed\n");
+					power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				} else if (ret == -4){
+					AI_GLASS_ERR("\n\r Wifi OTA older timestamp version error\n");
+					power_result = AI_GLASS_WIFI_OLDER_TIMESTAMP_VERSION;
+					uart_resp_get_power_state(param, power_result);
 				} else {
 					AI_GLASS_ERR("\n\r OTA Process Failed\n");
 					power_result = AI_GLASS_WIFI_OTA_FAILED;
@@ -885,15 +897,34 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 						power_result = UART_PWR_WIFI_OTA_SUCCESS;
 					}
 					uart_resp_get_power_state(param, power_result);
+				} else if (ret == -2){
+					AI_GLASS_ERR("\n\r Received OTA process cancellation\n");
+					power_result = AI_GLASS_WIFI_CANCEL_OTA_PROCESS;
+					uart_resp_get_power_state(param, power_result);
+				} else if (ret == -3){
+					AI_GLASS_ERR("\n\r Wifi OTA malloc failed\n");
+					power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				} else if (ret == -4){
+					AI_GLASS_ERR("\n\r Wifi OTA older timestamp version error\n");
+					power_result = AI_GLASS_WIFI_OLDER_TIMESTAMP_VERSION;
+					uart_resp_get_power_state(param, power_result);
 				} else {
-					AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
+					AI_GLASS_ERR("\n\r OTA Process Failed\n");
 					power_result = AI_GLASS_WIFI_OTA_FAILED;
 					uart_resp_get_power_state(param, power_result);
 				}
 			} else {
-				AI_GLASS_ERR("\n\r OTA Bootloader Process Failed\n");
-				power_result = AI_GLASS_WIFI_OTA_FAILED;
-				uart_resp_get_power_state(param, power_result);
+				if (ret == -3) {
+					AI_GLASS_ERR("\n\r OTA Bootloader malloc Failed\n");
+					power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
+				else {
+					AI_GLASS_ERR("\n\r OTA Bootloader Process Failed\n");
+					power_result = AI_GLASS_WIFI_BL_OTA_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
 			}
 		} else {
 			AI_GLASS_ERR("OTA file name not found.\n");
@@ -927,15 +958,34 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 						power_result = UART_PWR_WIFI_OTA_SUCCESS;
 					}
 					uart_resp_get_power_state(param, power_result);
+				} else if (ret == -2){
+					AI_GLASS_ERR("\n\r Received OTA process cancellation\n");
+					power_result = AI_GLASS_WIFI_CANCEL_OTA_PROCESS;
+					uart_resp_get_power_state(param, power_result);
+				} else if (ret == -3){
+					AI_GLASS_ERR("\n\r Wifi OTA malloc failed\n");
+					power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				} else if (ret == -4){
+					AI_GLASS_ERR("\n\r Wifi OTA older timestamp version error\n");
+					power_result = AI_GLASS_WIFI_OLDER_TIMESTAMP_VERSION;
+					uart_resp_get_power_state(param, power_result);
 				} else {
-					AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
+					AI_GLASS_ERR("\n\r OTA Process Failed\n");
 					power_result = AI_GLASS_WIFI_OTA_FAILED;
 					uart_resp_get_power_state(param, power_result);
 				}
 			} else {
-				AI_GLASS_ERR("\n\r OTA NN Process Failed\n");
-				power_result = AI_GLASS_WIFI_OTA_FAILED;
-				uart_resp_get_power_state(param, power_result);
+				if (ret == -3) {
+					AI_GLASS_ERR("\n\r OTA NN malloc Failed\n");
+					power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
+				else {
+					AI_GLASS_ERR("\n\r OTA NN Process Failed\n");
+					power_result = AI_GLASS_WIFI_NN_OTA_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
 			}
 		} else {
 			AI_GLASS_ERR("OTA file name not found.\n");
@@ -971,20 +1021,46 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 							power_result = UART_PWR_WIFI_OTA_SUCCESS;
 						}
 						uart_resp_get_power_state(param, power_result);
+					} else if (ret == -2){
+						AI_GLASS_ERR("\n\r Received OTA process cancellation\n");
+						power_result = AI_GLASS_WIFI_CANCEL_OTA_PROCESS;
+						uart_resp_get_power_state(param, power_result);
+					} else if (ret == -3){
+						AI_GLASS_ERR("\n\r Wifi OTA malloc failed\n");
+						power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+						uart_resp_get_power_state(param, power_result);
+					} else if (ret == -4){
+						AI_GLASS_ERR("\n\r Wifi OTA older timestamp version error\n");
+						power_result = AI_GLASS_WIFI_OLDER_TIMESTAMP_VERSION;
+						uart_resp_get_power_state(param, power_result);
 					} else {
-						AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
+						AI_GLASS_ERR("\n\r OTA Process Failed\n");
 						power_result = AI_GLASS_WIFI_OTA_FAILED;
 						uart_resp_get_power_state(param, power_result);
 					}
 				} else {
-					AI_GLASS_ERR("\n\r OTA NN Process Failed\n");
-					power_result = AI_GLASS_WIFI_OTA_FAILED;
-					uart_resp_get_power_state(param, power_result);
+					if (ret == -3) {
+						AI_GLASS_ERR("\n\r OTA NN malloc Failed\n");
+						power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+						uart_resp_get_power_state(param, power_result);
+					}
+					else {
+						AI_GLASS_ERR("\n\r OTA NN Process Failed\n");
+						power_result = AI_GLASS_WIFI_NN_OTA_FAILED;
+						uart_resp_get_power_state(param, power_result);
+					}
 				}
 			} else {
-				AI_GLASS_ERR("\n\r OTA Bootloader Process Failed\n");
-				power_result = AI_GLASS_WIFI_OTA_FAILED;
-				uart_resp_get_power_state(param, power_result);
+				if (ret == -3) {
+					AI_GLASS_ERR("\n\r OTA Bootloader malloc Failed\n");
+					power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
+				else {
+					AI_GLASS_ERR("\n\r OTA Bootloader Process Failed\n");
+					power_result = AI_GLASS_WIFI_BL_OTA_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
 			}
 		} else {
 			AI_GLASS_ERR("OTA file name not found.\n");
@@ -1016,15 +1092,34 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 						power_result = UART_PWR_WIFI_OTA_SUCCESS;
 					}
 					uart_resp_get_power_state(param, power_result);
-				} else {
-					AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
-					power_result = AI_GLASS_WIFI_OTA_FAILED;
+				} else if (ret == -2){
+						AI_GLASS_ERR("\n\r Received OTA process cancellation\n");
+						power_result = AI_GLASS_WIFI_CANCEL_OTA_PROCESS;
+						uart_resp_get_power_state(param, power_result);
+					} else if (ret == -3){
+						AI_GLASS_ERR("\n\r Wifi OTA malloc failed\n");
+						power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+						uart_resp_get_power_state(param, power_result);
+					} else if (ret == -4){
+						AI_GLASS_ERR("\n\r Wifi OTA older timestamp version error\n");
+						power_result = AI_GLASS_WIFI_OLDER_TIMESTAMP_VERSION;
+						uart_resp_get_power_state(param, power_result);
+					} else {
+						AI_GLASS_ERR("\n\r OTA Process Failed\n");
+						power_result = AI_GLASS_WIFI_OTA_FAILED;
+						uart_resp_get_power_state(param, power_result);
+					}
+			} else {
+				if (ret == -3) {
+					AI_GLASS_ERR("\n\r OTA ISP IQ malloc Failed\n");
+					power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
 					uart_resp_get_power_state(param, power_result);
 				}
-			} else {
-			AI_GLASS_ERR("\n\r OTA ISP IQ Process Failed\n");
-			power_result = AI_GLASS_WIFI_OTA_FAILED;
-			uart_resp_get_power_state(param, power_result);
+				else {
+					AI_GLASS_ERR("\n\r OTA ISP IQ Process Failed\n");
+					power_result = AI_GLASS_WIFI_ISP_IQ_OTA_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
 			}
 		} else {
 			AI_GLASS_ERR("OTA file name not found.\n");
@@ -1060,20 +1155,46 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 							power_result = UART_PWR_WIFI_OTA_SUCCESS;
 						}
 						uart_resp_get_power_state(param, power_result);
+					} else if (ret == -2){
+						AI_GLASS_ERR("\n\r Received OTA process cancellation\n");
+						power_result = AI_GLASS_WIFI_CANCEL_OTA_PROCESS;
+						uart_resp_get_power_state(param, power_result);
+					} else if (ret == -3){
+						AI_GLASS_ERR("\n\r Wifi OTA malloc failed\n");
+						power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+						uart_resp_get_power_state(param, power_result);
+					} else if (ret == -4){
+						AI_GLASS_ERR("\n\r Wifi OTA older timestamp version error\n");
+						power_result = AI_GLASS_WIFI_OLDER_TIMESTAMP_VERSION;
+						uart_resp_get_power_state(param, power_result);
 					} else {
-						AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
+						AI_GLASS_ERR("\n\r OTA Process Failed\n");
 						power_result = AI_GLASS_WIFI_OTA_FAILED;
 						uart_resp_get_power_state(param, power_result);
 					}
 				} else {
-				AI_GLASS_ERR("\n\r OTA ISP IQ Process Failed\n");
-				power_result = AI_GLASS_WIFI_OTA_FAILED;
-				uart_resp_get_power_state(param, power_result);
+					if (ret == -3) {
+						AI_GLASS_ERR("\n\r OTA ISP IQ malloc Failed\n");
+						power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+						uart_resp_get_power_state(param, power_result);
+					}
+					else {
+						AI_GLASS_ERR("\n\r OTA ISP IQ Process Failed\n");
+						power_result = AI_GLASS_WIFI_ISP_IQ_OTA_FAILED;
+						uart_resp_get_power_state(param, power_result);
+					}
 				}
 			} else {
-				AI_GLASS_ERR("\n\r OTA Bootloader Process Failed\n");
-				power_result = AI_GLASS_WIFI_OTA_FAILED;
-				uart_resp_get_power_state(param, power_result);
+				if (ret == -3) {
+					AI_GLASS_ERR("\n\r OTA Bootloader malloc Failed\n");
+					power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
+				else {
+					AI_GLASS_ERR("\n\r OTA Bootloader Process Failed\n");
+					power_result = AI_GLASS_WIFI_BL_OTA_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
 			}
 		} else {
 			AI_GLASS_ERR("OTA file name not found.\n");
@@ -1109,20 +1230,46 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 							power_result = UART_PWR_WIFI_OTA_SUCCESS;
 						}
 						uart_resp_get_power_state(param, power_result);
+					} else if (ret == -2){
+						AI_GLASS_ERR("\n\r Received OTA process cancellation\n");
+						power_result = AI_GLASS_WIFI_CANCEL_OTA_PROCESS;
+						uart_resp_get_power_state(param, power_result);
+					} else if (ret == -3){
+						AI_GLASS_ERR("\n\r Wifi OTA malloc failed\n");
+						power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+						uart_resp_get_power_state(param, power_result);
+					} else if (ret == -4){
+						AI_GLASS_ERR("\n\r Wifi OTA older timestamp version error\n");
+						power_result = AI_GLASS_WIFI_OLDER_TIMESTAMP_VERSION;
+						uart_resp_get_power_state(param, power_result);
 					} else {
-						AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
+						AI_GLASS_ERR("\n\r OTA Process Failed\n");
 						power_result = AI_GLASS_WIFI_OTA_FAILED;
 						uart_resp_get_power_state(param, power_result);
 					}
 				} else {
-					AI_GLASS_ERR("\n\r OTA ISP IQ Process Failed\n");
-					power_result = AI_GLASS_WIFI_OTA_FAILED;
-					uart_resp_get_power_state(param, power_result);
+					if (ret == -3) {
+						AI_GLASS_ERR("\n\r OTA ISP IQ malloc Failed\n");
+						power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+						uart_resp_get_power_state(param, power_result);
 					}
+					else {
+						AI_GLASS_ERR("\n\r OTA ISP IQ Process Failed\n");
+						power_result = AI_GLASS_WIFI_ISP_IQ_OTA_FAILED;
+						uart_resp_get_power_state(param, power_result);
+					}
+				}
 			} else {
-				AI_GLASS_ERR("\n\r OTA NN Process Failed\n");
-				power_result = AI_GLASS_WIFI_OTA_FAILED;
-				uart_resp_get_power_state(param, power_result);
+				if (ret == -3) {
+					AI_GLASS_ERR("\n\r OTA NN malloc Failed\n");
+					power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
+				else {
+					AI_GLASS_ERR("\n\r OTA NN Process Failed\n");
+					power_result = AI_GLASS_WIFI_NN_OTA_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
 			}
 		} else {
 			AI_GLASS_ERR("OTA file name not found.\n");
@@ -1163,25 +1310,58 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 							}
 							uart_resp_get_power_state(param, power_result);
 							//ota_platform_reset();
+						} else if (ret == -2){
+						AI_GLASS_ERR("\n\r Received OTA process cancellation\n");
+						power_result = AI_GLASS_WIFI_CANCEL_OTA_PROCESS;
+						uart_resp_get_power_state(param, power_result);
+						} else if (ret == -3){
+							AI_GLASS_ERR("\n\r Wifi OTA malloc failed\n");
+							power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+							uart_resp_get_power_state(param, power_result);
+						} else if (ret == -4){
+							AI_GLASS_ERR("\n\r Wifi OTA older timestamp version error\n");
+							power_result = AI_GLASS_WIFI_OLDER_TIMESTAMP_VERSION;
+							uart_resp_get_power_state(param, power_result);
 						} else {
-							AI_GLASS_ERR("\n\r OTA Wifi Firmware Process Failed\n");
+							AI_GLASS_ERR("\n\r OTA Process Failed\n");
 							power_result = AI_GLASS_WIFI_OTA_FAILED;
 							uart_resp_get_power_state(param, power_result);
 						}
 					} else {
-						AI_GLASS_ERR("\n\r OTA ISP IQ Process Failed\n");
-						power_result = AI_GLASS_WIFI_OTA_FAILED;
+						if (ret == -3) {
+						AI_GLASS_ERR("\n\r OTA ISP IQ malloc Failed\n");
+						power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
 						uart_resp_get_power_state(param, power_result);
 						}
+						else {
+							AI_GLASS_ERR("\n\r OTA ISP IQ Process Failed\n");
+							power_result = AI_GLASS_WIFI_ISP_IQ_OTA_FAILED;
+							uart_resp_get_power_state(param, power_result);
+						}
+					}
 				} else {
-					AI_GLASS_ERR("\n\r OTA NN Process Failed\n");
-					power_result = AI_GLASS_WIFI_OTA_FAILED;
+					if (ret == -3) {
+					AI_GLASS_ERR("\n\r OTA NN malloc Failed\n");
+					power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
 					uart_resp_get_power_state(param, power_result);
+					}
+					else {
+						AI_GLASS_ERR("\n\r OTA NN Process Failed\n");
+						power_result = AI_GLASS_WIFI_NN_OTA_FAILED;
+						uart_resp_get_power_state(param, power_result);
+					}
 				}
 			} else {
-				AI_GLASS_ERR("\n\r OTA Bootloader Process Failed\n");
-				power_result = AI_GLASS_WIFI_OTA_FAILED;
-				uart_resp_get_power_state(param, power_result);
+				if (ret == -3) {
+					AI_GLASS_ERR("\n\r OTA Bootloader malloc Failed\n");
+					power_result = AI_GLASS_WIFI_OTA_MALLOC_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
+				else {
+					AI_GLASS_ERR("\n\r OTA Bootloader Process Failed\n");
+					power_result = AI_GLASS_WIFI_BL_OTA_FAILED;
+					uart_resp_get_power_state(param, power_result);
+				}
 			}
 		} else {
 			AI_GLASS_ERR("OTA file name not found.\n");
