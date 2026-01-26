@@ -100,6 +100,15 @@ int sensor_idx = -1;
 #define IS_VALID_STREAM_RCMODE(value) \
 	 ((value) == 1 || (value) == 2)
 
+#define IS_VALID_STREAM_ATYPE(value) \
+	((value) == 0 || (value) == 1)
+
+#define IS_VALID_STREAM_ROTATION(value) \
+	((value) == 0 || \
+     (value) == 1 || \
+     (value) == 2|| \
+	 (value) == 3)
+
 #define IS_VALID_STREAM_LEVEL(value) \
     ((value) >= VCENC_H264_LEVEL_1 && (value) <= VCENC_H264_LEVEL_5_1)
 
@@ -201,6 +210,7 @@ static ai_glass_stream_param_t stream_params = {
     .maxQp = DEFAULT_STREAM_MAXQP,
     .rotation = DEFAULT_STREAM_ROTATION,
     .rc_mode = DEFAULT_STREAM_RCMODE,
+	.audio_type = DEFAULT_STREAM_ATYPE,
     .level = DEFAULT_STREAM_LEVEL,
     .profile = DEFAULT_STREAM_PROFILE,
     .cavlc = DEFAULT_STREAM_CAVLC
@@ -313,6 +323,12 @@ static int stream_data_check(const ai_glass_stream_param_t *params)
 		}
 		if (!IS_VALID_STREAM_RCMODE(params->rc_mode)) {
 			return MEDIA_INVALID_RCMODE;
+		}
+		if (!IS_VALID_STREAM_ATYPE(params->audio_type)) {
+			return MEDIA_INVALID_ATYPE;
+		}
+		if (!IS_VALID_STREAM_ROTATION(params->rotation)) {
+			return MEDIA_INVALID_ROTATION;
 		}
 		if (!IS_VALID_STREAM_LEVEL(params->level)) {
 			return MEDIA_INVALID_LEVEL;
@@ -534,9 +550,17 @@ static int stream_data_update_if_valid(ai_glass_stream_param_t *ori_params, cons
         need_update = 1;
         ori_params->rc_mode = params->rc_mode;
     }
+	if (IS_VALID_STREAM_ATYPE(params->audio_type) && ori_params->audio_type != params->audio_type) {
+        need_update = 1;
+        ori_params->audio_type = params->audio_type;
+    }
     if (IS_VALID_STREAM_LEVEL(params->level) && ori_params->level != params->level) {
         need_update = 1;
         ori_params->level = params->level;
+    }
+	if (IS_VALID_STREAM_ROTATION(params->rotation) && ori_params->rotation != params->rotation) {
+        need_update = 1;
+        ori_params->rotation = params->rotation;
     }
     if (IS_VALID_STREAM_PROFILE(params->profile) && ori_params->profile != params->profile) {
         need_update = 1;
@@ -765,7 +789,7 @@ static int media_update_stream_params_to_flash(const ai_glass_stream_param_t *pa
                  read_data->type, read_data->width, read_data->height, read_data->bps, read_data->fps, read_data->gop,
                  read_data->roi.xmin, read_data->roi.ymin, read_data->roi.xmax, read_data->roi.ymax,
                  read_data->minQp, read_data->maxQp, read_data->rotation, read_data->rc_mode,
-                 read_data->level, read_data->profile, read_data->cavlc);
+                 read_data->level, read_data->profile, read_data->cavlc, read_data->audio_type);
 
     if (stream_buf) {
         free(stream_buf);
@@ -1009,6 +1033,7 @@ void print_stream_data(const ai_glass_stream_param_t *params)
     printf("maxQp = %u\r\n", params->maxQp);
     printf("rotation = %u\r\n", params->rotation);
     printf("rc_mode = %u\r\n", params->rc_mode);
+	printf("audio_type = %u\r\n", params->audio_type);
 }
 
 int media_get_record_params(ai_glass_record_param_t *params)

@@ -248,12 +248,9 @@ static void lifetime_high_resolution_snapshot_save(char *file_path, uint32_t dat
 			// file_path already ends with .jpg 
 			snprintf(file_save_path, MAXIMUM_FILE_SIZE, "%s", file_path); 
 		} else { 
-			if (img_idx == 0) {
-				snprintf(file_save_path, MAXIMUM_FILE_SIZE, "%s.jpg", file_path);
-				AI_GLASS_MSG("file_path:%s.jpg  data_addr:%ld  data_size:%ld \r\n", file_path, data_addr, data_size);
-			} else {
-				snprintf(file_save_path, MAXIMUM_FILE_SIZE, "%s_%d.jpg", file_path, img_idx);
-				AI_GLASS_MSG("file_path:%s_%d.jpg  data_addr:%ld  data_size:%ld \r\n", file_path, img_idx, data_addr, data_size);
+			if (burst_names[img_idx][0] != '\0') {
+				snprintf(file_save_path, MAXIMUM_FILE_SIZE, "%s", burst_names[img_idx]);
+				AI_GLASS_MSG("lifetime_high_resolution_snapshot_save burst_names[%d]: %s\r\n", img_idx, file_save_path);
 			}
 		} 
 		
@@ -1161,10 +1158,9 @@ int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 			for (int i = 0; i < (total_burst > 2 ? BURST_MODE_MAX_COUNT:total_burst); i++) {
 				AI_GLASS_MSG("================life_snapshot_take========================== %lu\r\n", mm_read_mediatime_ms());
 				AI_GLASS_INFO("Snapshot start\r\n");
-				if (i == 0) {
-					snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s.jpg", file_name);
-				} else {
-					snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s.jpg", file_name);
+				if (burst_names[i][0] != '\0') {
+					snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s.jpg", burst_names[i]);
+					AI_GLASS_MSG("life_snapshot_take burst_names[%d]: %s\r\n", i, snapshot_name);
 				}
 				// snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s_%d.jpg", file_name, i);
 				AI_GLASS_MSG("life_snapshot_take %s\r\n", snapshot_name);
@@ -1221,9 +1217,14 @@ int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 		if ((current_sensor_id == SENSOR_IMX681) || (current_sensor_id == SENSOR_IMX471) || (current_sensor_id == SENSOR_OV13B10)) {
 			AI_GLASS_INFO("Snapshot start 12M flow\r\n");
 			raw_index = raw_taken % 2;
-			snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s_%d_%d.jpg", file_name, raw_index, jpg_index+2);
-			// snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s_%d.jpg", file_name, raw_taken);
-			// AI_GLASS_MSG("life_snapshot_take %s\r\n", snapshot_name);
+			if (burst_names[burst_count-1][0] != '\0') {
+				snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s.jpg", burst_names[burst_count-1]);
+				AI_GLASS_MSG("life_snapshot_take recurring burst_names[%d]: %s\r\n", burst_count-1, snapshot_name);
+			} else {
+				// fallback if no stored name
+				snprintf(snapshot_name, MAXIMUM_FILE_SIZE, "%s_%d_%d.jpg", file_name, raw_index, jpg_index+2);
+				AI_GLASS_MSG("life_snapshot_take recurring file_name: %s\r\n", snapshot_name);
+			}
 			mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_SAVE_FILE_PATH, (int)snapshot_name);
 			lfsnap_status = LIFESNAP_TAKE;
 			// printf("[lifetime_snapshot_take] raw_index = %d\r\n", raw_index);
@@ -1243,12 +1244,10 @@ int lifetime_highres_save(const char *file_name, uartcmdpacket_t *param)
 		if (lfsnap_status == LIFESNAP_GET) {
 			for(int i = 0; i < total_burst; i++) {
 				char active_name[160];
-				if (i==0) {
-					snprintf(active_name, sizeof(active_name), "%s.jpg", file_name);
-				}
-				else if (i > 0 && burst_filename[0] != '\0') { 
-					snprintf(active_name, sizeof(active_name), "%s.jpg", burst_filename); 
-					AI_GLASS_MSG("lifetime_highres_save using burst name %s\r\n", active_name);
+				if (i < burst_count && burst_names[i][0] != '\0') {
+					// 🔹 Use stored per‑raw filename
+					snprintf(active_name, sizeof(active_name), "%s.jpg", burst_names[i]);
+					AI_GLASS_MSG("lifetime_highres_save burst_names[%d]: %s\r\n", i, active_name);
 				} else {
 					// Find the last '_' in the base name
 					const char *last_underscore = strrchr(file_name, '_');

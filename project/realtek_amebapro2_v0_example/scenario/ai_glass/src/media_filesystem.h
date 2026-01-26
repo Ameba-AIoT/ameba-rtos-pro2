@@ -11,7 +11,9 @@
 #define SYS_COUNT_FILM_LABEL        "film"
 #define SYS_COUNT_SYS_LABEL         "sysfile"
 
-extern char burst_filename[160];
+#define MAX_BURST 100 // or make dynamic 
+extern char burst_names[MAX_BURST][64]; 
+extern volatile int burst_count;
 
 enum {
 	DIR_OPEN_FAIL   = -1,

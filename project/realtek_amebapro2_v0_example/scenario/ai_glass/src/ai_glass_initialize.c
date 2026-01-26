@@ -108,7 +108,8 @@ extern hal_uart_adapter_t log_uart;
 static uint8_t s_log_flush_buf[1024];  // 1KB is plenty; loop until ring empty
 #endif
 
-char burst_filename[160] = {0};
+char burst_names[MAX_BURST][64]; 
+volatile int burst_count = 0;
 
 static int usb_msc_device_init(void)
 {
@@ -632,8 +633,8 @@ static int clear_ota_signature(void)
 			return 0;
 		}
 
-		//erase current FW signature to make it boot from another FW image
-		AI_GLASS_MSG("\n\rcurrent FW addr = 0x%08X", cur_fw_addr);
+		//erase next FW signature to make it boot from another FW image
+		AI_GLASS_MSG("\n\rnext FW addr = 0x%08X", next_fw_addr);
 
 		pbuf = malloc(buf_size);
 		if (!pbuf) {
@@ -643,11 +644,11 @@ static int clear_ota_signature(void)
 
 		// need to enter critical section to prevent executing the XIP code at first sector after we erase it.
 		device_mutex_lock(RT_DEV_LOCK_FLASH);
-		flash_stream_read(&flash, cur_fw_addr, buf_size, pbuf);
+		flash_stream_read(&flash, next_fw_addr, buf_size, pbuf);
 		// NOT the first byte of ota signature to make it invalid
 		pbuf[0] = ~(pbuf[0]);
-		flash_erase_sector(&flash, cur_fw_addr);
-		flash_burst_write(&flash, cur_fw_addr, buf_size, pbuf);
+		flash_erase_sector(&flash, next_fw_addr); 
+		flash_burst_write(&flash, next_fw_addr, buf_size, pbuf);
 		device_mutex_unlock(RT_DEV_LOCK_FLASH);
 
 		free(pbuf);
@@ -1486,6 +1487,14 @@ static void ai_glass_resp_bt_fw_upgrade(uartcmdpacket_t *param)
     critical_process_started = 0;
 }
 
+static void ai_glass_get_cancel_sys_upgrade(uartcmdpacket_t *param)
+{
+	AI_GLASS_INFO("get UART_TX_OPC_RESP_CANCEL_SYS_UPGRADE\r\n");
+	cancel_bt_upgrade = 1;
+	cancel_wifi_upgrade = 1;
+	AI_GLASS_INFO("end of UART_TX_OPC_RESP_CANCEL_SYS_UPGRADE\r\n");
+}
+
 static void ai_glass_resp_bt_fw_finish(uartcmdpacket_t *param)
 {
 	critical_process_started = 1;
@@ -1618,6 +1627,10 @@ static void parser_stream_param(ai_glass_stream_param_t *rec_buf, uint8_t *raw_b
 		rec_buf->roi.xmax = 1;
 		rec_buf->roi.ymax = 1;
 		rec_buf->gop      = raw_buf[6] | (raw_buf[7] << 8) | (raw_buf[8] << 16) | (raw_buf[9] << 24);
+
+		// Audio type
+		rec_buf->audio_type = raw_buf[20];
+
 		rec_buf->level    = DEFAULT_STREAM_LEVEL;
 		rec_buf->profile  = DEFAULT_STREAM_PROFILE;
 		rec_buf->cavlc    = DEFAULT_STREAM_CAVLC;
@@ -1647,13 +1660,17 @@ static void parser_rtsp_stream_param(ai_glass_stream_param_t *rec_buf, uint8_t *
 		// Rotation and RC mode
 		rec_buf->rotation = raw_buf[22];
 		rec_buf->rc_mode  = raw_buf[23];
-
+		
 		// Set ROI, level, profile, cavlc to defaults (since packet does not carry them)
 		rec_buf->roi.xmin = 0;
 		rec_buf->roi.ymin = 0;
 		rec_buf->roi.xmax = 1;
 		rec_buf->roi.ymax = 1;
 		rec_buf->gop      = raw_buf[10] | (raw_buf[11] << 8) | (raw_buf[12] << 16) | (raw_buf[13] << 24);
+
+		// Audio type
+		rec_buf->audio_type = raw_buf[24];
+
 		rec_buf->level    = DEFAULT_STREAM_LEVEL;
 		rec_buf->profile  = DEFAULT_STREAM_PROFILE;
 		rec_buf->cavlc    = DEFAULT_STREAM_CAVLC;
@@ -1816,10 +1833,12 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 					memcpy(uart_filename_str, snapshot_param + 1, file_name_length);
 					AI_GLASS_MSG("Filename retrieved from 8773 when snapshot + 1\r\n"); 
 					extdisk_generate_unique_filename("", uart_filename_str, ".jpg", (char *)temp_record_filename_buffer, 160);
-					/* copy into the shared global (no local burst_filename) */ 
-					strncpy(burst_filename, temp_record_filename_buffer, 160 - 1); 
-					burst_filename[160 - 1] = '\0'; 
-					AI_GLASS_MSG("generated filename (burst): %s\r\n", burst_filename);
+					if (burst_count < MAX_BURST) { 
+						strncpy(burst_names[burst_count], temp_record_filename_buffer, 64-1); 
+						burst_names[burst_count][64-1] = '\0'; 
+						AI_GLASS_MSG("Stored burst filename %s for raw_index %d\r\n", burst_names[burst_count], burst_count); 
+						burst_count++;
+					}
 				}
 		}
 	} else {
@@ -1901,6 +1920,12 @@ lifetimesnapshot:
 					AI_GLASS_MSG("Filename retrieved from 8773\r\n"); 
 					extdisk_generate_unique_filename("", uart_filename_str, ".jpg", (char *)temp_record_filename_buffer, 160);
 					snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s", (const char *)temp_record_filename_buffer);
+					if (burst_count < MAX_BURST) { 
+						strncpy(burst_names[burst_count], temp_record_filename_buffer, 64-1); 
+						burst_names[burst_count][64-1] = '\0'; 
+						AI_GLASS_MSG("Stored burst filename %s for raw_index %d\r\n", burst_names[burst_count], burst_count); 
+						burst_count++;
+					}
 				} else if((ai_snap_params.lifetime_file_name_len > 0) && (dual_snapshot == 1)) {
 					file_name_length = ai_snap_params.lifetime_file_name_len;
 					char uart_filename_str[160] = {0};
@@ -2705,6 +2730,7 @@ static rxopc_item_t rx_opcode_basic_items[ ] = {
 	{UART_RX_OPC_CMD_GET_PICTURE_DATA_SLIDING_WINDOW_ACK,   {false, true, ai_glass_get_pic_data_sliding_window_ack},    {NULL, NULL}},
 
 	{UART_RX_OPC_CMD_SET_SYS_UPGRADE,                        {false, false, ai_glass_get_set_sys_upgrade},              {NULL, NULL}},
+	{UART_RX_OPC_CMD_CANCEL_SYS_UPGRADE,                   	 {false, false, ai_glass_get_cancel_sys_upgrade},                 {NULL, NULL}},
 	{UART_TX_OPC_CMD_START_BT_SOC_FW_UPGRADE,                {false, false, ai_glass_resp_bt_fw_upgrade},               {NULL, NULL}},
 	{UART_TX_OPC_CMD_FINISH_BT_SOC_FW_UPGRADE,               {false, false, ai_glass_resp_bt_fw_finish},                {NULL, NULL}},
 	{UART_RX_OPC_CMD_SET_WIFI_FW_ROLLBACK,                   {false, false, ai_glass_wifi_fw_rollback},                 {NULL, NULL}},

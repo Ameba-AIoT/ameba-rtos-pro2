@@ -56,6 +56,8 @@ enum {
 	MEDIA_INVALID_LEVEL     = -12,  // MEDIA_INVALID_LEVEL
 	MEDIA_INVALID_PROFILE   = -13,  // MEDIA_INVALID_PROFILE
 	MEDIA_INVALID_CAVLC     = -14,  // MEDIA_INVALID_CAVLC
+	MEDIA_INVALID_ATYPE     = -15,  // MEDIA_INVALID_ATYPE
+	MEDIA_INVALID_ROTATION  = -16,   // MEDIA_INVALID_ROTATION
 };
 
 typedef enum {
@@ -116,6 +118,7 @@ typedef struct ai_glass_snapshot_param_s {
 //streaming
 typedef struct ai_glass_stream_param_s {
     uint8_t     type;
+	uint8_t     audio_type;
     uint16_t    width;
     uint16_t    height;
     uint32_t    bps;
@@ -214,6 +217,7 @@ typedef struct isp_info_sync_s {
 #define DEFAULT_STREAM_MAXQP      0
 #define DEFAULT_STREAM_ROTATION   0
 #define DEFAULT_STREAM_RCMODE     2 // 1: CBR, 2: VBR
+#define DEFAULT_STREAM_ATYPE      0
 #define DEFAULT_STREAM_LEVEL      VCENC_H264_LEVEL_4
 #define DEFAULT_STREAM_PROFILE    VCENC_H264_BASE_PROFILE
 #define DEFAULT_STREAM_CAVLC      1
