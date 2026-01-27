@@ -135,8 +135,10 @@ typedef struct ai_glass_stream_param_s {
     uint16_t    maxQp;
     uint8_t     rotation;
     uint8_t     rc_mode;
-	uint8_t     level;      // VCENC_H264_LEVEL_*
-    uint8_t     profile;    // VCENC_H264_BASE_PROFILE, MAIN_PROFILE, etc.
+	uint8_t     h264_level;      // VCENC_H264_LEVEL_*
+    uint8_t     h264_profile;    // VCENC_H264_BASE_PROFILE, MAIN_PROFILE, etc.
+	uint8_t     h265_level;      // VCENC_HEVC_LEVEL_*
+    uint8_t     h265_profile;    // VCENC_HEVC_MAIN_PROFILE.
     uint8_t     cavlc;      // 1 for CAVLC, 0 for CABAC
 } ai_glass_stream_param_t;
 
@@ -218,8 +220,10 @@ typedef struct isp_info_sync_s {
 #define DEFAULT_STREAM_ROTATION   0
 #define DEFAULT_STREAM_RCMODE     2 // 1: CBR, 2: VBR
 #define DEFAULT_STREAM_ATYPE      0
-#define DEFAULT_STREAM_LEVEL      VCENC_H264_LEVEL_4
-#define DEFAULT_STREAM_PROFILE    VCENC_H264_BASE_PROFILE
+#define DEFAULT_STREAM_H264_LEVEL      VCENC_H264_LEVEL_4_1
+#define DEFAULT_STREAM_H264_PROFILE    VCENC_H264_MAIN_PROFILE
+#define DEFAULT_STREAM_H265_LEVEL      VCENC_HEVC_LEVEL_4_1
+#define DEFAULT_STREAM_H265_PROFILE    VCENC_HEVC_MAIN_PROFILE
 #define DEFAULT_STREAM_CAVLC      1
 
 // Declare the current sensor id (defined in .c)

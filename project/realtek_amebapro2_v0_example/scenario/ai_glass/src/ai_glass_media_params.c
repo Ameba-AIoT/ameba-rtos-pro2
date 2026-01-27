@@ -110,12 +110,13 @@ int sensor_idx = -1;
 	 (value) == 3)
 
 #define IS_VALID_STREAM_LEVEL(value) \
-    ((value) >= VCENC_H264_LEVEL_1 && (value) <= VCENC_H264_LEVEL_5_1)
+    ((value) >= VCENC_H264_LEVEL_1 && (value) <= VCENC_HEVC_LEVEL_5_1)
 
 #define IS_VALID_STREAM_PROFILE(value) \
 	((value) == VCENC_H264_BASE_PROFILE || \
      (value) == VCENC_H264_MAIN_PROFILE || \
-     (value) == VCENC_H264_HIGH_PROFILE)
+     (value) == VCENC_H264_HIGH_PROFILE || \
+     (value) == VCENC_HEVC_MAIN_PROFILE)
 
 #define IS_VALID_STREAM_CAVLC(value) \
 	((value) == 0 || (value) == 1)
@@ -211,8 +212,10 @@ static ai_glass_stream_param_t stream_params = {
     .rotation = DEFAULT_STREAM_ROTATION,
     .rc_mode = DEFAULT_STREAM_RCMODE,
 	.audio_type = DEFAULT_STREAM_ATYPE,
-    .level = DEFAULT_STREAM_LEVEL,
-    .profile = DEFAULT_STREAM_PROFILE,
+    .h264_level = DEFAULT_STREAM_H264_LEVEL,
+    .h264_profile = DEFAULT_STREAM_H264_PROFILE,
+	.h265_level = DEFAULT_STREAM_H265_LEVEL,
+    .h265_profile = DEFAULT_STREAM_H265_PROFILE,
     .cavlc = DEFAULT_STREAM_CAVLC
 };
 
@@ -330,10 +333,10 @@ static int stream_data_check(const ai_glass_stream_param_t *params)
 		if (!IS_VALID_STREAM_ROTATION(params->rotation)) {
 			return MEDIA_INVALID_ROTATION;
 		}
-		if (!IS_VALID_STREAM_LEVEL(params->level)) {
-			return MEDIA_INVALID_LEVEL;
+		if (!IS_VALID_STREAM_PROFILE(params->h264_profile) || !IS_VALID_STREAM_PROFILE(params->h265_profile)) {
+			return MEDIA_INVALID_PROFILE;
 		}
-		if (!IS_VALID_STREAM_PROFILE(params->profile)) {
+		if (!IS_VALID_STREAM_PROFILE(params->h264_profile) || !IS_VALID_STREAM_PROFILE(params->h265_profile)) {
 			return MEDIA_INVALID_PROFILE;
 		}
 		if (!IS_VALID_STREAM_CAVLC(params->cavlc)) {
@@ -554,17 +557,25 @@ static int stream_data_update_if_valid(ai_glass_stream_param_t *ori_params, cons
         need_update = 1;
         ori_params->audio_type = params->audio_type;
     }
-    if (IS_VALID_STREAM_LEVEL(params->level) && ori_params->level != params->level) {
+    if (IS_VALID_STREAM_LEVEL(params->h264_level) && ori_params->h264_level != params->h264_level) {
         need_update = 1;
-        ori_params->level = params->level;
+        ori_params->h264_level = params->h264_level;
+    }
+	if (IS_VALID_STREAM_LEVEL(params->h265_level) && ori_params->h265_level != params->h265_level) {
+        need_update = 1;
+        ori_params->h265_level = params->h265_level;
     }
 	if (IS_VALID_STREAM_ROTATION(params->rotation) && ori_params->rotation != params->rotation) {
         need_update = 1;
         ori_params->rotation = params->rotation;
     }
-    if (IS_VALID_STREAM_PROFILE(params->profile) && ori_params->profile != params->profile) {
+    if (IS_VALID_STREAM_PROFILE(params->h264_profile) && ori_params->h264_profile != params->h264_profile) {
         need_update = 1;
-        ori_params->profile = params->profile;
+        ori_params->h264_profile = params->h264_profile;
+    }
+	if (IS_VALID_STREAM_PROFILE(params->h265_profile) && ori_params->h265_profile != params->h265_profile) {
+        need_update = 1;
+        ori_params->h265_profile = params->h265_profile;
     }
     if (IS_VALID_STREAM_CAVLC(params->cavlc) && ori_params->cavlc != params->cavlc) {
         need_update = 1;
@@ -785,11 +796,11 @@ static int media_update_stream_params_to_flash(const ai_glass_stream_param_t *pa
 
     ai_glass_stream_param_t *read_data = (ai_glass_stream_param_t *)(stream_buf + 4);
 
-    AI_GLASS_MSG("[FLASH] type: %u, width: %u, height: %u, bps: %u, fps: %u, gop: %u, roi_xmin: %u, roi_ymin: %u, roi_xmax: %u, roi_ymax: %u, minQp: %u, maxQp: %u, rotation: %u, rc_mode: %u, level: %u, profile: %u, cavlc: %u\r\n",
+    AI_GLASS_MSG("[FLASH] type: %u, width: %u, height: %u, bps: %u, fps: %u, gop: %u, roi_xmin: %u, roi_ymin: %u, roi_xmax: %u, roi_ymax: %u, minQp: %u, maxQp: %u, rotation: %u, rc_mode: %u, h264_level: %u, h264_profile: %u, h265_level: %u, h265_profile: %u, cavlc: %u\r\n",
                  read_data->type, read_data->width, read_data->height, read_data->bps, read_data->fps, read_data->gop,
                  read_data->roi.xmin, read_data->roi.ymin, read_data->roi.xmax, read_data->roi.ymax,
                  read_data->minQp, read_data->maxQp, read_data->rotation, read_data->rc_mode,
-                 read_data->level, read_data->profile, read_data->cavlc, read_data->audio_type);
+                 read_data->h264_level, read_data->h264_profile, read_data->h265_level, read_data->h265_profile, read_data->cavlc, read_data->audio_type);
 
     if (stream_buf) {
         free(stream_buf);

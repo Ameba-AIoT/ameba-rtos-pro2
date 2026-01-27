@@ -1631,8 +1631,10 @@ static void parser_stream_param(ai_glass_stream_param_t *rec_buf, uint8_t *raw_b
 		// Audio type
 		rec_buf->audio_type = raw_buf[20];
 
-		rec_buf->level    = DEFAULT_STREAM_LEVEL;
-		rec_buf->profile  = DEFAULT_STREAM_PROFILE;
+		rec_buf->h264_level    = DEFAULT_STREAM_H264_LEVEL;
+		rec_buf->h264_profile  = DEFAULT_STREAM_H264_PROFILE;
+		rec_buf->h265_level    = DEFAULT_STREAM_H265_LEVEL;
+		rec_buf->h265_profile  = DEFAULT_STREAM_H265_PROFILE;
 		rec_buf->cavlc    = DEFAULT_STREAM_CAVLC;
 	} 
     
@@ -1671,8 +1673,10 @@ static void parser_rtsp_stream_param(ai_glass_stream_param_t *rec_buf, uint8_t *
 		// Audio type
 		rec_buf->audio_type = raw_buf[24];
 
-		rec_buf->level    = DEFAULT_STREAM_LEVEL;
-		rec_buf->profile  = DEFAULT_STREAM_PROFILE;
+		rec_buf->h264_level    = DEFAULT_STREAM_H264_LEVEL;
+		rec_buf->h264_profile  = DEFAULT_STREAM_H264_PROFILE;
+		rec_buf->h265_level    = DEFAULT_STREAM_H265_LEVEL;
+		rec_buf->h265_profile  = DEFAULT_STREAM_H265_PROFILE;
 		rec_buf->cavlc    = DEFAULT_STREAM_CAVLC;
 	} 
     

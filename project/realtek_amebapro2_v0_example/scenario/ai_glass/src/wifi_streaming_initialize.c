@@ -34,9 +34,6 @@ static mm_miso_t *miso_streaming_video_audio_rtsp = NULL;
 static video_params_t streaming_video_params = {
     .stream_id = MAIN_STREAM_ID,
     .use_static_addr = 1,
-	.level = VCENC_H264_LEVEL_4_1,
-	.profile = VCENC_H264_MAIN_PROFILE,
-	.cavlc = 1
 };
 
 #if AUDIO_SRC==AUDIO_INTERFACE
@@ -157,16 +154,15 @@ int wifi_streaming_initialize(void)
 	streaming_video_params.height = ai_stream_param->height;
 	streaming_video_params.rc_mode = ai_stream_param->rc_mode;
 	streaming_video_params.rotation = ai_stream_param->rotation;
-	printf("rotation type: %d \r\n", ai_stream_param->rotation);
-	// if (streaming_video_params.rotation == 1 || streaming_video_params.rotation == 2) {
-	// 	streaming_video_params.width = ai_stream_param->height;
-	// 	streaming_video_params.height = ai_stream_param->width;
-	// 	printf("width type: %d, height type: %d  \r\n", streaming_video_params.width, streaming_video_params.height);
-	// }
+	streaming_video_params.cavlc = ai_stream_param->cavlc;
 	if (streaming_video_params.type == 0) {
 		rtsp2_v1_params.u.v.codec_id = AV_CODEC_ID_H265;
+		streaming_video_params.level = ai_stream_param->h265_level;
+		streaming_video_params.profile = ai_stream_param->h265_profile;
 	} else if (streaming_video_params.type == 1) {
 		rtsp2_v1_params.u.v.codec_id = AV_CODEC_ID_H264;
+		streaming_video_params.level = ai_stream_param->h264_level;
+		streaming_video_params.profile = ai_stream_param->h264_profile;
 	} else {
 		AI_GLASS_ERR("Wrong video type rtsp video code id is not set\n\r");
 		goto wifi_streaming_initialize_fail;
