@@ -73,6 +73,8 @@ static jpeg_lifesnapshot_params_t ls_video_params = {0};
 static mm_context_t *ls_snapshot_ctx    = NULL;
 static mm_context_t *ls_filesaver_ctx   = NULL;
 
+static uartcmdpacket_t *snapshot_param = NULL;
+
 //linker
 static mm_siso_t *ls_siso_snapshot_filesaver = NULL;
 
@@ -535,9 +537,32 @@ static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32
 	printf("-------------------save_high_resolution_raw----------------------\r\n");
 	printf("raw_index = %d\r\n", raw_index); // raw_index 
 	printf("12M raw 0x%x, data len = %lu\r\n", data_addr, data_size);
+	if (snapshot_param != NULL) {
+		uint8_t status = AI_GLASS_DEVICE_WORKING_IN_PROG; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
+		uart_resp_snapshot(snapshot_param, status);
+	}
 	if(ENABLE_AINR && current_sensor_id == SENSOR_IMX681) {
-		if(init_params.isp_ae_init_gain > (256 * 85 / 10)) {
-			// IMX681 AINR flow for exposure gain > 8.5x
+		if(init_params.isp_ae_init_gain > (256 * 12)) {
+			// IMX681 AINR flow for exposure gain > 12x 
+			if (ainr_ctx == NULL) {
+				ainr_ctx = ainr_init();
+			}
+			if(ainr_ctx) {
+				uint8_t *ainr_raw_image = splited_raw_image[raw_index].virt_addr;
+				uint32_t ainr_raw_image_size = data_size;
+				if (ainr_process_frame(ainr_ctx, (const void *)data_addr, ainr_raw_image, ainr_raw_image_size, 256) != OK) {
+					printf("ainr_process_frame() failed.\r\n");
+					return;
+				}
+				pack_bayer_to_planar((uint8_t *)data_addr, (const uint16_t *)ainr_raw_image, ainr_raw_image_size);
+			} else {
+				printf("ainr_init() failed.\r\n");
+				return;
+			}
+		}
+	} else if(ENABLE_AINR && current_sensor_id == SENSOR_OV13B10) {
+		if(init_params.isp_ae_init_gain > (256 * 16)) {
+			// OV13B10 AINR flow for exposure gain > 12x 
 			if (ainr_ctx == NULL) {
 				ainr_ctx = ainr_init();
 			}
@@ -763,10 +788,10 @@ static void high_resolution_snapshot_take(char *file_path, uartcmdpacket_t *para
 		AI_GLASS_ERR("Err: allocate buffer to process 12M snapshot\r\n");
 		goto snapshot_fail;
 	}
-	if (param != NULL) {
-		uint8_t status = AI_GLASS_DEVICE_WORKING_IN_PROG; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
-		uart_resp_snapshot(param, status);
-	}
+	// if (param != NULL) {
+	// 	uint8_t status = AI_GLASS_DEVICE_WORKING_IN_PROG; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
+	// 	uart_resp_snapshot(param, status);
+	// }
 	AI_GLASS_MSG("get 12M NV16 done time %lu\r\n", mm_read_mediatime_ms());
 	raw_taken += 1;
 	lfsnap_status = LIFESNAP_GET;
@@ -1168,6 +1193,7 @@ int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 				lfsnap_status = LIFESNAP_TAKE;
 				raw_index = i;
 				printf("[lifetime_snapshot_take] raw_index = %d\r\n", raw_index);
+				snapshot_param = param;
 				high_resolution_snapshot_take(snapshot_name, param);
 				sscanf(file_name, "PICTURE_0_0_%8[0-9]_%6[0-9]", img_date, img_time);
 				sprintf(img_datetime, "%.4s:%.2s:%.2s %.2s:%.2s:%.2s",

@@ -5,6 +5,7 @@
 	"FWFS":{
 		"files":[
 			"ainr_mulaw_1024_imx681",
+			"ainr_mulaw_1024_ov13b10",
 			"planar_to_nchw_blc_1024"
 		]
 	},
@@ -12,6 +13,11 @@
 		"name" : "ainr_mulaw_1024_imx681.nb",
 		"source":"binary",
 		"file":"ainr_mulaw_1024_imx681.nb"
+	},
+	"ainr_mulaw_1024_ov13b10":{
+		"name" : "ainr_mulaw_1024_ov13b10.nb",
+		"source":"binary",
+		"file":"ainr_mulaw_1024_ov13b10.nb"
 	},
 	"planar_to_nchw_blc_1024":{
 		"name" : "planar_to_nchw_1024_lut.nb",

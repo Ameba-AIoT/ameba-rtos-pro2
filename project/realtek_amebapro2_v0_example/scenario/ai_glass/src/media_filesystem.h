@@ -10,6 +10,7 @@
 #define SYS_COUNT_PIC_LABEL         "picture"
 #define SYS_COUNT_FILM_LABEL        "film"
 #define SYS_COUNT_SYS_LABEL         "sysfile"
+#define SYS_COUNT_LOG_LABEL         "logfile"
 
 #define MAX_BURST 100 // or make dynamic 
 extern char burst_names[MAX_BURST][64]; 

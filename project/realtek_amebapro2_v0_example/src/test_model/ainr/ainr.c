@@ -15,6 +15,11 @@ nnlite_model_t ainr_imx681 = {
 	.filename   = "NN_MDL/ainr_mulaw_512_imx681.nb",
 	.modelname  = "ainr"
 };
+nnlite_model_t ainr_ov13b10 = {
+	.type       = NNLITE_CREATE_NETWORK_TYPE_FWFS,
+	.filename   = "NN_MDL/ainr_mulaw_512_ov13b10.nb",
+	.modelname  = "ainr"
+};
 nnlite_model_t planar_to_nchw_blc = {
 	.type       = NNLITE_CREATE_NETWORK_TYPE_FWFS,
 	.filename   = "NN_MDL/planar_to_nchw_512_lut.nb",
@@ -26,7 +31,11 @@ nnlite_model_t ainr_imx681 = {
 	.filename   = "NN_MDL/ainr_mulaw_1024_imx681.nb",
 	.modelname  = "ainr"
 };
-
+nnlite_model_t ainr_ov13b10 = {
+	.type       = NNLITE_CREATE_NETWORK_TYPE_FWFS,
+	.filename   = "NN_MDL/ainr_mulaw_1024_ov13b10.nb",
+	.modelname  = "ainr"
+};
 nnlite_model_t planar_to_nchw_blc = {
 	.type       = NNLITE_CREATE_NETWORK_TYPE_FWFS,
 	.filename   = "NN_MDL/planar_to_nchw_1024_lut.nb",
@@ -131,7 +140,7 @@ void ainr_dump_time_stats(ainr_ctx_t *ctx)
 
 ainr_ctx_t *ainr_init(void)
 {
-#if USE_SENSOR != SENSOR_IMX681
+#if (USE_SENSOR != SENSOR_IMX681) && (USE_SENSOR != SENSOR_OV13B10)
 	printf("[ainr] sensor dont support ainr\r\n");
 	return NULL;
 #endif
@@ -148,6 +157,18 @@ ainr_ctx_t *ainr_init(void)
 		free(ctx);
 		return NULL;
 	}
+	ctx->image_h = sensor_params[SENSOR_IMX681_12M].sensor_height;
+	ctx->image_w = sensor_params[SENSOR_IMX681_12M].sensor_width;
+#elif USE_SENSOR == SENSOR_OV13B10
+	ctx->nnlite_ctx = nnlite_deploy_model(&ainr_ov13b10);
+	if (ctx->nnlite_ctx == NULL) {
+		printf("Failed to deploy AINR model\r\n");
+		free(ctx);
+		return NULL;
+	}
+	ctx->image_h = sensor_params[SENSOR_OV13B10_12M].sensor_height;
+	ctx->image_w = sensor_params[SENSOR_OV13B10_12M].sensor_width;
+#endif	
 	ctx->planar_to_nchw_ctx = nnlite_deploy_model(&planar_to_nchw_blc);
 	if (ctx->planar_to_nchw_ctx == NULL) {
 		printf("Failed to deploy planar_to_nchw_blc model\r\n");
@@ -155,9 +176,6 @@ ainr_ctx_t *ainr_init(void)
 		free(ctx);
 		return NULL;
 	}
-	ctx->image_h = sensor_params[SENSOR_IMX681_12M].sensor_height;
-	ctx->image_w = sensor_params[SENSOR_IMX681_12M].sensor_width;
-#endif
 
 	printf("AINR initialized.\r\n");
 	return ctx;
@@ -402,14 +420,12 @@ static int denoise_tiled(ainr_ctx_t *ctx, uint16_t *denoised_packed_bayer_output
 	size_t patch_elements = (size_t)MODEL_INPUT_SIZE_H * MODEL_INPUT_SIZE_W * PACKED_CHANNELS;
 	uint8_t *patch_input_encoded_u8 = (uint8_t *)malloc(patch_elements * sizeof(uint8_t));
 	uint8_t *patch_denoised_u8      = (uint8_t *)malloc(patch_elements * sizeof(uint8_t));
-	uint16_t *patch_input_u16        = (uint16_t *)malloc(patch_elements * sizeof(uint16_t));
 	uint16_t *patch_denoised_decoded = (uint16_t *)malloc(patch_elements * sizeof(uint16_t));
 
-	if (!patch_input_encoded_u8 || !patch_denoised_u8 || !patch_input_u16 || !patch_denoised_decoded) {
+	if (!patch_input_encoded_u8 || !patch_denoised_u8 || !patch_denoised_decoded) {
 		printf("Error: Memory allocation for patch buffers failed!\r\n");
 		free(patch_input_encoded_u8);
 		free(patch_denoised_u8);
-		free(patch_input_u16);
 		free(patch_denoised_decoded);
 		return -1;
 	}
@@ -448,7 +464,6 @@ static int denoise_tiled(ainr_ctx_t *ctx, uint16_t *denoised_packed_bayer_output
 
 	free(patch_input_encoded_u8);
 	free(patch_denoised_u8);
-	free(patch_input_u16);
 	free(patch_denoised_decoded);
 	printf("Memory-optimized tiled denoising finished successfully.\n");
 

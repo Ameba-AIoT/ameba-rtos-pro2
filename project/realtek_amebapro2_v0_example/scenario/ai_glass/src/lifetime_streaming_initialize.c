@@ -105,13 +105,7 @@ static opusc_params_t opusc_params = {
 
 static video_params_t video_v1_params = {
 	.stream_id = V1_CHANNEL,
-	.type = VIDEO_TYPE,
-	.bps = V1_BPS,
-	.rc_mode = V1_RCMODE,
 	.use_static_addr = 1,
-    .level = VCENC_H264_LEVEL_4,
-	.profile = VCENC_H264_BASE_PROFILE,
-	.cavlc = 1
 };
 
 static int end_streaming_cb(void) {
@@ -138,13 +132,18 @@ int lifetime_streaming_initialize(void) {
 	video_v1_params.gop = stream_param->fps;
 	video_v1_params.rc_mode = stream_param->rc_mode;
     video_v1_params.rotation = stream_param->rotation;
+	video_v1_params.cavlc = stream_param->cavlc;
 
 	if(video_v1_params.type == 0) {
-		video_v1_params.level = VCENC_HEVC_LEVEL_4;
-		video_v1_params.profile = VCENC_HEVC_MAIN_PROFILE;
-		video_v1_params.cavlc = 1;
-	};
-
+		video_v1_params.level = stream_param->h265_level;
+		video_v1_params.profile = stream_param->h265_profile;
+	} else if (video_v1_params.type == 1) {
+		video_v1_params.level = stream_param->h264_level;
+		video_v1_params.profile = stream_param->h264_profile;
+	} else {
+		AI_GLASS_ERR("Wrong video type BT streaming video code id is not set\n\r");
+		goto lifetime_streaming_initialize_fail;
+	}
 #if VIDEO_AUDIO
 #if AUDIO_SRC==AUDIO_INTERFACE
 	ls_audio_ctx = mm_module_open(&audio_module);

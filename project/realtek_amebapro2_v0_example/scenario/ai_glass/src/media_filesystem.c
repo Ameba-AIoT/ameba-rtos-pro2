@@ -208,8 +208,6 @@ static int check_valid_file_and_remove(const char *list_path, const char *filena
 			if (res == 0) {
 				if (strcmp(filename, "uart_log.txt") == 0) { 
 					// Keep uart_log.txt even if empty 
-					free(file_path);
-					return 0; // or just skip adding it 
 				}
 				if (finfo.st_size == 0) {
 					FILE_SYS_WARN("size 0 is invlaid %s, remove file\r\n", file_path);
@@ -309,6 +307,8 @@ FILE *extdisk_fopen(const char *filename, const char *mode)
 			increase_file_sys_count(filecount_object, SYS_COUNT_PIC_LABEL);
 		} else if (check_extension(ai_glass_path, ".bin")) {
 			increase_file_sys_count(filecount_object, SYS_COUNT_SYS_LABEL);
+		} else if (check_extension(ai_glass_path, ".txt")) {
+			increase_file_sys_count(filecount_object, SYS_COUNT_LOG_LABEL);
 		}
 	}
 	return newfile;
@@ -395,6 +395,8 @@ int extdisk_remove(const char *filename)
 			decrease_file_sys_count(filecount_object, SYS_COUNT_PIC_LABEL);
 		} else if (check_extension(ai_glass_path, ".bin")) {
 			decrease_file_sys_count(filecount_object, SYS_COUNT_SYS_LABEL);
+		} else if (check_extension(ai_glass_path, ".txt")) {
+			decrease_file_sys_count(filecount_object, SYS_COUNT_LOG_LABEL);
 		}
 	}
 	return ret;
@@ -654,7 +656,7 @@ static cJSON *parser_file_cntlist_json(char *filename)
 	listobj = cJSON_Parse(filelist_json);
 	if (!listobj) {
 		FILE_SYS_INFO("parser file cnt list from EMMC failed, Create object by survey all file system\r\n");
-		const char *extensions[] = { ".mp4", ".jpeg", ".jpg", ".bin"};
+		const char *extensions[] = { ".mp4", ".jpeg", ".jpg", ".bin", ".txt"};
 		uint16_t num_extensions = sizeof(extensions) / sizeof(extensions[0]);
 		if (num_extensions > 0 && num_extensions <= MAX_GROUP_COUNT) {
 			uint16_t ext_counts[MAX_GROUP_COUNT] = {0};
@@ -664,14 +666,16 @@ static cJSON *parser_file_cntlist_json(char *filename)
 			uint16_t film_num = ext_counts[0];
 			uint16_t picture_num = ext_counts[1] + ext_counts[2];
 			uint16_t sysfile_num = ext_counts[3];
+			uint16_t log_num = ext_counts[4];
 			FILE_SYS_MSG("film_num = %d\r\n", film_num);
 			FILE_SYS_MSG("picture_num = %d\r\n", picture_num);
 			FILE_SYS_MSG("sysfile_num = %d\r\n", sysfile_num);
-
+			FILE_SYS_MSG("log_num = %d\r\n", log_num);
 			if ((listobj = cJSON_CreateObject()) != NULL) {
 				cJSON_AddItemToObject(listobj, SYS_COUNT_PIC_LABEL, cJSON_CreateNumber(picture_num));
 				cJSON_AddItemToObject(listobj, SYS_COUNT_FILM_LABEL, cJSON_CreateNumber(film_num));
 				cJSON_AddItemToObject(listobj, SYS_COUNT_SYS_LABEL, cJSON_CreateNumber(sysfile_num));
+				cJSON_AddItemToObject(listobj, SYS_COUNT_LOG_LABEL, cJSON_CreateNumber(log_num));
 			}
 		}
 	} else {
