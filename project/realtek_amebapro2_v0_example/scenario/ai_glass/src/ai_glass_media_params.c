@@ -1205,7 +1205,7 @@ void initial_media_parameters(void)
 			pre_init_params.isp_init_enable = 1;
 			pre_init_params.init_isp_items.init_brightness = 0;
 			pre_init_params.init_isp_items.init_contrast = 50;
-			pre_init_params.init_isp_items.init_flicker = 1;
+			pre_init_params.init_isp_items.init_flicker = 2;
 			pre_init_params.init_isp_items.init_hdr_mode = 0;
 			pre_init_params.init_isp_items.init_mirrorflip = 0xf0; // flip and mirror
 			pre_init_params.init_isp_items.init_saturation = 50;

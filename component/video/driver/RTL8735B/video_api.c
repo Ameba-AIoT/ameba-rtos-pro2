@@ -108,8 +108,10 @@ int video_load_fw(unsigned int sensor_start_addr);
 unsigned char *video_load_sensor(unsigned int sensor_start_addr);
 unsigned char *video_load_iq(unsigned int iq_start_addr);
 static void isp_set_dn_initial_mode(int ch, int mode);
-int video_get_voe_version(void);
+static int video_get_voe_version(void);
 static void video_rc_callback(int ch, bps_stbl_ctrl_t *bps_stbl_ctrl, uint32_t frame_size);
+static int video_set_dyn_roi(int ch, isp_crop_t *crop_info);
+static int video_get_roi_en(int ch);
 
 /////////////////////////////////
 SECTION(".sdram.bss")
@@ -230,51 +232,6 @@ int video_get_buffer_info(int ch, int *enc_size, int *out_buf_size, int *out_rsv
 	}
 }
 
-// Output stream callback function
-static void temp_output_cb(void *param1, void  *param2, uint32_t arg)
-{
-	enc2out_t *enc2out = (enc2out_t *)param1;
-	//hal_video_adapter_t  *v_adp = (hal_video_adapter_t *)param2;
-	//commandLine_s *cml = (commandLine_s *)&v_adp->cmd[enc2out->ch];
-
-	video_dprintf(VIDEO_LOG_INF, "ch = %d, type = %d\r\n", enc2out->ch, enc2out->codec);
-
-	// VOE status check
-	if (enc2out->cmd_status != VOE_OK) {
-		switch (enc2out->cmd_status) {
-		case VOE_ENC_BUF_OVERFLOW:
-		case VOE_ENC_QUEUE_OVERFLOW:
-		case VOE_JPG_BUF_OVERFLOW:
-		case VOE_JPG_QUEUE_OVERFLOW:
-			video_dprintf(VIDEO_LOG_MSG, "VOE CH%d ENC/BUF overflow\n", enc2out->ch);
-			break;
-		default:
-			video_dprintf(VIDEO_LOG_MSG, "Error CH%d VOE status %x\n", enc2out->ch, enc2out->cmd_status);
-			break;
-		}
-		return;
-	}
-
-
-	if ((enc2out->codec & (CODEC_H264 | CODEC_HEVC)) != 0) {
-		hal_video_release(enc2out->ch, (enc2out->codec & (CODEC_H264 | CODEC_HEVC)), 0);
-	}
-
-	if ((enc2out->codec & CODEC_JPEG) != 0) {
-		hal_video_release(enc2out->ch, (enc2out->codec & CODEC_JPEG), 0);
-	}
-
-	if ((enc2out->codec & (CODEC_NV12 | CODEC_RGB | CODEC_NV16)) != 0) {
-		hal_video_isp_buf_release(enc2out->ch, (uint32_t)enc2out->isp_addr);
-	}
-
-
-	if (enc2out->finish == LAST_FRAME) {
-
-	}
-
-}
-
 static void video_output_cb(void *param1, void  *param2, uint32_t arg)
 {
 	enc2out_t *enc2out = (enc2out_t *)param1;
@@ -282,17 +239,113 @@ static void video_output_cb(void *param1, void  *param2, uint32_t arg)
 	int ch = enc2out->ch;
 	voe_info.ch_info[ch].incb = 1;
 
+
+	if (enc2out->cmd_status != VOE_OK) {
+		// VOE error handled
+		switch (enc2out->cmd_status) {
+		case VOE_ENC_BUF_OVERFLOW:
+		case VOE_ENC_QUEUE_OVERFLOW:
+			video_dprintf(VIDEO_LOG_MSG, "VOE CH%d ENC %s full (queue/used/out/rsvd) %d/%dKB%dKB%dKB\n"
+							  , enc2out->ch
+							  , enc2out->cmd_status == VOE_ENC_BUF_OVERFLOW ? "buff" : "queue"
+							  , enc2out->enc_time
+							  , enc2out->enc_used >> 10
+							  , voe_info.ch_info[ch].param.out_buf_size >> 10
+							  , voe_info.ch_info[ch].param.out_rsvd_size >> 10);
+			video_encbuf_clean(enc2out->ch, CODEC_H264 | CODEC_HEVC);
+			video_ctrl(enc2out->ch, VIDEO_FORCE_IFRAME, 1);
+			break;
+		case VOE_JPG_BUF_OVERFLOW:
+		case VOE_JPG_QUEUE_OVERFLOW:
+			video_dprintf(VIDEO_LOG_MSG, "VOE CH%d JPG %s full (queue/used/out/rsvd) %d/%dKB\n"
+							  , enc2out->ch
+							  , enc2out->cmd_status == VOE_JPG_BUF_OVERFLOW ? "buff" : "queue"
+							  , enc2out->jpg_time
+							  , enc2out->jpg_used >> 10);
+			//video_encbuf_clean(enc2out->ch, CODEC_JPEG);
+			break;
+		default:
+			video_dprintf(VIDEO_LOG_ERR, "Error CH%d VOE cmd %x status %x\n", enc2out->ch, enc2out->cmd, enc2out->cmd_status);
+			break;
+		}
+		return;
+	}
+
+	//force I filter, when force i, it will wait until get i frame
+	if (voe_info.ch_info[ch].forcei == 1) {
+		if (enc2out->codec & (CODEC_H264 | CODEC_HEVC)) {
+			uint8_t *ptr = (uint8_t *)enc2out->enc_addr;
+			
+			int is_valid_start_code = (ptr[0] == 0 && ptr[1] == 0 && ptr[2] == 0 && ptr[3] == 1);
+			if (!is_valid_start_code) {
+				video_dprintf(VIDEO_LOG_ERR, "\r\nStream Error: (%d/%d) %x %x %x %x\r\n", enc2out->enc_len, enc2out->finish, *ptr, *(ptr + 1), *(ptr + 2), *(ptr + 3));
+				goto video_frame_release;
+			}
+
+			int is_key_info = 0;
+			if (enc2out->codec & (CODEC_H264)) {
+				int type = ptr[4] & 0x1F;
+				if (type == 0x07) {
+					is_key_info = 1;
+				}
+			} else if (enc2out->codec & (CODEC_HEVC)) {
+				int type = ptr[4];
+				if (type == 0x40) {
+					is_key_info = 1;
+				}
+			}
+			if(is_key_info) {
+				voe_info.ch_info[ch].forcei = 0;
+			} else {
+				goto video_frame_release;
+			}
+		}
+	}
+
+	if(voe_info.ch_info[ch].dyn_drop_frame) {
+		if((enc2out->codec & (CODEC_H264 | CODEC_HEVC)) && (voe_info.ch_info[ch].dyn_drop_frame == 1)) {
+			//when drop last frame force next frame output I frame
+			video_ctrl(enc2out->ch, VIDEO_FORCE_IFRAME, 1);
+		}
+		voe_info.ch_info[ch].dyn_drop_frame--;
+		goto video_frame_release;
+	}
+
 	if (voe_info.ch_info[ch].video_output_cb) {
 		voe_info.ch_info[ch].video_output_cb(param1, param2, arg);
 	} else {
-		temp_output_cb(param1, param2, arg);
+		goto video_frame_release;
 	}
 
-	if (enc2out->codec & CODEC_H264 || enc2out->codec & CODEC_HEVC) {
+	if (enc2out->codec & (CODEC_H264 | CODEC_HEVC)) {
 		video_rc_callback(ch, voe_info.ch_info[ch].bps_stbl_ctrl, enc2out->enc_len);
 	} else if (enc2out->codec & CODEC_JPEG) {
 		video_rc_callback(ch, voe_info.ch_info[ch].bps_stbl_ctrl, enc2out->jpg_len);
 	}
+
+	voe_info.ch_info[ch].incb = 0;
+	return;
+
+video_frame_release:
+
+	if (enc2out->codec & (CODEC_H264 | CODEC_HEVC)) {
+		video_dprintf(VIDEO_LOG_INF, "(%s-%s)(0x%X -- %d)(ch%d)(wh=%d x %d) \n"
+						, (enc2out->codec & CODEC_H264) != 0 ? "H264" : "HEVC"
+						, (enc2out->type == VCENC_INTRA_FRAME) ? "I" : "P"
+						, enc2out->enc_addr, enc2out->enc_len, enc2out->ch, enc2out->width, enc2out->height);
+	}
+	
+	if ((enc2out->codec & CODEC_JPEG) != 0) {
+		video_encbuf_release(enc2out->ch, CODEC_JPEG, enc2out->jpg_len);
+		enc2out->codec = enc2out->codec & (~CODEC_JPEG);
+	}	
+
+	if ((enc2out->codec & (CODEC_H264 | CODEC_HEVC)) != 0) {
+		video_encbuf_release(enc2out->ch, enc2out->codec, enc2out->enc_len);
+	} else if ((enc2out->codec & (CODEC_NV12 | CODEC_RGB | CODEC_NV16)) != 0) {
+		video_ispbuf_release(enc2out->ch, (int)enc2out->isp_addr);
+	}
+
 	voe_info.ch_info[ch].incb = 0;
 }
 
@@ -493,6 +546,9 @@ int video_ctrl(int ch, int cmd, int arg)
 	break;
 	case VIDEO_FORCE_IFRAME: {
 		ret = hal_video_force_i(ch);
+		if(ret == OK) {
+			voe_info.ch_info[ch].forcei = 1;
+		}
 	}
 	break;
 	case VIDEO_BPS: {
@@ -510,7 +566,7 @@ int video_ctrl(int ch, int cmd, int arg)
 	}
 	break;
 	case VIDEO_ISPFPS: {
-		int video_type = voe_info.ch_info[ch].param->type;
+		int video_type = voe_info.ch_info[ch].param.type;
 		ret = hal_video_set_isp_stream_fps(ch, arg);
 		if (ret == OK) {
 			voe_info.ch_info[ch].isp_fps = arg;
@@ -582,6 +638,14 @@ int video_ctrl(int ch, int cmd, int arg)
 		}
 	}
 	break;
+	case VIDEO_SET_DYN_ROI: {
+		ret = video_set_dyn_roi(ch, (isp_crop_t *)arg);
+	}
+	break;
+	case VIDEO_GET_ROI_STAT: {
+		*((int *)arg) = video_get_roi_en(ch);
+	}
+	break;
 	}
 	// Reset the time offset when the video output is stopped
 	if (arg == 0 && cmd >= VIDEO_HEVC_OUTPUT && cmd <= VIDEO_NV16_OUTPUT) {
@@ -643,7 +707,7 @@ int video_set_bps_stbl_ctrl_params(int ch, bps_stbl_ctrl_param_t *bps_stbl_ctrl_
 	}
 	bps_stbl_ctrl_t *bps_stbl_ctrl = voe_info.ch_info[ch].bps_stbl_ctrl;
 	if (bps_stbl_ctrl_param) {
-		int rcMode = voe_info.ch_info[ch].param->rc_mode - 1;
+		int rcMode = voe_info.ch_info[ch].param.rc_mode - 1;
 		if (rcMode) { //VBR
 			bps_stbl_ctrl->params.minimum_bitrate = bps_stbl_ctrl_param->minimum_bitrate / 2;
 			bps_stbl_ctrl->params.maximun_bitrate = bps_stbl_ctrl_param->maximun_bitrate / 2;
@@ -947,7 +1011,7 @@ static int video_rc_validate_and_fix(int ch, rate_ctrl_s *rc_ctrl)
 	}
 
 	if (rc_ctrl->bps) {
-		int rcMode = voe_info.ch_info[ch].param->rc_mode - 1;
+		int rcMode = voe_info.ch_info[ch].param.rc_mode - 1;
 		int bps;
 		if (rcMode) { //VBR
 			bps = rc_ctrl->bps / 2;
@@ -1025,6 +1089,26 @@ void video_set_isp_info(isp_info_t *info)
 	isp_info.osd_enable = info->osd_enable;
 	isp_info.md_enable = info->md_enable;
 	isp_info.hdr_enable = info->hdr_enable;
+}
+
+void video_set_sensor_fps(int max_fps, int min_fps)
+{
+	if(min_fps > max_fps) {
+		video_dprintf(VIDEO_LOG_ERR, "invalid sensor fps setting\r\n");
+		return;
+	}
+	int cur_min_fps = 0;
+	isp_get_min_fps(&cur_min_fps);
+	if(max_fps >= cur_min_fps) {
+		//If raise sensor fps. raise maxfps first.
+		isp_set_max_fps(max_fps);
+		isp_set_min_fps(min_fps);
+	} else {
+		//If lower sensor fps. lower minfps first.
+		isp_set_min_fps(min_fps);
+		isp_set_max_fps(max_fps);
+	}
+	isp_info.sensor_fps = max_fps;
 }
 
 int video_set_voe_heap(int heap_addr, int heap_size, int use_malloc)
@@ -1840,10 +1924,10 @@ void video_pre_init_procedure(int ch, video_pre_init_params_t *parm)
 	} else {
 		v_adp->cmd[0]->voe_dbg = 1;
 	}
+	v_adp->cmd[ch]->direct_i2c_mode = 1;
 	if (parm->isp_ae_enable) {
 		v_adp->cmd[ch]->set_AE_init_flag = 1;
 		v_adp->cmd[ch]->all_init_iq_set_flag = 1;
-		v_adp->cmd[ch]->direct_i2c_mode = 1;
 		//init exposure time min limit /*to fix*/
 		if (parm->isp_ae_init_exposure < 300) {
 			video_dprintf(VIDEO_LOG_MSG, "modify ae exposure time to 300\r\n");
@@ -1970,7 +2054,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 	int status = OK;
 	rtw_mutex_get(&video_open_close_mutex);
 
-	voe_info.ch_info[ch].param = v_stream;
+	memcpy(&(voe_info.ch_info[ch].param), v_stream, sizeof(video_params_t));
 	voe_info.ch_info[ch].video_output_cb = output_cb;
 	switch (ch) {
 	case 0:
@@ -2046,6 +2130,13 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 	}
 
 	if (isp_boot->fcs_status == 1 && isp_boot->fcs_setting_done == 0 && video_check_fcs(v_stream->stream_id) == 1) {
+		if ((codec & (CODEC_HEVC | CODEC_H264)) != 0) {
+			if (video_rc_init(v_stream) != OK) {
+				video_dprintf(VIDEO_LOG_ERR, "ch%d rc task init fail\r\n", ch);
+				status = NOK;
+				goto EXIT;
+			}
+		}
 		hal_video_set_fps(isp_boot->video_params[ch].fps, ch); // for count the enc offset of the fcs channel
 		if (hal_video_out_cb(video_output_cb, 4096, (uint32_t)ctx, ch) != OK) {
 			video_dprintf(VIDEO_LOG_ERR, "hal_video_cb_register fail\n");
@@ -2068,13 +2159,6 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 		} else if (codec & CODEC_RGB) {
 			voe_info.ch_info[ch].isp_fps = isp_boot->video_params[ch].fps;
 			hal_video_out_mode(ch, TYPE_RGB, MODE_ENABLE);
-		}
-		if ((codec & (CODEC_HEVC | CODEC_H264)) != 0) {
-			if (video_rc_init(v_stream) != OK) {
-				video_dprintf(VIDEO_LOG_ERR, "ch%d rc task init fail\r\n", ch);
-				status = NOK;
-				goto EXIT;
-			}
 		}
 		hal_video_fcs_ch(count);
 		if (count == isp_boot->fcs_channel) {
@@ -2101,8 +2185,8 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 		}
 		g_enc_buff_size[3] = isp_boot->extra_video_params.out_buf_size;
 
-		v_stream->out_buf_size  = g_enc_buff_size[ch];
-		v_stream->out_rsvd_size = out_rsvd_size;
+		voe_info.ch_info[ch].param.out_buf_size  = g_enc_buff_size[ch];
+		voe_info.ch_info[ch].param.out_rsvd_size = out_rsvd_size;
 		//return OK;
 		goto EXIT;
 	}
@@ -2231,7 +2315,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 		}
 	}
 	video_dprintf(VIDEO_LOG_INF, "set video callback\r\n");
-	if (hal_video_out_cb(video_output_cb, 2048, (uint32_t)ctx, ch) != OK) { //4096
+	if (hal_video_out_cb(video_output_cb, 4096, (uint32_t)ctx, ch) != OK) {
 		video_dprintf(VIDEO_LOG_ERR, "hal_video_cb_register fail\n");
 		status = NOK;
 		goto EXIT;
@@ -2249,8 +2333,8 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 	if (codec & (CODEC_HEVC | CODEC_H264)) {
 		//hal_video_enc_buf(ch, out_buf_size, out_rsvd_size);
 		hal_video_enc_buf(ch, g_enc_buff_size[ch], out_rsvd_size);
-		v_stream->out_buf_size = g_enc_buff_size[ch];
-		v_stream->out_rsvd_size = out_rsvd_size;
+		voe_info.ch_info[ch].param.out_buf_size = g_enc_buff_size[ch];
+		voe_info.ch_info[ch].param.out_rsvd_size = out_rsvd_size;
 	}
 	if (codec & CODEC_JPEG) {
 		hal_video_jpg_buf(ch, jpeg_out_buf_size, jpeg_out_rsvd_size);
@@ -2269,10 +2353,10 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 	}
 
 	if (video_open_status() == 0) {
-		voe_info.voe_scale_up_en = 0;
+		voe_info.scale_up_info.enable = 0;
 	}
 
-	if (voe_info.voe_scale_up_en == 0) {
+	if (voe_info.scale_up_info.enable == 0) {
 		int origin_width = (int)isp_info.sensor_width;
 		int origin_height = (int)isp_info.sensor_height;
 		if (v_stream->use_roi) {
@@ -2286,7 +2370,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 		}
 		if (v_stream->out_mode == MODE_EXT) {
 			video_dprintf(VIDEO_LOG_INF, "ch%d ext mode skip roi check\r\n", ch);
-		} else if (enc_in_w <= origin_width && enc_in_h <= origin_height) { //scale down
+		} else if (enc_in_w <= origin_width && enc_in_h <= origin_height && v_stream->dyn_scale_up_en == 0) { //scale down
 			if (v_stream->use_roi) {
 				video_dprintf(VIDEO_LOG_INF, "ch%d set_roi (%d,%d,%d,%d)\r\n", ch, v_stream->roi.xmin, v_stream->roi.ymin, origin_width, origin_height);
 				hal_video_isp_set_roi(ch, v_stream->roi.xmin, v_stream->roi.ymin, origin_width, origin_height);
@@ -2305,31 +2389,32 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 				status = NOK;
 				goto EXIT;
 			} else {
-				voe_info.voe_scale_up_en = 1;
+				video_dprintf(VIDEO_LOG_INF, "ch%d scale up\r\n", ch);
+				if(v_stream->dyn_scale_up_en == 1 && enc_in_w == origin_width && enc_in_h == origin_height) {
+					video_dprintf(VIDEO_LOG_INF, "ch%d hal_video_set_zoom_1x1_up_en = 1\r\n");
+					hal_video_set_zoom_1x1_up_en(ch, 1);
+				}
+				voe_info.scale_up_info.enable = 1;
 				hal_video_isp_clk_set(ch, 5, 0);
 				if (v_stream->use_roi) {
 					video_dprintf(VIDEO_LOG_INF, "ch%d set_roi (%d,%d,%d,%d)\r\n", ch, v_stream->roi.xmin, v_stream->roi.ymin, origin_width, origin_height);
 					hal_video_isp_set_roi(ch, v_stream->roi.xmin, v_stream->roi.ymin, origin_width, origin_height);
-					memcpy(&(voe_info.voe_scale_up_roi), &(v_stream->roi), sizeof(video_roi_t));
+					voe_info.scale_up_info.use_roi = 1;
+					memcpy(&(voe_info.scale_up_info.roi), &(v_stream->roi), sizeof(video_roi_t));
 				}
 			}
 		} else {
-			video_dprintf(VIDEO_LOG_ERR, "error: invalid resolution %dx%d -> %dx%d\r\n", origin_width, origin_height, enc_in_w, enc_in_h);
+			video_dprintf(VIDEO_LOG_ERR, "error:invalid params dyn_scale_up_en %d, resolution %dx%d -> %dx%d\r\n", v_stream->dyn_scale_up_en, origin_width, origin_height, enc_in_w, enc_in_h);
 			status = NOK;
 			goto EXIT;
 		}
-	} else if (v_stream->use_roi) {
-		if (ch == 0) {
-			video_dprintf(VIDEO_LOG_INF, "It don't need to setup ch0 again\r\n");
-			//ch0 should maintain the roi settings, while reopening /* to fix */
-			int roi_w = (int)voe_info.voe_scale_up_roi.xmax - (int)voe_info.voe_scale_up_roi.xmin;
-			int roi_h = (int)voe_info.voe_scale_up_roi.ymax - (int)voe_info.voe_scale_up_roi.ymin;
-			hal_video_isp_set_roi(ch, voe_info.voe_scale_up_roi.xmin, voe_info.voe_scale_up_roi.ymin, roi_w, roi_h);
-		} else {
-			video_dprintf(VIDEO_LOG_ERR, "It don't support to setup the ROI when scale up is enable\r\n");
-			status = NOK;
-			goto EXIT;
-		}
+	} else if (voe_info.scale_up_info.use_roi) {
+		video_dprintf(VIDEO_LOG_INF, "ch%d auto apply scale up roi\r\n", ch);
+		// when scale up applied, scale up roi apply to all video channel
+		int roi_w = (int)voe_info.scale_up_info.roi.xmax - (int)voe_info.scale_up_info.roi.xmin;
+		int roi_h = (int)voe_info.scale_up_info.roi.ymax - (int)voe_info.scale_up_info.roi.ymin;
+		video_dprintf(VIDEO_LOG_INF, "ch%d set_roi (%d,%d,%d,%d)\r\n", ch, voe_info.scale_up_info.roi.xmin, voe_info.scale_up_info.roi.ymin, roi_w, roi_h);
+		hal_video_isp_set_roi(ch, voe_info.scale_up_info.roi.xmin, voe_info.scale_up_info.roi.ymin, roi_w, roi_h);
 	}
 
 	if ((codec & (CODEC_HEVC | CODEC_H264)) != 0) {
@@ -2439,7 +2524,6 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 	}
 
 	voe_info.ch_info[ch].stream_is_open = 1;
-	video_get_voe_version();
 #if FASTOSD_EN
 	if (v_stream->fast_osd_en) {
 		rts_osd_fast_start_enable(ch, 0);
@@ -2465,7 +2549,7 @@ int video_close(int ch)
 	rtw_mutex_get(&video_open_close_mutex);
 	int status = OK;
 	voe_info.ch_info[ch].stream_is_open = 0;
-	voe_info.ch_info[ch].param = NULL;
+	memset(&(voe_info.ch_info[ch].param), 0, sizeof(voe_info.ch_info[ch].param));
 	hal_video_set_fps(0, ch);
 	video_dprintf(VIDEO_LOG_INF, "hal_video_close\r\n");
 	status = hal_video_close(ch);
@@ -2484,6 +2568,7 @@ int video_close(int ch)
 	isp_ts_initialed_flag[ch] = 0;
 	video_rc_deinit(ch);
 	video_bps_stbl_ctrl_deinit(ch);
+	voe_info.ch_info[ch].dyn_drop_frame = 0;
 EXIT:
 	rtw_mutex_put(&video_open_close_mutex);
 	return status;
@@ -2568,6 +2653,8 @@ hal_video_adapter_t *video_init(int iq_start_addr, int sensor_start_addr)
 	if (video_open_close_mutex == NULL) {
 		rtw_mutex_init(&video_open_close_mutex);
 	}
+	voe_info.iq_addr = iq_start_addr;
+	voe_info.sensor_addr = sensor_start_addr;
 	if (hal_voe_ready() != OK) {
 		extern int __voe_code_start__[];
 		if (!hal_voe_fcs_check_OK()) {
@@ -2659,6 +2746,8 @@ hal_video_adapter_t *video_init(int iq_start_addr, int sensor_start_addr)
 		res = hal_video_init((uint32_t *)voe_info.voe_heap_addr, voe_info.voe_heap_size);
 		if (res != OK) {
 			video_dprintf(VIDEO_LOG_ERR, "hal_video_init fail\n");
+			voe_info.iq_addr = 0;
+			voe_info.sensor_addr = 0;
 			return NULL;
 		}
 
@@ -2666,16 +2755,6 @@ hal_video_adapter_t *video_init(int iq_start_addr, int sensor_start_addr)
 
 	}
 	if (isp_boot->fcs_status == 1 && video_open_status() == 0) {
-		unsigned char *sensor_addr = NULL;
-		unsigned char *iq_addr = NULL;
-		sensor_addr = video_load_sensor(sensor_start_addr);
-		memcpy(snr_voe_ver, sensor_addr, 24);
-		iq_addr = video_load_iq(iq_start_addr);
-		video_dprintf(VIDEO_LOG_MSG, "sensor timestamp: %04d/%02d/%02d\r\n", *(unsigned short *)(sensor_addr + 0), sensor_addr[2], sensor_addr[3]);
-		video_dprintf(VIDEO_LOG_MSG, "iq timestamp: %04d/%02d/%02d %02d:%02d:%02d\r\n", *(unsigned short *)(iq_addr + 12), iq_addr[14], iq_addr[15], iq_addr[16],
-					  iq_addr[17], *(unsigned short *)(iq_addr + 18));
-		memcpy(iq_timestamp, iq_addr + 12, 8);
-		memcpy(iq_cus_ver, iq_addr + 23, 8);
 		voe_info.voe_heap_addr = isp_boot->voe_heap_addr;
 		voe_info.voe_heap_size = isp_boot->voe_heap_size;
 		video_dprintf(VIDEO_LOG_INF, "voe_info.voe_heap_addr %x voe_info.voe_heap_size %x\r\n", voe_info.voe_heap_addr, voe_info.voe_heap_size);
@@ -3133,7 +3212,7 @@ static unsigned char *video_load_cal_iq(unsigned int cal_iq_start_addr)
 	return cal_iq_buf;
 }
 
-int video_get_voe_version()
+static int video_get_voe_version()
 {
 	unsigned int fw_size = 0;
 	void *fp = NULL;
@@ -3179,13 +3258,15 @@ void video_get_version()
 {
 	char version[] = {0xff, 0xff, 0xff, 0xff};
 	video_get_voe_version();
-
 	version[0] = voe_ver[13] - 48;
 	version[1] = voe_ver[15] - 48;
 	version[2] = voe_ver[17] - 48;
 	version[3] = voe_ver[19] - 48;
 	printf("voe_ver: %d.%d.%d.%d \r\n", version[0], version[1], version[2], version[3]);
 
+	unsigned char *sensor_addr = NULL;
+	sensor_addr = video_load_sensor(voe_info.sensor_addr);
+	memcpy(snr_voe_ver, sensor_addr, 24);
 	version[0] = snr_voe_ver[17] - 48;
 	version[1] = snr_voe_ver[19] - 48;
 	version[2] = snr_voe_ver[21] - 48;
@@ -3194,8 +3275,13 @@ void video_get_version()
 	printf("sensor_timestamp: %04d/%02d/%02d \r\n", *(unsigned short *)(snr_voe_ver + 0), snr_voe_ver[2], snr_voe_ver[3]);
 
 	printf("fcs_version: 0x%04X \r\n", fcs_version);
+	
+	unsigned char *iq_addr = NULL;
+	iq_addr = video_load_iq(voe_info.iq_addr);
+	memcpy(iq_timestamp, iq_addr + 12, 8);
 	printf("iq_timestamp: %04d/%02d/%02d %02d:%02d:%02d\r\n", *(unsigned short *)(iq_timestamp + 0), iq_timestamp[2], iq_timestamp[3], iq_timestamp[4],
 		   iq_timestamp[5], *(unsigned short *)(iq_timestamp + 6));
+	memcpy(iq_cus_ver, iq_addr + 23, 8);
 	printf("iq_cus_ver: 0x%02X \r\n", iq_cus_ver[0]);
 }
 
@@ -4610,3 +4696,65 @@ void video_get_max_dyn_region_idx(int ch, enum hal_isp_ae_region *idx) //only fo
 	}
 }
 #endif
+
+static int video_set_dyn_roi(int ch, isp_crop_t *crop_info)
+{
+	int ret = OK;
+	int scale_up_flow = 0;
+	if(video_get_stream_info(ch) == 0) {
+		video_dprintf(VIDEO_LOG_MSG, "[%s] ch%d not open\r\n", __FUNCTION__, ch);
+		return NOK;
+	}
+
+	int in_width = crop_info->width, in_height = crop_info->height;
+	int out_width = voe_info.ch_info[ch].param.width;
+	int out_height = voe_info.ch_info[ch].param.height;
+	if (in_width >= out_width && in_height >= out_height) { //scale down
+		video_dprintf(VIDEO_LOG_INF, "[%s] ch%d scale down %dx%d->%dx%d\r\n", __FUNCTION__, ch, in_width, in_height, out_width, out_height);
+	} else if (in_width < out_width && in_height < out_height) {//scale up
+		if(voe_info.scale_up_info.enable == 0) {
+			video_dprintf(VIDEO_LOG_ERR, "[%s] error: scale up not available\r\n", __FUNCTION__);
+			return NOK;
+		} else if(ch != 0) {
+			video_dprintf(VIDEO_LOG_ERR, "[%s] error: scale up only available in ch0\r\n", __FUNCTION__);
+			return NOK;
+		}
+		video_dprintf(VIDEO_LOG_INF, "[%s] ch%d scale up %dx%d->%dx%d\r\n", __FUNCTION__, ch, in_width, in_height, out_width, out_height);
+		scale_up_flow = 1;
+	} else {
+		video_dprintf(VIDEO_LOG_ERR, "[%s] error: invalid resolution %dx%d -> %dx%d\r\n", __FUNCTION__, in_width, in_height, out_width, out_height);
+		return NOK;
+	}
+
+	ret = hal_video_set_dynamic_zoom(ch, *crop_info);
+
+	if(ret != OK) {
+		video_dprintf(VIDEO_LOG_ERR, "[%s] error: ch%d %d %d %d %d crop fail\r\n", __FUNCTION__, ch, crop_info->start_x, crop_info->start_y, in_width, in_height);
+		return NOK;
+	} else {
+		voe_info.ch_info[ch].param.use_roi = 1;
+	}
+
+	if(scale_up_flow) {
+		//scale-up is effective on the current frame; drop both this frame and the next frame to avoid corruption
+		voe_info.ch_info[0].dyn_drop_frame = 2;
+		//scale up roi need to sync every video channel
+		for(int i = 1; i < MAX_CHANNEL; i++) {
+			if(video_get_stream_info(i)) {
+				video_dprintf(VIDEO_LOG_INF, "scale up sync to ch %d\r\n", i);
+				ret = hal_video_set_dynamic_zoom(i, *crop_info);
+				if(ret == OK) {
+					voe_info.ch_info[i].param.use_roi = 1;
+				}
+				voe_info.ch_info[i].dyn_drop_frame = 2;
+			}
+		}
+	}
+	
+	return ret;
+}
+
+static int video_get_roi_en(int ch)
+{
+	return voe_info.ch_info[ch].param.use_roi;
+}

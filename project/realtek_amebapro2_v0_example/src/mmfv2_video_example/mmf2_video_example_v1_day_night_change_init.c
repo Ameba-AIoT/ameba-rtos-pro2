@@ -214,15 +214,7 @@ static void fps_change(day_night_mode_change_t mode, int sensor_fps, rate_ctrl_s
 #if BPS_STABLE_CONTROL
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_BPS_STBL_CTRL_EN, 0);
 #endif
-	if (mode == DAY_MODE) {
-		//Set ISP FPS. raise maxfps first. minfps cannot set larger than maxfps.
-		isp_set_max_fps(sensor_fps);
-		isp_set_min_fps(sensor_fps);
-	} else {
-		//Set ISP FPS. lower minfps first. minfps cannot set larger than maxfps.
-		isp_set_min_fps(sensor_fps);
-		isp_set_max_fps(sensor_fps);
-	}
+	video_set_sensor_fps(sensor_fps, sensor_fps);
 	if(video_wait_target_fps(V1_CHANNEL, sensor_fps, 500) == OK) {
 		//Set Encode configuration
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_MULTI_RCCTRL, (int)rc);

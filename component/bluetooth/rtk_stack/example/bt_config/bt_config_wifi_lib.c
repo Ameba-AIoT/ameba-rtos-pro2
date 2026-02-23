@@ -366,11 +366,20 @@ static int BC_req_connect(uint8_t *req, uint16_t req_len)
 {
 	int ret = -1;
 	uint8_t* rpl_pValue = NULL;
+	struct _BC_connect_AP_info_req apInfo_req, *p_apInfo_req = &apInfo_req;
 	struct _BC_connect_AP_info apInfo, *p_apInfo = &apInfo;
 	BC_band_t user_BC_band = BC_BAND_UNKNOWN;
 	rtw_security_t user_BC_security = RTW_SECURITY_OPEN;
 
-	memcpy(p_apInfo, req, sizeof(struct _BC_connect_AP_info));
+	memcpy(p_apInfo_req, req, sizeof(struct _BC_connect_AP_info_req));
+
+	memset(p_apInfo, 0, sizeof(struct _BC_connect_AP_info));
+	memcpy(&p_apInfo->band, &p_apInfo_req->band, sizeof(p_apInfo_req->band));
+	memcpy(&p_apInfo->security_type, &p_apInfo_req->security_type, sizeof(p_apInfo_req->security_type));
+	memcpy(p_apInfo->SSID, p_apInfo_req->SSID, sizeof(p_apInfo_req->SSID));
+	memcpy(p_apInfo->BSSID, p_apInfo_req->BSSID, sizeof(p_apInfo_req->BSSID));
+	memcpy(p_apInfo->password, p_apInfo_req->password, sizeof(p_apInfo_req->password));
+
 	user_BC_security = BC_translate_security_from_app(p_apInfo->security_type);
 	user_BC_band = BC_translate_band_from_app(p_apInfo->band);
 	if ((user_BC_security == RTW_SECURITY_UNKNOWN)|| (user_BC_band == BC_BAND_UNKNOWN)) {

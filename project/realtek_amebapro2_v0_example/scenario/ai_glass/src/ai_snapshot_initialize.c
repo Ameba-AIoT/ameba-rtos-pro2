@@ -155,7 +155,7 @@ int ai_snapshot_initialize(void)
 			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, MM_CMD_SET_QUEUE_LEN, 2);//Default 30
 			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
 			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_APPLY, ai_snap_ctx->video_snapshot_params.stream_id);
-			video_ctrl(0, VIDEO_DEBUG, 0);
+			// video_ctrl(0, VIDEO_DEBUG, 0);
 		} else {
 			ret = -1;
 			ai_snapshot_deinitialize();

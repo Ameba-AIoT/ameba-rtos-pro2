@@ -68,7 +68,7 @@ void ping_test(void *param)
 	ping_received_count = 0;
 
 	if (data_size > BUF_SIZE) {
-		printf("\n\r[ERROR] %s: data size error, can't exceed %d", __func__, BUF_SIZE);
+		printf("\n\r[ERROR] %s: data size error, can't exceed %d\n\r", __func__, BUF_SIZE);
 		goto Exit;
 	}
 
@@ -324,6 +324,12 @@ void cmd_ping(int argc, char **argv)
 				}
 				ping_interface = (int) atoi(argv[argv_count]);
 				argv_count += 2;
+			} else if (strcmp(argv[argv_count - 1], "-i") == 0) {
+				if (argc < (argv_count + 1)) {
+					goto Exit;
+				}
+				ping_interval = (int) atoi(argv[argv_count]);
+				argv_count += 2;
 			} else {
 				goto Exit;
 			}
@@ -347,6 +353,7 @@ Exit:
 	printf("  \r     -l    #   Send buffer size (default 32 bytes)\n");
 	printf("  \r     -i    #   Ping interval (default 1 sec)\n");
 	printf("  \r     if   #   only for concurrent mode, set '0' or '1' \n");
+	printf("  \r     -i    #   Ping interval (default 1 sec)\n");
 	printf("\n\r   Example:\n");
 	printf("  \r     ATWI=192.168.1.2,-n,100,-l,5000\n");
 	return;

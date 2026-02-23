@@ -2145,6 +2145,7 @@ __attribute__((section (".retention.data"))) ip_addr_t retention_dns_servers[DNS
 __attribute__((section (".retention.data"))) uint16_t retention_tcp_port __attribute__((aligned(32))) = 0;
 __attribute__((section (".retention.data"))) uint16_t retention_udp_port __attribute__((aligned(32))) = 0;
 uint16_t dhcp_resume_t1_time = 0;
+uint16_t dhcp_resume_lease_used = 0;
 extern struct netif xnetif[];
 
 ip4_addr_t dhcp_get_retention_gwip(void){
@@ -2225,14 +2226,24 @@ int dhcp_resume(void)
 #endif
 
   // dhcp time
-  if (dhcp_resume_t1_time) {
-    if (dhcp_resume_t1_time > dhcp->t1_timeout) {
-      dhcp_resume_t1_time = dhcp->t1_timeout;
-    }
-    dhcp->t1_renew_time = dhcp_resume_t1_time;
-    dhcp->t2_rebind_time = dhcp->t1_renew_time + (dhcp->t2_timeout - dhcp->t1_timeout);
-    dhcp->lease_used = dhcp->t1_timeout - dhcp->t1_renew_time;
+
+  if ((dhcp_resume_lease_used * 60) >= dhcp->offered_t1_renew) {
+    //after T1 timeout
+      if ((dhcp_resume_lease_used * 60) >= dhcp->offered_t2_rebind) {
+        //DHCP rebinding
+        dhcp->t1_renew_time = 0;
+        dhcp->t2_rebind_time = 1;
+      } else {
+        //DHCP renew
+        dhcp->t1_renew_time = 1;
+        dhcp->t2_rebind_time = (dhcp->offered_t2_rebind - dhcp_resume_lease_used * 60) / 60;
+      }
+  } else {
+    //before T1 timeout
+    dhcp->t1_renew_time = (dhcp->offered_t1_renew - dhcp_resume_lease_used * 60) / 60;
+    dhcp->t2_rebind_time = (dhcp->offered_t2_rebind - dhcp_resume_lease_used * 60) / 60;
   }
+  dhcp->lease_used = dhcp_resume_lease_used;
 
   netif_set_client_data(&xnetif[0], LWIP_NETIF_CLIENT_DATA_INDEX_DHCP, dhcp);
   netif_set_addr(&xnetif[0], &dhcp->offered_ip_addr, &dhcp->offered_sn_mask, &dhcp->offered_gw_addr);
@@ -2264,6 +2275,16 @@ uint8_t lwip_set_dhcp_resume_t1(uint16_t t1_time)
     dhcp_resume_t1_time = 1;
   } else {
     dhcp_resume_t1_time = t1_time;
+  }
+  return 0;
+}
+
+uint8_t lwip_set_dhcp_resume_lease_used(uint16_t lease_used)
+{
+  if (lease_used == 0) {
+    dhcp_resume_lease_used = 1;
+  } else {
+    dhcp_resume_lease_used = lease_used;
   }
   return 0;
 }

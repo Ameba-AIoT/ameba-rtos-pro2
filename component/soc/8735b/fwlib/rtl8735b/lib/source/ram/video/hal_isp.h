@@ -1,7 +1,7 @@
 /*
  * hal_isp.h
  *
- *  Created on: 2021Å ~3â‚¬Ã«17â‚¬Ã©
+ *  Created on: 2021¦~3¤ë17¤é
  *      Author: martinhuang
  */
 
@@ -19,6 +19,7 @@
 #define MAX_SW_BUFFER 5
 #define MAX_VERIFY_NUM 32
 
+#define ISP_DEBUG_INFO_LEN 36
 //#define RTS_VIDEOIN_HEIGHT_ALIGN	16
 
 typedef struct hal_isp_buffer {
@@ -299,6 +300,9 @@ typedef struct {
 
 	uint32_t wdr_hist_contrast;
 	uint32_t wdr_hist_contrast_origin;
+
+	uint8_t ae_algo_dbg_buf[ISP_DEBUG_INFO_LEN];
+
 	uint32_t reserved;
 
 } isp_statis_meta_t;
@@ -491,6 +495,8 @@ void hal_isp_verify_path_trigger(u32 delay_ms);
 int hal_isp_is_verify_path_last_trigger(void);
 int hal_isp_tuning_iq_nlsc(u32 idx, struct verify_ctrl_config v_cfg);
 void hal_isp_set_zoom_filter_coeff(u8* buff);
+void hal_isp_set_zoom_1x1_up_en(u32 en);
+u32 hal_isp_get_zoom_1x1_up_en(void);
 void hal_isp_set_verify_counter(void);
 u32 hal_isp_get_verify_counter(void);
 int hal_isp_set_statis_irq_en(u32 statis_irq_en);

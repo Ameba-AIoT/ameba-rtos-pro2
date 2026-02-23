@@ -29,6 +29,7 @@
 extern void *ble_central_evt_queue_handle;
 extern void *ble_central_io_queue_handle;
 extern T_GAP_DEV_STATE ble_central_gap_dev_state;
+extern int ble_central_app_max_links;
 #endif
 
 #if defined(CONFIG_BT_SCATTERNET) && CONFIG_BT_SCATTERNET
@@ -176,6 +177,12 @@ void ble_central_at_cmd_send_msg(uint16_t sub_type)
 int ble_central_at_cmd_connect(int argc, char **argv)
 {
 	(void) argc;
+#if defined(CONFIG_BT_CENTRAL) && CONFIG_BT_CENTRAL
+	if (ble_central_app_max_links >= BLE_CENTRAL_APP_MAX_LINKS) {
+		printf("central: exceed the max links number\r\n");
+		return 0;
+	}
+#endif
 #if defined(CONFIG_BT_SCATTERNET) && CONFIG_BT_SCATTERNET
 	if (ble_scatternet_central_app_max_links >= BLE_SCATTERNET_CENTRAL_APP_MAX_LINKS) {
 		printf("scatternet: exceed the max links number\r\n");

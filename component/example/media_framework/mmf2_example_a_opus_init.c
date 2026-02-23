@@ -15,7 +15,7 @@
 #define I2S_INTERFACE   0
 #define AUDIO_INTERFACE 1
 
-#define AUDIO_SRC I2S_INTERFACE
+#define AUDIO_SRC AUDIO_INTERFACE
 
 #if AUDIO_SRC==AUDIO_INTERFACE
 static mm_context_t *audio_ctx      = NULL;

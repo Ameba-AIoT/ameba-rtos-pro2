@@ -199,6 +199,7 @@ int BC_req_connect_hdl(uint8_t *ssid, uint8_t *password, uint8_t *bssid, rtw_sec
 	uint32_t tick1, tick2, tick3;
 	uint8_t assoc_by_bssid = 0;
 	uint8_t DCHP_state;
+	uint32_t wifi_retry_connect = 5;//For wifi connect retry        
 	(void) band;
 
 	BC_printf("Connect Request");
@@ -231,6 +232,7 @@ int BC_req_connect_hdl(uint8_t *ssid, uint8_t *password, uint8_t *bssid, rtw_sec
 		return -1;
 	}
 
+WIFI_RETRY_LOOP:        
 	//Check if in AP mode
 	wifi_get_setting(WLAN0_IDX, &setting);
 	if (setting.mode != RTW_MODE_STA) {
@@ -244,7 +246,12 @@ int BC_req_connect_hdl(uint8_t *ssid, uint8_t *password, uint8_t *bssid, rtw_sec
 	}
 
 	if (ret != RTW_SUCCESS) {
-		BC_printf("ERROR: Can't connect to AP\r\n");
+                wifi_retry_connect--;
+                if (wifi_retry_connect > 0) {      
+                  vTaskDelay(300);
+                  BC_printf("wifi retry(ssid: %s(%d); password: %s(%d); security: %x)\r\n",ssid,wifi.ssid.len,password,wifi.password_len,security);
+                  goto WIFI_RETRY_LOOP;
+                }
 		return ret;
 	}
 	tick2 = rtw_get_current_time();

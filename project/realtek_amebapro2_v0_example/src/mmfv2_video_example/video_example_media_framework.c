@@ -237,8 +237,8 @@ void video_example_main(void *param)
 	example_mmf2_video_surport();
 
 	// Disable video log
-	vTaskDelay(1000);
-	video_ctrl(0, VIDEO_DEBUG, 0);
+	// vTaskDelay(1000);
+	// video_ctrl(0, VIDEO_DEBUG, 0);
 
 	// TODO: exit condition or signal
 	while (1) {

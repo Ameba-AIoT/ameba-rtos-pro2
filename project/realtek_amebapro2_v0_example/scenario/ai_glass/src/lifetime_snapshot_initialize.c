@@ -22,6 +22,7 @@
 #include "librtsremosaic.h"
 #include <ainr.h>
 
+
 // Definition of LIFE SNAPSHOT STATUS
 #define LIFESNAP_IDLE   0x00
 #define LIFESNAP_START  0x01
@@ -41,6 +42,7 @@
 #define BURST_MODE_MAX_COUNT   1 // when set to 1, disable burst mode. for DDR 128M, maximum can set to 2
 #define ENABLE_AINR 		   1 // enable AINR for high res snapshot
 #define SAVE_DBG_IMG 0
+#define CONVERGE_AE_AWB 1 
 
 //set output resolution to high resolution
 static uint32_t out_img_width = 0;
@@ -79,6 +81,12 @@ static uartcmdpacket_t *snapshot_param = NULL;
 static mm_siso_t *ls_siso_snapshot_filesaver = NULL;
 
 static int lfsnap_status = LIFESNAP_IDLE;
+
+enum sensor_driver_mode {
+	VIDEO_MODE = 1,
+	HR_RAW_MODE,
+	HR_SEQ_MODE
+};
 
 enum file_process_status {
 	PROCESS_DONE = 0,
@@ -341,7 +349,7 @@ static int yuv420stitch_step_4c(uint8_t *tiled_yuv, uint8_t *output_buf, const u
 		input_uv_pos += (overlap_height / 2) * w_tiled + overlap_width;
 		break;
 	default:
-		printf("[ERROR] Invalid option for function %s: %d\r\n", __FUNCTION__, proc_stat);
+		AI_GLASS_ERR("[ERROR] Invalid option for function %s: %d\r\n", __FUNCTION__, proc_stat);
 		return -1;
 	}
 
@@ -420,7 +428,7 @@ static void *alloc_split_raw_item(splited_raw_item_t *splited_raw, uint32_t spli
 
 	splited_raw->virt_addr = malloc(buffer_size);
 	if (!splited_raw->virt_addr) {
-		printf("[%s] malloc failed\n", __FUNCTION__);
+		AI_GLASS_ERR("[%s] malloc failed\n", __FUNCTION__);
 		return NULL;
 	}
 
@@ -450,7 +458,7 @@ static void config_verification_path_buf_4c(struct verify_ctrl_config *v_cfg, co
 	const uint32_t uv_len = y_len;
 
 	if(v_cfg == NULL) {
-		printf("[%s] fail\r\n", __FUNCTION__);
+		AI_GLASS_ERR("[%s] fail\r\n", __FUNCTION__);
 		return;
 	}
 
@@ -481,7 +489,7 @@ static void config_verification_path_buf_4c(struct verify_ctrl_config *v_cfg, co
 			center_y = overlap_height;
 			break;
 		default:
-			printf("[%s] invalid split_id: %d\r\n", __FUNCTION__, split_id);
+			AI_GLASS_ERR("[%s] invalid split_id: %d\r\n", __FUNCTION__, split_id);
 			return;
 		}
 
@@ -534,9 +542,9 @@ static void config_verification_path_buf_4c(struct verify_ctrl_config *v_cfg, co
 // }
 static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32_t data_size)
 {
-	printf("-------------------save_high_resolution_raw----------------------\r\n");
-	printf("raw_index = %d\r\n", raw_index); // raw_index 
-	printf("12M raw 0x%x, data len = %lu\r\n", data_addr, data_size);
+	AI_GLASS_INFO("-------------------save_high_resolution_raw----------------------\r\n");
+	AI_GLASS_INFO("raw_index = %d\r\n", raw_index); // raw_index 
+	AI_GLASS_INFO("12M raw 0x%x, data len = %lu\r\n", data_addr, data_size);
 	if (snapshot_param != NULL) {
 		uint8_t status = AI_GLASS_DEVICE_WORKING_IN_PROG; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
 		uart_resp_snapshot(snapshot_param, status);
@@ -551,12 +559,12 @@ static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32
 				uint8_t *ainr_raw_image = splited_raw_image[raw_index].virt_addr;
 				uint32_t ainr_raw_image_size = data_size;
 				if (ainr_process_frame(ainr_ctx, (const void *)data_addr, ainr_raw_image, ainr_raw_image_size, 256) != OK) {
-					printf("ainr_process_frame() failed.\r\n");
+					AI_GLASS_ERR("ainr_process_frame() failed.\r\n");
 					return;
 				}
 				pack_bayer_to_planar((uint8_t *)data_addr, (const uint16_t *)ainr_raw_image, ainr_raw_image_size);
 			} else {
-				printf("ainr_init() failed.\r\n");
+				AI_GLASS_ERR("ainr_init() failed.\r\n");
 				return;
 			}
 		}
@@ -570,12 +578,12 @@ static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32
 				uint8_t *ainr_raw_image = splited_raw_image[raw_index].virt_addr;
 				uint32_t ainr_raw_image_size = data_size;
 				if (ainr_process_frame(ainr_ctx, (const void *)data_addr, ainr_raw_image, ainr_raw_image_size, 256) != OK) {
-					printf("ainr_process_frame() failed.\r\n");
+					AI_GLASS_ERR("ainr_process_frame() failed.\r\n");
 					return;
 				}
 				pack_bayer_to_planar((uint8_t *)data_addr, (const uint16_t *)ainr_raw_image, ainr_raw_image_size);
 			} else {
-				printf("ainr_init() failed.\r\n");
+				AI_GLASS_ERR("ainr_init() failed.\r\n");
 				return;
 			}
 		}
@@ -656,7 +664,7 @@ static void save_high_resolution_yuv(char *file_path, uint32_t data_addr, uint32
 		tiled_nv12_cnt++;
 		return;
 	default:
-		printf("Invalid file_proc_stat: %d\r\n", file_proc_stat);
+		AI_GLASS_INFO("Invalid file_proc_stat: %d\r\n", file_proc_stat);
 		return;
 	}
 	file_proc_stat = PROCESS_DONE;
@@ -767,7 +775,7 @@ snapshot_fail:
 static void high_resolution_snapshot_take(char *file_path, uartcmdpacket_t *param)
 {
 #if USE_VIDEO_HR_FLOW
-	printf("----------------------high_resolution_snapshot_take----------------------\r\n");
+	AI_GLASS_INFO("----------------------high_resolution_snapshot_take----------------------\r\n");
 	// get 12M NV16 raw
 	nv16_take_time = mm_read_mediatime_ms();
 	get_raw_data = 0;
@@ -799,7 +807,7 @@ static void high_resolution_snapshot_take(char *file_path, uartcmdpacket_t *para
 	nv16_take_time = mm_read_mediatime_ms() - nv16_take_time;
 	return;
 snapshot_fail:
-	printf("GET RAW SNAPSHOT FAILED\r\n");
+	AI_GLASS_ERR("GET RAW SNAPSHOT FAILED\r\n");
 	lfsnap_status = LIFESNAP_FAIL;
 	if(ainr_ctx) {
 		ainr_deinit(ainr_ctx);
@@ -1033,6 +1041,7 @@ int lifetime_snapshot_initialize(isp_info_sync_t *isp_info)
 			goto endoflifesnapshot;
 		}
 		mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, ls_video_params.params.stream_id);	// start channel 0
+
 	}
 	lfsnap_status = LIFESNAP_START;
 	return ret;
@@ -1052,7 +1061,7 @@ int lifetime_hr_snapshot_initialize(isp_info_sync_t *isp_info)
 	init_params.init_isp_items.init_hdr_mode = 0;
 	init_params.init_isp_items.init_mirrorflip = 0xf0;
 	init_params.init_isp_items.init_saturation = 50;
-	init_params.init_isp_items.init_wdr_mode = 0; // disable WDR for 12M snapshot
+	// init_params.init_isp_items.init_wdr_mode = WDR_DISABLE; // disable WDR for 12M snapshot
 	init_params.init_isp_items.init_mipi_mode = 0;
 	init_params.voe_dbg_disable = !APP_VOE_LOG_EN;
 	init_params.isp_ae_enable = 1;
@@ -1060,21 +1069,22 @@ int lifetime_hr_snapshot_initialize(isp_info_sync_t *isp_info)
 	init_params.init_isp_items.init_mirrorflip = 0xf0;
 	//sync isp info
 	if (isp_info->isp_exposure_time != 0) {
-		printf("isp_exposure_time != 0\r\n");
+		AI_GLASS_INFO("isp_exposure_time != 0\r\n");
 		init_params.isp_ae_init_exposure = isp_info->isp_exposure_time;
 	}
 	if (isp_info->isp_exposure_gain != 0) {
-		printf("isp_exposure_gain != 0\r\n");
+		AI_GLASS_INFO("isp_exposure_gain != 0\r\n");
 		init_params.isp_ae_init_gain = (uint32_t)isp_info->isp_exposure_gain;
 	}
 	if (isp_info->isp_red_gain != 0) {
-		printf("isp_red_gain != 0\r\n");
+		AI_GLASS_INFO("isp_red_gain != 0\r\n");
 		init_params.isp_awb_init_rgain = (uint32_t)isp_info->isp_red_gain;
 	}
 	if (isp_info->isp_blue_gain != 0) {
-		printf("isp_blue_gain != 0\r\n");
+		AI_GLASS_INFO("isp_blue_gain != 0\r\n");
 		init_params.isp_awb_init_bgain = (uint32_t)isp_info->isp_blue_gain;
 	}
+	
 	// get 12M raw
 	if (lifetime_hr_snapshot_sensor_id_update() == 0) {
 		goto endoflifesnapshot;
@@ -1156,14 +1166,14 @@ int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 				uint32_t tiled_img_size = tiled_w * tiled_h * 2;
 
 				if(alloc_split_raw_item(&(splited_raw_image[i]), tiled_img_size) == NULL) {
-					printf("splited raw image malloc failed\n");
-					printf("Available heap %d\r\n", xPortGetFreeHeapSize());
+					AI_GLASS_ERR("splited raw image malloc failed\n");
+					AI_GLASS_INFO("Available heap %d\r\n", xPortGetFreeHeapSize());
 					lifetime_snapshot_deinitialize();
 				}
 			}
 			//prevent memory fragment, allocate hr nv12 buffer
 			if(hr_nv12_image == NULL) {
-				printf("Available heap before hr_nv12_image malloc %d\r\n", xPortGetFreeHeapSize());
+				AI_GLASS_INFO("Available heap before hr_nv12_image malloc %d\r\n", xPortGetFreeHeapSize());
 				hr_nv12_image = malloc(hr_nv12_size);
 			}
 			if(hr_nv12_image == NULL) {
@@ -1175,11 +1185,11 @@ int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 				file_save_path = malloc(MAXIMUM_FILE_SIZE);
 			}
 			if (file_save_path == NULL) {
-				printf("file_save_path malloc failed\r\n");
-				printf("Available heap %d\r\n", xPortGetFreeHeapSize());
+				AI_GLASS_ERR("file_save_path malloc failed\r\n");
+				AI_GLASS_INFO("Available heap %d\r\n", xPortGetFreeHeapSize());
 				lifetime_snapshot_deinitialize();
 			}
-			printf("Available heap after malloc %d\r\n", xPortGetFreeHeapSize());
+			AI_GLASS_INFO("Available heap after malloc %d\r\n", xPortGetFreeHeapSize());
 			for (int i = 0; i < (total_burst > 2 ? BURST_MODE_MAX_COUNT:total_burst); i++) {
 				AI_GLASS_MSG("================life_snapshot_take========================== %lu\r\n", mm_read_mediatime_ms());
 				AI_GLASS_INFO("Snapshot start\r\n");
@@ -1192,7 +1202,7 @@ int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 				mm_module_ctrl(ls_filesaver_ctx, CMD_FILESAVER_SET_SAVE_FILE_PATH, (int)snapshot_name);
 				lfsnap_status = LIFESNAP_TAKE;
 				raw_index = i;
-				printf("[lifetime_snapshot_take] raw_index = %d\r\n", raw_index);
+				AI_GLASS_INFO("[lifetime_snapshot_take] raw_index = %d\r\n", raw_index);
 				snapshot_param = param;
 				high_resolution_snapshot_take(snapshot_name, param);
 				sscanf(file_name, "PICTURE_0_0_%8[0-9]_%6[0-9]", img_date, img_time);
@@ -1304,7 +1314,7 @@ int lifetime_highres_save(const char *file_name, uartcmdpacket_t *param)
 				jpg_index = i;
 				high_resolution_snapshot_save(active_name, i%2, i, param);
 				if (lfsnap_status == LIFESNAP_FAIL) {
-					AI_GLASS_INFO("Life snapshot save failed\r\n");
+					AI_GLASS_ERR("Life snapshot save failed\r\n");
 					return -1;
 				}
 				if (jpg_index == total_burst - 1) {
