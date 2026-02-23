@@ -42,7 +42,6 @@
 #define BURST_MODE_MAX_COUNT   1 // when set to 1, disable burst mode. for DDR 128M, maximum can set to 2
 #define ENABLE_AINR 		   1 // enable AINR for high res snapshot
 #define SAVE_DBG_IMG 0
-#define CONVERGE_AE_AWB 1 
 
 //set output resolution to high resolution
 static uint32_t out_img_width = 0;
