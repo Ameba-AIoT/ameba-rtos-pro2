@@ -108,4 +108,6 @@ void mmf2_video_example_vipnn_classify_rtsp_init(void);
 
 void mmf2_video_example_timelapse_mp4_init(void);
 
+void mmf2_video_example_dynamic_roi_rtsp_init(void);
+
 #endif /* MMF2_VIDEO_EXAMPLE_H */

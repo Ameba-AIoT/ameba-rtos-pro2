@@ -621,7 +621,9 @@ static void _freertos_ATOMIC_SET(ATOMIC_T *v, int i)
 static int _freertos_ATOMIC_READ(ATOMIC_T *v)
 {
 #if defined(STDATOMIC)
-	return atomic_load(v);
+	int ret = atomic_load(v);
+	atomic_store(v, ret);
+	return ret;
 #else
 	return atomic_read(v);
 #endif
@@ -663,7 +665,7 @@ static int _freertos_ATOMIC_ADD_RETURN(ATOMIC_T *v, int i)
 {
 #if defined(STDATOMIC)
 	atomic_fetch_add(v, i);
-	return atomic_load(v);
+	return _freertos_ATOMIC_READ(v);
 #else
 	int temp;
 
@@ -681,7 +683,7 @@ static int _freertos_ATOMIC_SUB_RETURN(ATOMIC_T *v, int i)
 {
 #if defined(STDATOMIC)
 	atomic_fetch_sub(v, i);
-	return atomic_load(v);
+	return _freertos_ATOMIC_READ(v);
 #else
 	int temp;
 

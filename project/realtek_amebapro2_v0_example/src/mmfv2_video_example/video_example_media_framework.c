@@ -61,7 +61,7 @@ static void example_mmf2_video_surport(void)
 {
 
 	// CH1 Video -> H264/HEVC -> RTSP
-	//mmf2_video_example_v1_init();
+	mmf2_video_example_v1_init();
 
 	// CH2 Video -> H264/HEVC -> RTSP
 	//mmf2_video_example_v2_init();
@@ -73,7 +73,7 @@ static void example_mmf2_video_surport(void)
 	//mmf2_video_example_v1_shapshot_init();
 	
 	// CH1 Video -> SNAPSHOT
-	mmf2_video_example_v1_snapshot_hr_init();
+	//mmf2_video_example_v1_snapshot_hr_init();
 
 	// CH1 Video -> SNAPSHOT + HTTP File Server
 	//mmf2_video_example_v1_shapshot_httpfs_init();
@@ -218,8 +218,18 @@ static void example_mmf2_video_surport(void)
 	// RTP   -> AAD  -> AUDIO
 	//mmf2_video_example_joint_test_vipnn_rtsp_mp4_init();
 
+	// H264 -> RTSP (V1)
+	// RGB  -> NN image classification (V4)
+	//mmf2_video_example_vipnn_classify_rtsp_init();
+
 	//V1 timslapse mp4 example
 	//mmf2_video_example_timelapse_mp4_init();
+
+	// Dynamic ROI example with NN
+	// H264 -> RTSP  (V1)
+	// H264 -> RTSP (V2)
+	// RGB  -> NN object detect (V4)
+	//mmf2_video_example_dynamic_roi_rtsp_init();
 
 	video_init_done = 1;
 }
@@ -230,15 +240,11 @@ void video_example_main(void *param)
 	rtw_create_secure_context(2048);
 #endif
 	if (!voe_boot_fsc_status()) {
-		//wifi_common_init();
+		wifi_common_init();
 		sensor_board_init();
 	}
 
 	example_mmf2_video_surport();
-
-	// Disable video log
-	// vTaskDelay(1000);
-	// video_ctrl(0, VIDEO_DEBUG, 0);
 
 	// TODO: exit condition or signal
 	while (1) {
@@ -269,7 +275,7 @@ void video_example_main(void *param)
 void video_example_media_framework(void)
 {
 	/*user can start their own task here*/
-	if (xTaskCreate(video_example_main, ((const char *)"mmf2_video"), 4096, NULL, tskIDLE_PRIORITY + 7, NULL) != pdPASS) {
+	if (xTaskCreate(video_example_main, ((const char *)"mmf2_video"), 4096, NULL, tskIDLE_PRIORITY + 1, NULL) != pdPASS) {
 		printf("\r\n video_example_main: Create Task Error\n");
 	}
 }
