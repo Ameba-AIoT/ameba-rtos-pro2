@@ -1826,10 +1826,11 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 			status = AI_GLASS_BUSY;
 			AI_GLASS_MSG("Recording has started, not starting another recording\r\n");
 		} else {
-			AI_GLASS_WARN("AI glass snapshot burst, snapshot + 1\r\n");
-			total_burst++;
-			uint8_t *snapshot_param = uart_parser_snapshot_video_info(param, &mode);
-			uint8_t file_name_length = snapshot_param[0];
+			if (BURST_MODE_MAX_COUNT == 2) {
+				AI_GLASS_WARN("AI glass snapshot burst, snapshot + 1\r\n");
+				total_burst++;
+				uint8_t *snapshot_param = uart_parser_snapshot_video_info(param, &mode);
+				uint8_t file_name_length = snapshot_param[0];
 				char temp_record_filename_buffer[160] = {0};
 				if (file_name_length > 0 && file_name_length <= 125 && dual_snapshot != 1) {
 					char uart_filename_str[160] = {0};
@@ -1844,6 +1845,10 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 						burst_count++;
 					}
 				}
+			} else {
+				// status = AI_GLASS_BUSY;
+				// uart_resp_snapshot(param, status);
+			}
 		}
 	} else {
 		uint8_t *snapshot_param = uart_parser_snapshot_video_info(param, &mode);
@@ -1958,6 +1963,7 @@ lifetimesnapshot:
 						extdisk_generate_unique_filename("PICTURE_0_0_", "19800101", ".jpg", (char *)temp_record_filename_buffer, 160);
 					}
 				}
+lifetimesnapshottake:
 				if (lifetime_snapshot_take((const char *)lifetime_snap_name, param) == 0) {
 					status = AI_GLASS_DEVICE_WORKING_IN_PROG;
 					if ((current_sensor_id == SENSOR_IMX681) || (current_sensor_id == SENSOR_IMX471) || (current_sensor_id == SENSOR_OV13B10)) {
@@ -1973,23 +1979,54 @@ lifetimesnapshot:
 						status = AI_GLASS_PROC_FAIL;
 						uart_resp_snapshot(param, status);
 					}
-					extdisk_save_file_cntlist();
-					AI_GLASS_MSG("Extdisk save file countlist done = %lu\r\n", mm_read_mediatime_ms());
-					status = AI_GLASS_CMD_COMPLETE;
-					uart_resp_snapshot(param, status);
+					while (1) {
+						uartcmdinfo_t *new_cmd = NULL;
+						int ret = uart_wait_for_next_cmd_or_idle(1000, &new_cmd);
+
+						if (ret == 1 && BURST_MODE_MAX_COUNT == 2) {
+							// Snapshot detected
+							AI_GLASS_MSG("Snapshot detected, continuing snapshot recurring\r\n");
+
+							// Use filename already prepared earlier
+							const char *filename = burst_names[burst_count - 1];
+
+							// Print out the filename for verification
+							AI_GLASS_MSG("Taking snapshot with filename: %s\r\n", filename);
+
+							isp_info_sync_t isp_info = {0};
+							lifetime_hr_snapshot_initialize(&isp_info);
+
+							goto lifetimesnapshottake;
+						} else { // ret == 0
+							break;
+						}
+					}
 				} else {
 					status = AI_GLASS_PROC_FAIL;
 					uart_resp_snapshot(param, status);
 				}
+				while (1) {
+					uartcmdinfo_t *new_cmd = NULL;
+					int ret = uart_wait_for_next_cmd_or_idle(1000, &new_cmd);
 
-				AI_GLASS_MSG("wait for lifetime snapshot deinit\r\n");
-				while (lifetime_snapshot_deinitialize()) {
-					vTaskDelay(1);
+					if (ret == 1 && BURST_MODE_MAX_COUNT == 2) {
+						// Snapshot detected
+						AI_GLASS_MSG("Snapshot detected, continuing snapshot recurring\r\n");
+
+						// Use filename already prepared earlier
+						const char *filename = burst_names[burst_count - 1];
+
+						// Print out the filename for verification
+						AI_GLASS_MSG("Taking snapshot with filename: %s\r\n", filename);
+
+						isp_info_sync_t isp_info = {0};
+						lifetime_hr_snapshot_initialize(&isp_info);
+
+						goto lifetimesnapshottake;
+					} else { // ret == 0
+						break;
+					}
 				}
-				critical_process_started = 0;
-				AI_GLASS_MSG("lifetime snapshot deinit done = %lu\r\n", mm_read_mediatime_ms());
-				uartcmdpacket_t dummy_param;
-				ai_glass_get_file_cnt(&dummy_param);
 			} else if (ret == -2) {
 				status = AI_GLASS_BUSY;
 				uart_resp_snapshot(param, status);
@@ -2003,6 +2040,42 @@ lifetimesnapshot:
 			AI_GLASS_WARN("Not implement yet\r\n");
 			status = AI_GLASS_PROC_FAIL;
 			uart_resp_snapshot(param, status);
+		}
+		if (mode == 0) {
+			while (1) {
+				uartcmdinfo_t *new_cmd = NULL;
+				int ret = uart_wait_for_next_cmd_or_idle(1000, &new_cmd);
+
+				if (ret == 1 && BURST_MODE_MAX_COUNT == 2) {
+					// Snapshot detected
+					AI_GLASS_MSG("Snapshot detected, continuing snapshot recurring\r\n");
+
+					// Use filename already prepared earlier
+					const char *filename = burst_names[burst_count - 1];
+
+					// Print out the filename for verification
+					AI_GLASS_MSG("Taking snapshot with filename: %s\r\n", filename);
+
+					isp_info_sync_t isp_info = {0};
+					lifetime_hr_snapshot_initialize(&isp_info);
+
+					lifetime_snapshot_take(filename, param);
+					goto lifetimesnapshottake;
+				} else { // ret == 0
+					// Idle → finalize
+					AI_GLASS_MSG("wait for lifetime snapshot deinit\r\n");
+					extdisk_save_file_cntlist();
+					while (lifetime_snapshot_deinitialize()) {
+						vTaskDelay(1);
+					}
+					critical_process_started = 0;
+					uartcmdpacket_t dummy_param;
+					ai_glass_get_file_cnt(&dummy_param);
+					status = AI_GLASS_CMD_COMPLETE;
+					uart_resp_snapshot(param, status);
+					break;
+				}
+			}
 		}
 		xSemaphoreGive(video_proc_sema);
 	}

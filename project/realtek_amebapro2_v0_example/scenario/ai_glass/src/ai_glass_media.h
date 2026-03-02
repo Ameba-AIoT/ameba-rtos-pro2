@@ -37,6 +37,8 @@
 #define WIDTH_12M   4096
 #define HEIGHT_12M  3072
 
+#define BURST_MODE_MAX_COUNT   1 // when set to 1, disable burst mode. for DDR 128M, maximum can set to 2
+
 enum {
 	MEDIA_INVALID_SNAP_TYPE = -11,  // MEDIA_INVALID_SNAPSHOT_TYPE
 	MEDIA_INVALID_RECTIME   = -10,  // MEDIA_INVALID_RECTIME

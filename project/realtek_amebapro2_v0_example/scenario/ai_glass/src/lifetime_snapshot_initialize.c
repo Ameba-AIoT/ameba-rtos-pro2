@@ -39,7 +39,6 @@
 #define SNAPSHOT_12M_ROTATION   DEFAULT_LIFESNAP_ROTATION 
 
 #define SNAPSHOT_12M_QLEVEL     91 // can be 0~100, higher means higher quality
-#define BURST_MODE_MAX_COUNT   1 // when set to 1, disable burst mode. for DDR 128M, maximum can set to 2
 #define ENABLE_AINR 		   1 // enable AINR for high res snapshot
 #define SAVE_DBG_IMG 0
 
@@ -1139,6 +1138,10 @@ int lifetime_hr_snapshot_initialize(isp_info_sync_t *isp_info)
 		AI_GLASS_ERR("siso_array_filesaver open fail\n\r");
 		goto endoflifesnapshot;
 	}
+	if (lfsnap_status == LIFESNAP_DONE && burst_count == 1) {
+		lfsnap_status = LIFESNAP_START;
+		total_burst = 1;
+	}
 	return 0;
 endoflifesnapshot:
 	lifetime_snapshot_deinitialize();
@@ -1324,6 +1327,11 @@ int lifetime_highres_save(const char *file_name, uartcmdpacket_t *param)
 			raw_taken = 0;
 			jpg_index = 0;
 			total_burst = 1;
+			for (int i = 0; i <= burst_count; i++) {
+				burst_names[i][0] = '\0';   // clear slots 0..burst_count inclusive
+			}
+			burst_count = 0;
+			next_cmd_seen = 0;
 			if (hr_nv12_image) {
 				free(hr_nv12_image);
 				hr_nv12_image = NULL;

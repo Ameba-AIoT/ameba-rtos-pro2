@@ -14,6 +14,8 @@
 #define EMPTY_PACKET_ACK_LEN    9                           // sync_word (1), seq_number(1), length(2), checksum(1), get_ts(4)
 #define ACK_DATA_LEN            5                           // opcode(2), status(1), get_opcode(2)
 
+extern volatile uint8_t next_cmd_seen;
+
 // Uart Opcode CMD
 typedef enum {
 	UART_RX_OPC_ACK                     = 0x0000,
@@ -241,5 +243,7 @@ uint8_t uart_service_get_wifi_ic_type(void);
 #define AI_GLASS_BT_ROLE_RIGHT  2
 int uart_service_set_bt_role(uint8_t bt_role);
 uint8_t uart_service_get_bt_role(void);
+int uart_wait_for_next_cmd_or_idle(uint32_t timeout_ms, uartcmdinfo_t **out_cmd);
+void uart_recycle_cmd(uartcmdinfo_t *cmd);
 
 #endif //#ifndef __UART_SERVICE_H__
