@@ -74,8 +74,6 @@ static jpeg_lifesnapshot_params_t ls_video_params = {0};
 static mm_context_t *ls_snapshot_ctx    = NULL;
 static mm_context_t *ls_filesaver_ctx   = NULL;
 
-static uartcmdpacket_t *snapshot_param = NULL;
-
 //linker
 static mm_siso_t *ls_siso_snapshot_filesaver = NULL;
 
@@ -544,10 +542,6 @@ static void save_high_resolution_raw(char *file_path, uint32_t data_addr, uint32
 	AI_GLASS_INFO("-------------------save_high_resolution_raw----------------------\r\n");
 	AI_GLASS_INFO("raw_index = %d\r\n", raw_index); // raw_index 
 	AI_GLASS_INFO("12M raw 0x%x, data len = %lu\r\n", data_addr, data_size);
-	if (snapshot_param != NULL) {
-		uint8_t status = AI_GLASS_DEVICE_WORKING_IN_PROG; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
-		uart_resp_snapshot(snapshot_param, status);
-	}
 	if(ENABLE_AINR && current_sensor_id == SENSOR_IMX681) {
 		if(init_params.isp_ae_init_gain > (256 * 12)) {
 			// IMX681 AINR flow for exposure gain > 12x 
@@ -783,6 +777,10 @@ static void high_resolution_snapshot_take(char *file_path, uartcmdpacket_t *para
 	if (mm_module_ctrl(ls_snapshot_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL) != OK) {
 		goto snapshot_fail;
 	}
+	if (param != NULL) {
+		uint8_t status = AI_GLASS_DEVICE_WORKING_IN_PROG; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
+		uart_resp_snapshot(param, status);
+	}
 	while (!get_raw_data) {
 		vTaskDelay(1);
 		timeout_count++;
@@ -795,10 +793,6 @@ static void high_resolution_snapshot_take(char *file_path, uartcmdpacket_t *para
 		AI_GLASS_ERR("Err: allocate buffer to process 12M snapshot\r\n");
 		goto snapshot_fail;
 	}
-	// if (param != NULL) {
-	// 	uint8_t status = AI_GLASS_DEVICE_WORKING_IN_PROG; // snapshot complete response requested to be sent earlier to BT instead of after lifetime_snapshot_take
-	// 	uart_resp_snapshot(param, status);
-	// }
 	AI_GLASS_MSG("get 12M NV16 done time %lu\r\n", mm_read_mediatime_ms());
 	raw_taken += 1;
 	lfsnap_status = LIFESNAP_GET;
@@ -1202,7 +1196,6 @@ int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 				lfsnap_status = LIFESNAP_TAKE;
 				raw_index = i;
 				AI_GLASS_INFO("[lifetime_snapshot_take] raw_index = %d\r\n", raw_index);
-				snapshot_param = param;
 				high_resolution_snapshot_take(snapshot_name, param);
 				sscanf(file_name, "PICTURE_0_0_%8[0-9]_%6[0-9]", img_date, img_time);
 				sprintf(img_datetime, "%.4s:%.2s:%.2s %.2s:%.2s:%.2s",
