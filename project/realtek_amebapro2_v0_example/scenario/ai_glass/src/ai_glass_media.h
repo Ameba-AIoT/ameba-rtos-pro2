@@ -307,4 +307,6 @@ static enum hal_isp_ae_region max_dyn_region_idx = 0; // Data range: 0 ~ 3. 0: u
 #define I2S_INTERFACE           0
 #define AUDIO_INTERFACE         1
 
+#define ENABLE_MEDIA_UPDATE_FLASH 0 // Set to 1 to enable media parameter update to flash, set to 0 to disable. When disabled, media parameters will not be saved after power off.
+
 #endif

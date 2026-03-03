@@ -1287,6 +1287,7 @@ void initial_media_parameters(void)
 	}
 	AI_GLASS_MSG("\r\n voe heap size = %d\r\n", voe_heap_size);
 
+	#if ENABLE_MEDIA_UPDATE_FLASH
 	// For testing we do not use the temp value
 	// Todo: get data from the flash first and store in temp data
 	ai_glass_record_param_t temp_record_parames = {0};
@@ -1317,6 +1318,7 @@ void initial_media_parameters(void)
         stream_data_update_if_valid(&stream_params, &temp_stream_params);
     }
     media_update_stream_params_to_flash(&stream_params);
+	#endif
 }
 
 int media_update_wifi_channel_params(const ai_glass_wifi_param_t *params)
