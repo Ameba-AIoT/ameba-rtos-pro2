@@ -72,6 +72,11 @@ Usage Guide:
 				"source":"binary",
 				"file":"ainr_mulaw_1024_imx681.nb"
 			},
+			"ainr_mulaw_1024_ov13b10":{
+				"name" : "ainr_mulaw_1024_ov13b10.nb",
+				"source":"binary",
+				"file":"ainr_mulaw_1024_ov13b10.nb"
+			},
 			"planar_to_nchw_blc_1024":{
 				"name" : "planar_to_nchw_1024_lut.nb",
 				"source":"binary",
@@ -137,7 +142,7 @@ static uint8_t *hr_nv12_image = NULL;
 static uint32_t hr_nv12_size = OUT_IMG_WIDTH * OUT_IMG_HEIGHT * 3 / 2;
 #define SAVE_DBG_IMG 0 //save raw image and NV12 image
 #define BURST_MODE_MAX_COUNT 1 //when set to 1, disable burst mode. for DDR 128M, maaximun can set to 2
-#if USE_SENSOR == SENSOR_IMX681
+#if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_OV13B10)
 #define ENABLE_AINR 1
 #else
 #define ENABLE_AINR 0
@@ -424,9 +429,14 @@ static void file_process(char *file_path, uint32_t data_addr, uint32_t data_size
 	if(file_proc_cmd == SPLIT_RAW_IMAGE) {
 		//get 12M raw.
 		printf("12M raw 0x%x, data len = %lu\r\n", data_addr, data_size);
-#if ENABLE_AINR && (USE_SENSOR == SENSOR_IMX681)
-		if(init_params.isp_ae_init_gain > (256 * 12)) {
-			// IMX681 AINR flow for exposure gain > 12x
+#if ENABLE_AINR
+#if USE_SENSOR == SENSOR_IMX681
+		if(init_params.isp_ae_init_gain > (256 * 12)) { // IMX681 AINR flow for exposure gain > 12x 
+#else
+		if(init_params.isp_ae_init_gain > (256 * 16)) { // OV13B10 AINR flow for exposure gain > 16x 
+			init_params.isp_awb_init_rgain = init_params.isp_awb_init_rgain * 0.9;
+			init_params.isp_awb_init_bgain = init_params.isp_awb_init_bgain * 0.9;
+#endif
 			if (ainr_ctx == NULL) {
 				ainr_ctx = ainr_init();
 			}
@@ -516,7 +526,6 @@ static int hr_init_ae_awb(video_pre_init_params_t *init_params, int wait_ae_time
 	init_params->video_drop_enable = 0;
 	init_params->dyn_iq_mode = 0;
 	init_params->init_isp_items.init_wdr_mode = WDR_AUTO;
-	init_params->init_isp_items.init_wdr_level = 50;
 	init_params->init_max_dyn_region_en = 1;
 	init_params->sens_pwr_dis = 0;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)init_params);
