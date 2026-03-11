@@ -116,6 +116,7 @@ extern struct netif xnetif[NET_IF_NUM];
 #endif
 static rtw_softap_info_t softAP_config = {0};
 static uint8_t wifi_pass_word[MAX_AP_PASSWORD_LEN] = {0};
+extern void rltk_coex_bt_enable(uint8_t enable);
 
 #if defined(HTTP_OTA_TEST) && HTTP_OTA_TEST
 #include <ota_8735b.h>
@@ -2177,6 +2178,11 @@ int wifi_enable_sta_mode(rtw_network_info_t *connect_param, int timeout, int ret
 		}
 	}
 	WLAN_SCEN_WARN("STA mode start done\r\n");
+	
+	/*Enable external PTA*/
+	rltk_coex_bt_enable(2);
+	// printf("\n\r%s(%d), Enable external PTA\n", __FUNCTION__, __LINE__);
+
 	//ensure terminate signal is 0
 	terminate_signal = 0;
 
@@ -2292,6 +2298,10 @@ int wifi_enable_ap_mode(const char *ssid, const char *password, int channel, int
 
 	softAP_config.channel = channel;
 	softAP_config.security_type = RTW_SECURITY_WPA2_AES_PSK;
+		
+	/*Enable external PTA*/
+	rltk_coex_bt_enable(2);
+	// printf("\n\r%s(%d), Enable external PTA\n", __FUNCTION__, __LINE__);
 	if (wifi_start_ap(&softAP_config) < 0) {
 		WLAN_SCEN_ERR("AI glass ERROR: wifi_start_ap failed\r\n");
 		return WLAN_SET_FAIL;

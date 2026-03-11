@@ -1535,16 +1535,15 @@ static void ai_glass_get_power_down(uartcmdpacket_t *param)
 {
 	uint8_t result = AI_GLASS_CMD_COMPLETE;
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_POWER_DOWN %lu\r\n", mm_read_mediatime_ms());
-	// Wait until the video is down
-	if (xSemaphoreTake(video_proc_sema, POWER_DOWN_TIMEOUT) != pdTRUE) {
-		AI_GLASS_WARN("AI glass is snapshot or record, power down fail %lu\r\n", mm_read_mediatime_ms());
+	if (critical_process_started == 1) {
+		AI_GLASS_WARN("AI glass is busy performing OTA or AI+Lifetime snapshot or replying to GET_SD_INFO or deinitializing wifi, power down failed %lu\r\n", mm_read_mediatime_ms());
 		result = AI_GLASS_BUSY;
 		uart_resp_get_power_down(param, result);
 		goto endofpowerdown;
 	}
-
-	if (critical_process_started == 1) {
-		AI_GLASS_WARN("AI glass is busy performing OTA, AI+Lifetime snapshot or replying to GET_SD_INFO, power down failed %lu\r\n", mm_read_mediatime_ms());
+	else if (xSemaphoreTake(video_proc_sema, POWER_DOWN_TIMEOUT) != pdTRUE) {
+		// Wait until the video is down
+		AI_GLASS_WARN("AI glass is snapshot or record, power down fail %lu\r\n", mm_read_mediatime_ms());
 		result = AI_GLASS_BUSY;
 		uart_resp_get_power_down(param, result);
 		goto endofpowerdown;
@@ -2484,6 +2483,8 @@ static void ai_glass_get_sd_info(uartcmdpacket_t *param)
 static void ai_glass_set_ap_mode(uartcmdpacket_t *param)
 {
 	AI_GLASS_MSG("get UART_RX_OPC_CMD_SET_WIFI_MODE %lu\r\n", mm_read_mediatime_ms());
+	critical_process_started = 1;
+
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 	uint8_t mode = query_pkt->data_buf[0];
 	uint8_t result = AI_GLASS_CMD_COMPLETE;
@@ -2510,6 +2511,7 @@ static void ai_glass_set_ap_mode(uartcmdpacket_t *param)
 	}
 	AI_GLASS_MSG("UART_RX_OPC_CMD_SET_WIFI_MODE set mode %d done %lu\r\n", mode, mm_read_mediatime_ms());
 	uart_resp_set_ap_mode(param, &wifi_cfg, MAX_AP_SSID_VALUE_LEN, MAX_AP_PASSWORD_LEN, result);
+	critical_process_started = 0;
 
 	if (mode == 1 && result == AI_GLASS_CMD_COMPLETE) {
 		deinitial_media(); // To save power
@@ -2521,6 +2523,7 @@ static void ai_glass_set_ap_mode(uartcmdpacket_t *param)
 static void ai_glass_set_sta_mode(uartcmdpacket_t *param)
 {
 	AI_GLASS_MSG("get UART_RX_OPC_CMD_SET_STA_MODE %lu\r\n", mm_read_mediatime_ms());
+	critical_process_started = 1;
 
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 
@@ -2669,6 +2672,7 @@ static void ai_glass_set_sta_mode(uartcmdpacket_t *param)
 		AI_GLASS_INFO("Invalid mode value: %d\r\n", new_mode);
 		uart_resp_set_sta_mode(param, result, 0, 0, 0, 0, 0);
 	}
+	critical_process_started = 0;
 }
 
 static void ai_glass_get_pic_data_sliding_window(uartcmdpacket_t *param)
