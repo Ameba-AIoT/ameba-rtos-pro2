@@ -116,7 +116,6 @@ extern struct netif xnetif[NET_IF_NUM];
 #endif
 static rtw_softap_info_t softAP_config = {0};
 static uint8_t wifi_pass_word[MAX_AP_PASSWORD_LEN] = {0};
-extern void rltk_coex_bt_enable(uint8_t enable);
 
 #if defined(HTTP_OTA_TEST) && HTTP_OTA_TEST
 #include <ota_8735b.h>
@@ -2135,11 +2134,17 @@ int wifi_enable_sta_mode(rtw_network_info_t *connect_param, int timeout, int ret
 		ai_glass_wifi_param_t param;
 
 		memcpy(&param, wifi_channel_buf + 6, sizeof(param));
-		printf("WiFi channel = %u\r\n", param.channel);
-		wifi_set_channel(param.channel);
-
-		connect_param->channel = param.channel;
-		connect_param->pscan_option = PSCAN_FAST_SURVEY; 
+		
+        if (param.channel == 0xFF || param.channel == 0) {
+            AI_GLASS_MSG("Flash channel invalid, doing full scan\r\n");
+            connect_param->channel = 0;
+            connect_param->pscan_option = 0;
+        } else {
+            AI_GLASS_MSG("Using saved channel %u\r\n", param.channel);
+            wifi_set_channel(param.channel);
+            connect_param->channel = param.channel;
+            connect_param->pscan_option = PSCAN_FAST_SURVEY;
+        }
 	
 		ret = wifi_connect(connect_param, 1);
 		if (ret != RTW_SUCCESS) {
@@ -2153,8 +2158,9 @@ int wifi_enable_sta_mode(rtw_network_info_t *connect_param, int timeout, int ret
 
 				wifi_config_autoreconnect_ms(1, retry, timeout);
 				if (connect_param->channel != 0) {
+					connect_param->channel = 0;
 					wifi_set_channel(connect_param->channel);
-					connect_param->pscan_option = PSCAN_FAST_SURVEY;
+					connect_param->pscan_option = 0;
 				}
 
 				ret = wifi_connect(connect_param, 1);
@@ -2178,10 +2184,6 @@ int wifi_enable_sta_mode(rtw_network_info_t *connect_param, int timeout, int ret
 		}
 	}
 	WLAN_SCEN_WARN("STA mode start done\r\n");
-	
-	/*Enable external PTA*/
-	rltk_coex_bt_enable(2);
-	// printf("\n\r%s(%d), Enable external PTA\n", __FUNCTION__, __LINE__);
 
 	//ensure terminate signal is 0
 	terminate_signal = 0;
@@ -2299,9 +2301,6 @@ int wifi_enable_ap_mode(const char *ssid, const char *password, int channel, int
 	softAP_config.channel = channel;
 	softAP_config.security_type = RTW_SECURITY_WPA2_AES_PSK;
 		
-	/*Enable external PTA*/
-	rltk_coex_bt_enable(2);
-	// printf("\n\r%s(%d), Enable external PTA\n", __FUNCTION__, __LINE__);
 	if (wifi_start_ap(&softAP_config) < 0) {
 		WLAN_SCEN_ERR("AI glass ERROR: wifi_start_ap failed\r\n");
 		return WLAN_SET_FAIL;
