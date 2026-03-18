@@ -582,6 +582,12 @@ int video_control(void *p, int cmd, int arg)
 	case CMD_VIDEO_APPLY: {
 		int ch = arg;
 		ctx->params.stream_id = ch;
+
+		if(mctx->state != MM_STAT_READY) {
+			VIDEO_DBG_ERROR("module_video queue not init\r\n");
+			return NOK;
+		}
+
 		//video init before first vido open, take 78ms.
 		if (video_open_status() == 0) {
 			ctx->v_adp = video_init(ctx->iq_addr, ctx->sensor_addr);
