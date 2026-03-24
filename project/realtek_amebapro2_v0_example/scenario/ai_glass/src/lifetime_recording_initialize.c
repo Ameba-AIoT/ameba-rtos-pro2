@@ -16,15 +16,7 @@
 #include "media_filesystem.h"
 #include "ai_glass_dbg.h"
 
-// Definition of gyro save status
-#define GYRO_SAVE_IDLE          0x00
-#define GYRO_SAVE_START         0x01
-#define GYRO_SAVE_STOP          0x02
-#define GYRO_SAVE_SET_START     0x10
-#define GYRO_SAVE_SET_STOP      0x20
-
 // Configuration
-#define ENABLE_GET_GSENSOR_INFO 0
 #define AUDIO_SAMPLE_RATE       16000 // 48000
 #define AUDIO_SRC               I2S_INTERFACE //AUDIO_INTERFACE
 #define AUDIO_I2S_ROLE          I2S_SLAVE //I2S_MASTER

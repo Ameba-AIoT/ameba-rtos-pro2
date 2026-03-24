@@ -20,6 +20,32 @@
 #include <icm42670p_hal.h>
 #endif
 
+CameraConfig g_camera_cfg = {
+    .imu_rate_hz = DEFAULT_IMU_RATE_HZ,
+    .enable_stabilization = DEFAULT_ENABLE_STABILIZATION,
+    .stabilization_alpha = DEFAULT_STABILIZATION_ALPHA,
+    .crop_ratio_min = DEFAULT_CROP_RATIO_MIN,
+    .crop_ratio_max = DEFAULT_CROP_RATIO_MAX,
+    .rs_readout_time_ms = DEFAULT_RS_READOUT_TIME_MS,
+    .ldc_params = {
+        .fisheye_params = {
+            .rms_error = DEFAULT_RMS_ERROR,
+            .camera_matrix = {
+                {DEFAULT_CAMERA_MATRIX_00, DEFAULT_CAMERA_MATRIX_01, DEFAULT_CAMERA_MATRIX_02},
+                {DEFAULT_CAMERA_MATRIX_10, DEFAULT_CAMERA_MATRIX_11, DEFAULT_CAMERA_MATRIX_12},
+                {DEFAULT_CAMERA_MATRIX_20, DEFAULT_CAMERA_MATRIX_21, DEFAULT_CAMERA_MATRIX_22}
+            },
+            .distortion_coeffs = {
+                DEFAULT_DIST_COEFF_0,
+                DEFAULT_DIST_COEFF_1,
+                DEFAULT_DIST_COEFF_2,
+                DEFAULT_DIST_COEFF_3
+            },
+            .radial_distortion_limit = DEFAULT_RADIAL_DIST_LIMIT
+        }
+    }
+};
+
 static int gyroscope_inited = 0;
 
 int gyroscope_is_inited(void)

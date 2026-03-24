@@ -2889,7 +2889,7 @@ static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 
     // Debug print
     print_camera_config(&g_camera_cfg);
-	printf("CameraConfig sent successfully (%lu bytes)\n", length);
+	
     if (status == 0) {
         printf("CameraConfig sent successfully (%lu bytes)\n", length);
     } else {
