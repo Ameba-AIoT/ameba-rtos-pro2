@@ -7,6 +7,7 @@
 #include "video_api.h"
 #include <uart_service.h>
 #include <uart_cmd.h>
+#include "gyrosensor_api.h"
 
 /**
 * Nor Flash Address To Store Snapshot/Record data
@@ -25,6 +26,10 @@
 //Nor Flash Address to store Wifi Channel info
 #define FLASH_WIFI_CHANNEL_BLOCK_BASE   (FLASH_STREAM_BLOCK_BASE + FLASH_STREAM_BLOCK_SIZE)
 #define FLASH_WIFI_CHANNEL_BLOCK_SIZE   0x50
+
+//Nor Flash Address to store Gyro offset info
+#define FLASH_GYRO_OFFSET_BLOCK_BASE   (FLASH_WIFI_CHANNEL_BLOCK_BASE + FLASH_WIFI_CHANNEL_BLOCK_SIZE)
+#define FLASH_GYRO_OFFSET_BLOCK_SIZE   0x20
 
 // Todo: Nand Flash Address To Store Snapshot/Record data
 
@@ -148,6 +153,18 @@ typedef struct ai_glass_stream_param_s {
 typedef struct ai_glass_wifi_param_s {
        unsigned char channel;
 } ai_glass_wifi_param_t;
+
+//GYRO
+typedef struct ai_glass_gyro_param_s {
+    float x;   // idle baseline X
+    float y;   // idle baseline Y
+    float z;   // idle baseline Z
+#if !IGN_ACC_DATA
+	float a1;
+	float a2;
+	float a3;
+#endif
+} ai_glass_gyro_param_t;
 
 typedef struct isp_info_sync_s {
 	uint32_t isp_exposure_time;

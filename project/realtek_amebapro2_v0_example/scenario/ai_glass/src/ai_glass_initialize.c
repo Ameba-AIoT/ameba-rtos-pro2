@@ -35,6 +35,7 @@
 #include "uart_dbg.h"
 #include "ai_glass_version.h"
 #include "wifi_conf.h"
+#include "gyrosensor_api.h"
 
 // Configure for ai glass
 #define ENABLE_TEST_CMD             1   // For the tester to test some hardware
@@ -256,6 +257,91 @@ static void log_task(void *param)
     }
 }
 #endif
+
+static void print_camera_config(const CameraConfig *cfg) {
+    printf("=== CameraConfig Debug Dump ===\n");
+    printf("imu_rate_hz = %d\n", cfg->imu_rate_hz);
+    printf("enable_stabilization = %d\n", cfg->enable_stabilization);
+    printf("stabilization_alpha = %f\n", cfg->stabilization_alpha);
+    printf("crop_ratio_min = %f\n", cfg->crop_ratio_min);
+    printf("crop_ratio_max = %f\n", cfg->crop_ratio_max);
+    printf("rs_readout_time_ms = %f\n", cfg->rs_readout_time_ms);
+
+    const FisheyeParams *fp = &cfg->ldc_params.fisheye_params;
+    printf("RMS_error = %lf\n", fp->rms_error);
+
+    for (int r = 0; r < 3; r++) {
+        printf("camera_matrix[%d] = [%lf, %lf, %lf]\n",
+               r,
+               fp->camera_matrix[r][0],
+               fp->camera_matrix[r][1],
+               fp->camera_matrix[r][2]);
+    }
+
+    printf("distortion_coeffs = [%lf, %lf, %lf, %lf]\n",
+           fp->distortion_coeffs[0],
+           fp->distortion_coeffs[1],
+           fp->distortion_coeffs[2],
+           fp->distortion_coeffs[3]);
+
+    printf("radial_distortion_limit = %lf\n", fp->radial_distortion_limit);
+}
+
+static void uart_pack_uint32(uint8_t *buf, size_t *offset, size_t buf_size, uint32_t value) {
+    if (*offset + 4 > buf_size) return;
+    buf[(*offset)++] = (uint8_t)(value & 0xFF);
+    buf[(*offset)++] = (uint8_t)((value >> 8) & 0xFF);
+    buf[(*offset)++] = (uint8_t)((value >> 16) & 0xFF);
+    buf[(*offset)++] = (uint8_t)((value >> 24) & 0xFF);
+}
+
+static void uart_pack_float(uint8_t *buf, size_t *offset, size_t buf_size, float value) {
+    int32_t raw = (int32_t)(value * FLOAT_SCALE);
+    uart_pack_uint32(buf, offset, buf_size, (uint32_t)raw);
+}
+
+static void uart_pack_double(uint8_t *buf, size_t *offset, size_t buf_size, double value) {
+    int64_t raw = (int64_t)(value * FLOAT_SCALE);
+    if (*offset + 8 > buf_size) return;
+    for (int i = 0; i < 8; i++) {
+        buf[(*offset)++] = (uint8_t)((raw >> (8*i)) & 0xFF);
+    }
+}
+
+static void uart_pack_bool(uint8_t *buf, size_t *offset, size_t buf_size, bool value) {
+    if (*offset + 1 > buf_size) return;
+    buf[(*offset)++] = value ? 1 : 0;
+}
+
+static size_t uart_serialize_camera_config(uint8_t *buf, size_t buf_size, const CameraConfig *cfg) {
+    size_t offset = 0;
+
+    // Top-level fields
+    uart_pack_uint32(buf, &offset, buf_size, cfg->imu_rate_hz);
+    uart_pack_bool(buf, &offset, buf_size, cfg->enable_stabilization ? 1 : 0);
+    uart_pack_float(buf, &offset, buf_size, cfg->stabilization_alpha);
+    uart_pack_float(buf, &offset, buf_size, cfg->crop_ratio_min);
+    uart_pack_float(buf, &offset, buf_size, cfg->crop_ratio_max);
+    uart_pack_float(buf, &offset, buf_size, cfg->rs_readout_time_ms);
+
+    // Fisheye params
+    const FisheyeParams *fp = &cfg->ldc_params.fisheye_params;
+    uart_pack_double(buf, &offset, buf_size, fp->rms_error);
+
+    for (int r = 0; r < 3; r++) {
+        for (int c = 0; c < 3; c++) {
+            uart_pack_double(buf, &offset, buf_size, fp->camera_matrix[r][c]);
+        }
+    }
+
+    for (int i = 0; i < 4; i++) {
+        uart_pack_double(buf, &offset, buf_size, fp->distortion_coeffs[i]);
+    }
+
+    uart_pack_double(buf, &offset, buf_size, fp->radial_distortion_limit);
+
+    return offset; // total bytes written
+}
 
 static void aiglass_mass_storage_deinit(void)
 {
@@ -1530,9 +1616,14 @@ static void ai_glass_get_query_info(uartcmdpacket_t *param)
 	uart_resp_get_query_info(param);
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_QUERY_INFO\r\n");
 }
-
+uint32_t start_pdtime = 0;
+static int check = 0;
 static void ai_glass_get_power_down(uartcmdpacket_t *param)
 {
+	if(check == 0) {
+		start_pdtime = mm_read_mediatime_ms();
+		check +=1;
+	}
 	uint8_t result = AI_GLASS_CMD_COMPLETE;
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_POWER_DOWN %lu\r\n", mm_read_mediatime_ms());
 	if (critical_process_started == 1) {
@@ -1569,6 +1660,10 @@ static void ai_glass_get_power_down(uartcmdpacket_t *param)
 	// Todo: get power down command
 	uart_resp_get_power_down(param, result);
 	xSemaphoreGive(video_proc_sema);
+	uint32_t stop_pdtime = mm_read_mediatime_ms();
+	uint32_t pdtime = stop_pdtime - start_pdtime;
+	check = 0;
+	printf("Final power down time: %lu\r\n",pdtime);
 endofpowerdown:
 
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_POWER_DOWN %lu\r\n", mm_read_mediatime_ms());
@@ -2783,6 +2878,26 @@ void ai_glass_live_stop(uartcmdpacket_t *param)
     AI_GLASS_INFO("UART_TX_OPC_RESP_STOP_STREAMING END\r\n");
 }
 
+// UART_RX_OPC_CMD_GET_WIFI_PARAMETER
+static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_WIFI_PARAMETER\r\n");
+    uint8_t g_camera_cfg_buf[512];
+    size_t length = uart_serialize_camera_config(g_camera_cfg_buf, sizeof(g_camera_cfg_buf), &g_camera_cfg);
+
+    // Call your existing UART response function
+    int status = uart_resp_get_wifi_parameter(param, g_camera_cfg_buf, length);
+
+    // Debug print
+    print_camera_config(&g_camera_cfg);
+	printf("CameraConfig sent successfully (%lu bytes)\n", length);
+    if (status == 0) {
+        printf("CameraConfig sent successfully (%lu bytes)\n", length);
+    } else {
+        printf("UART send failed: %d\n", status);
+    }
+	AI_GLASS_INFO("UART_RX_OPC_CMD_GET_WIFI_PARAMETER END\r\n");
+}
+
 // {opcode, {is_critical, is_no_ack, callback}, {NULL, NULL})
 static rxopc_item_t rx_opcode_basic_items[ ] = {
 	{UART_RX_OPC_CMD_QUERY_INFO,        {true,  false, ai_glass_get_query_info},        {NULL, NULL}},
@@ -2821,6 +2936,8 @@ static rxopc_item_t rx_opcode_basic_items[ ] = {
 	     
 	{UART_RX_OPC_CMD_LIVE_START,                   			 {false, false, ai_glass_live_start},                       {NULL, NULL}},
 	{UART_RX_OPC_CMD_LIVE_STOP,                              {true, false, ai_glass_live_stop},                         {NULL, NULL}},
+
+	{UART_RX_OPC_CMD_GET_WIFI_PARAMETER,                     {false, false, ai_glass_get_wifi_parameter},               {NULL, NULL}},
 };
 
 void uart_fun_regist(void)
@@ -3406,6 +3523,27 @@ void fLFRECORD(void *arg)
     AI_GLASS_INFO("end of UART_RX_OPC_CMD_RECORD_START\r\n");
 }
 
+static void fTESTGSENSORCFG(void *arg) {
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_GSENSOR_CFG\r\n");
+    uint8_t buf[512];
+    size_t length = uart_serialize_camera_config(buf, sizeof(buf), &g_camera_cfg);
+
+    // Debug print
+    print_camera_config(&g_camera_cfg);
+	
+	printf("=== Raw UART Payload (%lu bytes) ===\n", length);
+    for (size_t i = 0; i < length; i++) {
+        printf("%02X ", buf[i]);   // hex format
+        if ((i + 1) % 16 == 0) {
+            printf("\n");          // newline every 16 bytes
+        }
+    }
+    if (length % 16 != 0) {
+        printf("\n");
+    }
+	AI_GLASS_INFO("UART_RX_OPC_CMD_GSENSOR_CFG END\r\n");
+}
+
 log_item_t at_ai_glass_items[ ] = {
 	{"AT+AIGLASSFORMAT",    fDISKFORMAT,            {NULL, NULL}},
 	{"AT+AIGLASSGSENSOR",   fTESTGSENSOR,           {NULL, NULL}},
@@ -3416,6 +3554,7 @@ log_item_t at_ai_glass_items[ ] = {
 	{"AT+AIGLASSCLEARMEDIAFLASH", fCLEARMEDIAFLASH, {NULL, NULL}},
 	{"AT+AIGLASSCHANGESENSOR", fCHANGESENSOR,       {NULL, NULL}},
 	{"AT+AIGLASSLFRECORD", fLFRECORD,               {NULL, NULL}},
+	{"AT+AIGLASSGSENSORCFG", fTESTGSENSORCFG,       {NULL, NULL}},
 };
 #endif
 void ai_glass_log_init(void)
