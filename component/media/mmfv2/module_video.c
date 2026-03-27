@@ -176,17 +176,17 @@ void video_frame_complete_cb(void *param1, void  *param2, uint32_t arg)
 		VIDEO_DBG_INFO("nv12/nv16/rgb in = 0x%X\r\n", enc2out->isp_addr);
 	}
 #endif
-	
-	if(ctx->dbg_ts_info) {
-		if(ctx->dbg_ts_info->timestamp_cnt < MMF_VIDEO_DBG_TS_MAX_CNT) {
+
+	if (ctx->dbg_ts_info) {
+		if (ctx->dbg_ts_info->timestamp_cnt < MMF_VIDEO_DBG_TS_MAX_CNT) {
 			ctx->dbg_ts_info->timestamp[ctx->dbg_ts_info->timestamp_cnt] = timestamp;
 			ctx->dbg_ts_info->timestamp_cnt++;
 		}
 	}
 	ctx->frame_cnt++;
 
-	if(ctx->frame_drop_interval) {
-		if(ctx->frame_cnt % ctx->frame_drop_interval != 1) {
+	if (ctx->frame_drop_interval) {
+		if (ctx->frame_cnt % ctx->frame_drop_interval != 1) {
 			goto direct_output;
 		}
 	}
@@ -410,9 +410,9 @@ direct_output:
 
 	if (enc2out->codec & (CODEC_H264 | CODEC_HEVC)) {
 		VIDEO_DBG_INFO("(%s-%s)(0x%X -- %d)(ch%d)(wh=%d x %d) \n"
-						, (enc2out->codec & CODEC_H264) != 0 ? "H264" : "HEVC"
-						, (enc2out->type == VCENC_INTRA_FRAME) ? "I" : "P"
-						, enc2out->enc_addr, enc2out->enc_len, enc2out->ch, enc2out->width, enc2out->height);
+					   , (enc2out->codec & CODEC_H264) != 0 ? "H264" : "HEVC"
+					   , (enc2out->type == VCENC_INTRA_FRAME) ? "I" : "P"
+					   , enc2out->enc_addr, enc2out->enc_len, enc2out->ch, enc2out->width, enc2out->height);
 	}
 
 
@@ -461,11 +461,11 @@ int video_control(void *p, int cmd, int arg)
 		//video_close will release all voe buffer
 		ret = video_close(ch);
 		mm_queue_item_t *queue_item;
-		if(mctx->output_ready) {
-			while(uxQueueMessagesWaiting(mctx->output_ready)) {
-				if(xQueueReceive(mctx->output_ready, (void *)&queue_item, 0) == pdTRUE) {
+		if (mctx->output_ready) {
+			while (uxQueueMessagesWaiting(mctx->output_ready)) {
+				if (xQueueReceive(mctx->output_ready, (void *)&queue_item, 0) == pdTRUE) {
 					if (ctx->params.use_static_addr == 0) {
-						free((void*)queue_item->data_addr);
+						free((void *)queue_item->data_addr);
 					}
 					queue_item->data_addr = 0;
 					xQueueSend(mctx->output_recycle, (void *)&queue_item, 0);
@@ -551,7 +551,7 @@ int video_control(void *p, int cmd, int arg)
 		}
 		break;
 	case CMD_VIDEO_GET_META_DATA:
-		if(ctx->meta_data.type == 0) {
+		if (ctx->meta_data.type == 0) {
 			VIDEO_DBG_ERROR("ch%d meta data not available\r\n", ctx->params.stream_id);
 			return -1;
 		}
@@ -583,7 +583,10 @@ int video_control(void *p, int cmd, int arg)
 		int ch = arg;
 		ctx->params.stream_id = ch;
 
-		if(mctx->state != MM_STAT_READY) {
+		bool is_direct_out = (ctx->params.direct_output == 1);
+		bool is_jpeg_snapshot = (ctx->params.type == VIDEO_JPEG && ctx->snapshot_cb != NULL);
+		VIDEO_DBG_INFO("video queue state = %d, direct_out %d, jpeg_snapshot %d\r\n", mctx->state, is_direct_out, is_jpeg_snapshot);
+		if (mctx->state != MM_STAT_READY && (!(is_direct_out || is_jpeg_snapshot))) {
 			VIDEO_DBG_ERROR("module_video queue not init\r\n");
 			return NOK;
 		}
@@ -655,7 +658,7 @@ int video_control(void *p, int cmd, int arg)
 	break;
 	case CMD_VIDEO_SET_SENSOR_ID: {
 		int sensor_id = arg;
-		if(sensor_id == 0 || sensor_id >= SENSOR_MAX) {
+		if (sensor_id == 0 || sensor_id >= SENSOR_MAX) {
 			VIDEO_DBG_ERROR("invalid sensor id %d\r\n", sensor_id);
 			return NOK;
 		}
@@ -676,17 +679,17 @@ int video_control(void *p, int cmd, int arg)
 	}
 	break;
 	case CMD_VIDEO_EN_DBG_TS_INFO: {
-		if(arg) {
-			if(ctx->dbg_ts_info == NULL) {
+		if (arg) {
+			if (ctx->dbg_ts_info == NULL) {
 				ctx->dbg_ts_info = malloc(sizeof(dbg_ts_info_t));
-				if(ctx->dbg_ts_info == NULL) {
+				if (ctx->dbg_ts_info == NULL) {
 					VIDEO_DBG_ERROR("dbg_ts_info malloc failed\r\n");
 					return -1;
 				}
 			}
 			ctx->dbg_ts_info->timestamp_cnt = 0; //init timestamp cnt
 		} else {
-			if(ctx->dbg_ts_info) {
+			if (ctx->dbg_ts_info) {
 				free(ctx->dbg_ts_info);
 				ctx->dbg_ts_info = NULL;
 				return 0;
@@ -695,9 +698,9 @@ int video_control(void *p, int cmd, int arg)
 	}
 	break;
 	case CMD_VIDEO_SHOW_DBG_TS_INFO: {
-		if(ctx->dbg_ts_info) {
+		if (ctx->dbg_ts_info) {
 			printf("ch%d timestamp = ", ch);
-			for(int i = 0; i < ctx->dbg_ts_info->timestamp_cnt; i++) {
+			for (int i = 0; i < ctx->dbg_ts_info->timestamp_cnt; i++) {
 				printf("%u ", ctx->dbg_ts_info->timestamp[i]);
 			}
 			printf("\r\n");
@@ -712,15 +715,15 @@ int video_control(void *p, int cmd, int arg)
 	}
 	break;
 	case CMD_VIDEO_SET_BPS_STBL_CTRL_PARAMS: {
-		ret = video_set_bps_stbl_ctrl_params(ch, (bps_stbl_ctrl_param_t*)arg, NULL, NULL);
+		ret = video_set_bps_stbl_ctrl_params(ch, (bps_stbl_ctrl_param_t *)arg, NULL, NULL);
 	}
 	break;
 	case CMD_VIDEO_SET_BPS_STBL_CTRL_FPS_STG: {
-		ret = video_set_bps_stbl_ctrl_params(ch, NULL, (uint32_t*)arg, NULL);
+		ret = video_set_bps_stbl_ctrl_params(ch, NULL, (uint32_t *)arg, NULL);
 	}
 	break;
 	case CMD_VIDEO_SET_BPS_STBL_CTRL_GOP_STG: {
-		ret = video_set_bps_stbl_ctrl_params(ch, NULL, NULL, (uint32_t*)arg);
+		ret = video_set_bps_stbl_ctrl_params(ch, NULL, NULL, (uint32_t *)arg);
 	}
 	break;
 	case CMD_VIDEO_GET_CURRENT_BITRATE: {
@@ -769,7 +772,7 @@ int video_control(void *p, int cmd, int arg)
 		break;
 	}
 	case CMD_VIDEO_GET_PRE_INIT_PARM: {
-		memcpy((void *)arg, (video_pre_init_params_t*)video_get_pre_init_setup_params(), sizeof(video_pre_init_params_t));
+		memcpy((void *)arg, (video_pre_init_params_t *)video_get_pre_init_setup_params(), sizeof(video_pre_init_params_t));
 		break;
 	}
 	case CMD_VIDEO_PRE_INIT_LOAD: {
@@ -805,7 +808,7 @@ int video_handle(void *ctx, void *input, void *output)
 void *video_destroy(void *p)
 {
 	video_ctx_t *ctx = (video_ctx_t *)p;
-	if(ctx->dbg_ts_info) {
+	if (ctx->dbg_ts_info) {
 		free(ctx->dbg_ts_info);
 		ctx->dbg_ts_info = NULL;
 	}
@@ -956,8 +959,8 @@ int video_voe_presetting(int v1_enable, int v1_w, int v1_h, int v1_bps, int v1_s
 						 int v4_enable, int v4_w, int v4_h)
 {
 	int voe_heap_size = 0;
-	
-	if(voe_boot_fsc_status()) {
+
+	if (voe_boot_fsc_status()) {
 		video_boot_stream_t *isp_fcs_info;
 		video_get_fcs_info(&isp_fcs_info); //Get the fcs info
 		memcpy(&info, &(isp_fcs_info->isp_info), sizeof(isp_fcs_info->isp_info));
@@ -1022,8 +1025,8 @@ int video_voe_presetting_by_params(const void *v1_params, int v1_jpg_only_shapsh
 								   int v3_jpg_only_shapshot, const void *v4_params)
 {
 	int voe_heap_size = 0;
-	
-	if(voe_boot_fsc_status()) {
+
+	if (voe_boot_fsc_status()) {
 		video_boot_stream_t *isp_fcs_info;
 		video_get_fcs_info(&isp_fcs_info); //Get the fcs info
 		memcpy(&info, &(isp_fcs_info->isp_info), sizeof(isp_fcs_info->isp_info));
