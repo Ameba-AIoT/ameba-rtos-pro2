@@ -25,11 +25,14 @@
 
 //Nor Flash Address to store Wifi Channel info
 #define FLASH_WIFI_CHANNEL_BLOCK_BASE   (FLASH_STREAM_BLOCK_BASE + FLASH_STREAM_BLOCK_SIZE)
-#define FLASH_WIFI_CHANNEL_BLOCK_SIZE   0x50
+#define FLASH_WIFI_CHANNEL_BLOCK_SIZE   0x150
 
 //Nor Flash Address to store Gyro offset info
 #define FLASH_GYRO_OFFSET_BLOCK_BASE   (FLASH_WIFI_CHANNEL_BLOCK_BASE + FLASH_WIFI_CHANNEL_BLOCK_SIZE)
 #define FLASH_GYRO_OFFSET_BLOCK_SIZE   0x20
+
+//Nor Flash Address to store camera/storage/gsensor status
+
 
 // Todo: Nand Flash Address To Store Snapshot/Record data
 
@@ -152,6 +155,8 @@ typedef struct ai_glass_stream_param_s {
 //wifi channel info, can add more in future if needed
 typedef struct ai_glass_wifi_param_s {
        unsigned char channel;
+	   char ssid_buf[33 + 1];
+	   char password_buf[65 + 1];
 } ai_glass_wifi_param_t;
 
 //GYRO
@@ -300,7 +305,8 @@ int media_get_stream_params(ai_glass_stream_param_t *params);
 int media_update_stream_params(const ai_glass_stream_param_t *params);
 
 //wifi channel info
-int media_update_wifi_channel_params(const ai_glass_wifi_param_t *params);
+int media_update_wifi_params(const ai_glass_wifi_param_t *params);
+int media_get_wifi_params_from_flash(ai_glass_wifi_param_t *params);
 
 // life audio
 int lifetime_audio_initialize(uint8_t record_filename_length, const char *filename);

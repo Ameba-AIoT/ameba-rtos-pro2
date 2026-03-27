@@ -173,8 +173,10 @@ static ai_glass_snapshot_param_t life_snapshot_params = {
 	.rotation = DEFAULT_LIFESNAP_ROTATION,
 };
 
-static ai_glass_wifi_param_t wifi_channel_params = {
+static ai_glass_wifi_param_t wifi_params = {
        .channel = 0, 
+	   .ssid_buf = {0},
+	   .password_buf = {0},
 };
 
 static mm_context_t *video_fake_ctx = NULL;
@@ -641,10 +643,12 @@ static int media_set_stream_params(const ai_glass_stream_param_t *params)
     return ret;
 }
 
-static int media_set_wifi_channel_params(const ai_glass_wifi_param_t *params)
+static int media_set_wifi_params(const ai_glass_wifi_param_t *params)
 {
        if (params) {
-               wifi_channel_params.channel = params->channel;
+               wifi_params.channel = params->channel;
+			   memcpy(wifi_params.ssid_buf, params->ssid_buf, sizeof(wifi_params.ssid_buf));
+        	   memcpy(wifi_params.password_buf, params->password_buf, sizeof(wifi_params.password_buf));
                return MEDIA_OK;
        } else {
                return MEDIA_FAIL;
@@ -808,42 +812,48 @@ static int media_update_stream_params_to_flash(const ai_glass_stream_param_t *pa
     return MEDIA_OK;
 }
 
-static int media_update_wifi_channel_params_to_flash(const ai_glass_wifi_param_t *params)
+static int media_update_wifi_params_to_flash(const ai_glass_wifi_param_t *params)
 {
-       unsigned char *wifi_channel_buf = malloc(FLASH_WIFI_CHANNEL_BLOCK_SIZE); 
-       unsigned int flash_addr = 0;
-       if (sys_get_boot_sel() == 0) {
-               flash_addr = FLASH_WIFI_CHANNEL_BLOCK_BASE;
-       } else {
-               // Placeholder for NAND FLASH ADDR in future
-       }
-       if (wifi_channel_buf == NULL) {
-               AI_GLASS_ERR("It can't get the wifi channel buffer\r\n");
-               return MEDIA_FAIL;
-       }
+    unsigned char *wifi_buf = malloc(FLASH_WIFI_CHANNEL_BLOCK_SIZE); 
+    unsigned int flash_addr = 0;
 
-       memset(wifi_channel_buf, 0x00, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
-       wifi_channel_buf[0] = 'A';  // Add tag for identification (AI snapshot params)
-       wifi_channel_buf[1] = 'I';
-       wifi_channel_buf[2] = 'W';
-       wifi_channel_buf[3] = 'I';
-       wifi_channel_buf[4] = 'F';
-       wifi_channel_buf[5] = 'I';
+    if (sys_get_boot_sel() == 0) {
+        flash_addr = FLASH_WIFI_CHANNEL_BLOCK_BASE;
+    } else {
+        // Placeholder for NAND FLASH ADDR in future
+    }
 
-       memcpy(wifi_channel_buf + 6, params, sizeof(ai_glass_wifi_param_t));
-       ftl_common_write(flash_addr, wifi_channel_buf, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
-       memset(wifi_channel_buf, 0xff, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
-       ftl_common_read(flash_addr, wifi_channel_buf, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
-       ai_glass_wifi_param_t *read_data = (ai_glass_wifi_param_t *)(wifi_channel_buf + 6);
-       AI_GLASS_MSG("\r\n[FLASH_WIFI] channel: %d\r\n",
-                                 read_data->channel);
+    if (wifi_buf == NULL) {
+        AI_GLASS_ERR("It can't get the wifi buffer\r\n");
+        return MEDIA_FAIL;
+    }
 
-       if (wifi_channel_buf) {
-               free(wifi_channel_buf);
-       }
-       return MEDIA_OK;
+    memset(wifi_buf, 0x00, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
+    wifi_buf[0] = 'A';  // Add tag for identification
+    wifi_buf[1] = 'I';
+    wifi_buf[2] = 'W';
+    wifi_buf[3] = 'I';
+    wifi_buf[4] = 'F';
+    wifi_buf[5] = 'I';
+
+    // Write full struct (channel + SSID + password)
+    memcpy(wifi_buf + 6, params, sizeof(ai_glass_wifi_param_t));
+
+    ftl_common_write(flash_addr, wifi_buf, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
+
+    memset(wifi_buf, 0xff, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
+    ftl_common_read(flash_addr, wifi_buf, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
+
+    ai_glass_wifi_param_t *read_data = (ai_glass_wifi_param_t *)(wifi_buf + 6);
+    AI_GLASS_MSG("[FLASH_WIFI] channel: %d\r\n", read_data->channel);
+    AI_GLASS_MSG("[FLASH_WIFI] SSID: %s\r\n", read_data->ssid_buf);
+    AI_GLASS_MSG("[FLASH_WIFI] Password: %s\r\n", read_data->password_buf);
+
+    if (wifi_buf) {
+    	free(wifi_buf);
+    }
+    return MEDIA_OK;
 }
-
 
 static int media_get_record_params_from_flash(ai_glass_record_param_t *params)
 {
@@ -991,6 +1001,53 @@ static int media_get_stream_params_from_flash(ai_glass_stream_param_t *params)
     if (stream_buf) {
         free(stream_buf);
     }
+    return ret;
+}
+
+int media_get_wifi_params_from_flash(ai_glass_wifi_param_t *params)
+{
+    if (params == NULL) {
+        AI_GLASS_ERR("Input buffer for wifi params is NULL\r\n");
+        return MEDIA_FAIL;
+    }
+
+    unsigned char *wifi_buf = malloc(FLASH_WIFI_CHANNEL_BLOCK_SIZE);
+    unsigned int flash_addr = 0;
+    int ret = MEDIA_FAIL;
+
+    if (sys_get_boot_sel() == 0) {
+        flash_addr = FLASH_WIFI_CHANNEL_BLOCK_BASE;
+    } else {
+        // Placeholder for NAND FLASH ADDR in future
+    }
+
+    if (wifi_buf == NULL) {
+        AI_GLASS_ERR("It can't get the wifi buffer\r\n");
+        return MEDIA_FAIL;
+    }
+
+    memset(wifi_buf, 0x00, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
+    ftl_common_read(flash_addr, wifi_buf, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
+
+    // Check tag
+    if (wifi_buf[0] == 'A' && wifi_buf[1] == 'I' &&
+        wifi_buf[2] == 'W' && wifi_buf[3] == 'I' &&
+        wifi_buf[4] == 'F' && wifi_buf[5] == 'I') {
+
+        memcpy(params, wifi_buf + 6, sizeof(ai_glass_wifi_param_t));
+        ret = MEDIA_OK;
+
+        AI_GLASS_MSG("[FLASH_WIFI] channel: %d\r\n", params->channel);
+        AI_GLASS_MSG("[FLASH_WIFI] SSID: %s\r\n", params->ssid_buf);
+        AI_GLASS_MSG("[FLASH_WIFI] Password: %s\r\n", params->password_buf);
+    } else {
+        AI_GLASS_WARN("Get WiFi Param from flash failed\r\n");
+    }
+
+	if (wifi_buf) {
+        free(wifi_buf);
+    }
+
     return ret;
 }
 
@@ -1321,17 +1378,18 @@ void initial_media_parameters(void)
 	#endif
 }
 
-int media_update_wifi_channel_params(const ai_glass_wifi_param_t *params)
+int media_update_wifi_params(const ai_glass_wifi_param_t *params)
 {
-	int ret = media_set_wifi_channel_params(params);
+	int ret = media_set_wifi_params(params);
 	if (ret == MEDIA_OK) {
 		// update data to flash
-		return media_update_wifi_channel_params_to_flash(params);
+		return media_update_wifi_params_to_flash(params);
 	} else if (ret == MEDIA_NO_NEED_TO_UPDATE) {
 		return MEDIA_OK;
 	}
 	return MEDIA_FAIL;
 }
+
 
 void deinitial_media(void)
 {

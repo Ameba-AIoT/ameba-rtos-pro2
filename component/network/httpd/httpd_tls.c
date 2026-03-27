@@ -259,6 +259,12 @@ exit:
 			goto exit;
 		}
 
+		static const int ciphersuites[] = {
+           MBEDTLS_TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+        };
+        mbedtls_ssl_conf_ciphersuites(conf, ciphersuites);
+ 
+
 		mbedtls_ssl_conf_authmode(conf, MBEDTLS_SSL_VERIFY_NONE);
 		mbedtls_ssl_conf_rng(conf, _random_func, NULL);
 		mbedtls_ssl_conf_max_version(conf, MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_3); // TLS 1.2

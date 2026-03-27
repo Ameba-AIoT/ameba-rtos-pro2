@@ -525,7 +525,7 @@ static void transfer_file_normal_internal(struct httpd_conn *conn, FILE *http_fi
 	return;
 }
 
-static void http_file_send_thread(void *pvParameters)
+static void http_file_read_thread(void *pvParameters)
 {
 	FILE *http_file = (FILE *)pvParameters;
 	file_msg_t msg = {0};
@@ -592,7 +592,7 @@ static void http_file_send_thread(void *pvParameters)
 	vTaskDelete(NULL);
 }
 
-static void http_file_read_thread(void *pvParameters)
+static void http_file_send_thread(void *pvParameters)
 {
 	struct httpd_conn *conn = (struct httpd_conn *)pvParameters;
 	file_msg_t rcv_msg;
@@ -600,11 +600,21 @@ static void http_file_read_thread(void *pvParameters)
 	int total_bw = 0;
 	int rcv_success = 1;
 
+	uint32_t start_time = 0;
+	uint32_t end_time = 0;
+	uint32_t total_bytes_sent = 0;
+	int started = 0;
+
+	// int send_timeout = 3000;
+	// if (conn->sock != -1) {
+	// 	setsockopt(conn->sock, SOL_SOCKET, SO_SNDTIMEO, &send_timeout, sizeof(send_timeout));
+	// }
+
 	while (1) {
 		if (xQueueReceive(file_queue, &rcv_msg, portMAX_DELAY) == pdPASS) {
 			if (rcv_msg.id == 0) {
 				writer_status = WRITE_STATUS_EOF;
-				WLAN_SCEN_MSG("Get total time = %d\r\n", total_bw);
+				WLAN_SCEN_MSG("Get total queued bytes = %d\r\n", total_bw);
 				break;
 			}
 			total_bw += rcv_msg.id;
@@ -619,12 +629,35 @@ static void http_file_read_thread(void *pvParameters)
 				xTaskNotify(read_taskhandle, TASK_NOTIFY_WERROR, eSetValueWithOverwrite);
 				rcv_success = 0;
 				break;
+			} else if (ret > 0) {
+				if (!started) {
+					start_time = mm_read_mediatime_ms();
+					started = 1;
+				}
+				total_bytes_sent += ret;
 			}
 		} else {
 			WLAN_SCEN_ERR("[WRITER TASK] xQueueReceive fail\r\n");
 			xTaskNotify(read_taskhandle, TASK_NOTIFY_ERROR, eSetValueWithOverwrite);
 			rcv_success = 0;
 			break;
+		}
+	}
+
+	// End timing
+	if (started) {
+		end_time = mm_read_mediatime_ms();
+		uint32_t duration_ms = end_time - start_time;
+
+		if (duration_ms > 0) {
+			float throughput_kbps = (total_bytes_sent * 8.0f) / duration_ms;
+			float throughput_MBps = (total_bytes_sent / 1024.0f / 1024.0f) / (duration_ms / 1000.0f);
+
+			WLAN_SCEN_MSG("\n=== WIFI THROUGHPUT ===\n");
+			WLAN_SCEN_MSG("Bytes Sent (actual): %lu\n", total_bytes_sent);
+			WLAN_SCEN_MSG("Time: %lu ms\n", duration_ms);
+			WLAN_SCEN_MSG("Throughput: %.2f kbps\n", throughput_kbps);
+			WLAN_SCEN_MSG("Throughput: %.2f MB/s\n", throughput_MBps);
 		}
 	}
 
@@ -718,9 +751,10 @@ static void print_wifi_setting(const char *ifname, rtw_wifi_setting_t *pSetting)
     RTW_API_INFO("\n\r   CHANNEL => %d", pSetting->channel);
 
 	ai_glass_wifi_param_t wifi_param = {0};
+	media_get_wifi_params_from_flash(&wifi_param);
     wifi_param.channel = pSetting->channel;
 
-    media_update_wifi_channel_params(&wifi_param);
+    media_update_wifi_params(&wifi_param);
  
     switch (pSetting->security_type) {
     case RTW_SECURITY_OPEN:
@@ -1050,7 +1084,7 @@ static void media_getfile_cb(struct httpd_conn *conn)
 
 			core_taskhandle = xTaskGetCurrentTaskHandle();
 
-			if (xTaskCreate(http_file_send_thread, "Sender", 8192, (void *)http_file, 5, &read_taskhandle) != pdPASS) {
+			if (xTaskCreate(http_file_read_thread, "Receiver", 8192, (void *)http_file, 5, &read_taskhandle) != pdPASS) {
 				WLAN_SCEN_WARN("Failed to create ReaderTask\n");
 				transfer_file_normal_internal(conn, http_file);
 				vQueueDelete(file_queue);
@@ -1058,7 +1092,7 @@ static void media_getfile_cb(struct httpd_conn *conn)
 				goto http_end;
 			}
 
-			if (xTaskCreate(http_file_read_thread, "Receiver", 8192, (void *)conn, 5, &send_taskhandle) != pdPASS) {
+			if (xTaskCreate(http_file_send_thread, "Sender", 8192, (void *)conn, 5, &send_taskhandle) != pdPASS) {
 				WLAN_SCEN_WARN("Failed to create WriterTask\n");
 				vTaskDelete(read_taskhandle);
 				vQueueDelete(file_queue);

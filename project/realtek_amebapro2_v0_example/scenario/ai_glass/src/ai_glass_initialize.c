@@ -55,7 +55,10 @@
 #define UPDATE_DEFAULT_SNAPSHOT     1
 #define UPDATE_DEFAULT_RECORD       2
 #define UPDATE_RECORD_TIME          3
+#define UPDATE_WIFI_AP_CREDENTIALS  4
 
+char ssid_buf[MAX_SSID_LEN + 1] = {0};
+char password_buf[MAX_PASSWORD_LEN + 1] = {0};
 // Definition for buffer size
 #define MAX_FILENAME_SIZE           128
 
@@ -1867,6 +1870,34 @@ static void ai_glass_update_wifi_info(uartcmdpacket_t *param)
 		media_get_record_params(&temp_record_param);
 		print_record_data(&temp_record_param);
 		break;
+	case UPDATE_WIFI_AP_CREDENTIALS:
+		AI_GLASS_MSG("Update WiFi AP credentials\r\n");
+		uint8_t ssid_length = video_params[0];
+		if (ssid_length == 0 || ssid_length > MAX_SSID_LEN) {
+        	resp_stat = AI_GLASS_PARAMS_ERR;
+        	break;
+    	}
+		uint8_t password_length = video_params[34];
+		if (password_length > MAX_PASSWORD_LEN) {
+			resp_stat = AI_GLASS_PARAMS_ERR;
+			break;
+		}
+		if (info_size < (2 + ssid_length + password_length)) {
+			resp_stat = AI_GLASS_PARAMS_ERR;
+			break;
+		}
+		ai_glass_wifi_param_t wifi_param = {0};
+		media_get_wifi_params_from_flash(&wifi_param);
+		memcpy(wifi_param.ssid_buf, &video_params[1], ssid_length);
+		wifi_param.ssid_buf[ssid_length] = '\0';
+		memcpy(wifi_param.password_buf, &video_params[35], password_length);
+    	wifi_param.password_buf[password_length] = '\0';
+		AI_GLASS_MSG("SSID: %s\r\n", wifi_param.ssid_buf);
+   		AI_GLASS_MSG("Password: %s\r\n", wifi_param.password_buf);
+		if (media_update_wifi_params(&wifi_param) != MEDIA_OK) {
+			resp_stat = AI_GLASS_PARAMS_ERR;
+		}
+		break;
 	}
 
 	uart_resp_update_wifi_info(param, resp_stat);
@@ -2587,13 +2618,26 @@ static void ai_glass_set_ap_mode(uartcmdpacket_t *param)
 	uint8_t password[MAX_AP_PASSWORD_LEN] = {0};
 	wifi_cfg.password = password;
 
+	ai_glass_wifi_param_t wifi_param = {0};
+    media_get_wifi_params_from_flash(&wifi_param);
+
 	if (mode == 1 || mode == 3) {
 		ai_glass_init_external_disk();
-		if (wifi_enable_ap_mode(AI_GLASS_AP_SSID, AI_GLASS_AP_PASSWORD, AI_GLASS_AP_CHANNEL, 20) == WLAN_SET_OK) {
-			wifi_get_ap_setting(&wifi_cfg);
-			result = AI_GLASS_CMD_COMPLETE;
-		} else {
-			result = AI_GLASS_PROC_FAIL;
+		if (wifi_param.ssid_buf[0] != '\0' && wifi_param.password_buf[0] != '\0') {
+			if (wifi_enable_ap_mode(wifi_param.ssid_buf, wifi_param.password_buf, AI_GLASS_AP_CHANNEL, 20) == WLAN_SET_OK) {
+				wifi_get_ap_setting(&wifi_cfg);
+				result = AI_GLASS_CMD_COMPLETE;
+			} else {
+				result = AI_GLASS_PROC_FAIL;
+			}
+		}
+		else {
+			if (wifi_enable_ap_mode(AI_GLASS_AP_SSID, AI_GLASS_AP_PASSWORD, AI_GLASS_AP_CHANNEL, 20) == WLAN_SET_OK) {
+				wifi_get_ap_setting(&wifi_cfg);
+				result = AI_GLASS_CMD_COMPLETE;
+			} else {
+				result = AI_GLASS_PROC_FAIL;
+			}
 		}
 	} else if (mode == 0) {
 		if (wifi_disable_ap_mode() == WLAN_SET_OK) {
@@ -2889,7 +2933,7 @@ static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 
     // Debug print
     print_camera_config(&g_camera_cfg);
-	
+	printf("CameraConfig sent successfully (%lu bytes)\n", length);
     if (status == 0) {
         printf("CameraConfig sent successfully (%lu bytes)\n", length);
     } else {

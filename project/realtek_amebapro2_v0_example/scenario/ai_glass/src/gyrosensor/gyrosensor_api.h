@@ -16,7 +16,7 @@
 #include "ex_api.h"
 
 #undef AI_DEMO_MPU6050
-#define AI_DEMO_MPU6050//AI_DEMO_ICM42670P
+#define AI_DEMO_ICM42670P//AI_DEMO_ICM42670P
 
 // ignore the accelerometer data from g-sensor
 #define IGN_ACC_DATA    1
@@ -29,7 +29,7 @@
 #define GYRO_SAVE_SET_STOP      0x20
 
 // Configuration
-#define ENABLE_GET_GSENSOR_INFO 1
+#define ENABLE_GET_GSENSOR_INFO 0
 
 // Whole g-sensor data
 // we do not need raw data of the g-sensor
