@@ -50,7 +50,6 @@ static video_params_t video_v1_params = {
 	.use_static_addr = 1,
 };
 
-
 static rtsp2_params_t rtsp2_v1_params = {
 	.type = AVMEDIA_TYPE_VIDEO,
 	.u = {
@@ -61,9 +60,9 @@ static rtsp2_params_t rtsp2_v1_params = {
 	}
 };
 
-TaskHandle_t snapshot_thread = NULL;
+static TaskHandle_t snapshot_thread = NULL;
 
-int v1_snapshot_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
+static int v1_snapshot_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 {
 	printf("snapshot size=%d\n\r", jpeg_len);
 	return 0;
@@ -73,13 +72,13 @@ static ExifParams param = {
 	.make = "Realtek",                        // Manufacturer (e.g., "Realtek")
 	.model = "Rtl8735b",                     // Camera model (e.g., "Rtl8735b")
 	.datetime = "2025:07:22 15:16:17",      // Date and time of capture (EXIF format: "YYYY:MM:DD HH:MM:SS")
-	.exposure_time = 1.0 / 500.0,           // Exposure time (e.g., 1/500 second ¡÷ 0.002)
+	.exposure_time = 1.0 / 500.0,           // Exposure time (e.g., 1/500 second â†’ 0.002)
 	.fnumber = 2.8,                         // Aperture (e.g., f/2.8)
 	.focal_length = 35.0,                   // Focal length in mm (e.g., 35mm)
-	.white_balance = 0,                     // White balance (0 = Auto, 1 = Manual; here it¡¦s Auto)
+	.white_balance = 0,                     // White balance (0 = Auto, 1 = Manual; here itâ€™s Auto)
 	.iso = 200,                             // ISO value (e.g., ISO 200)
-	.gps_latitude = 25.0701,                // Latitude (e.g., 25.0701 for 25¢X 4' 12" North)
-	.gps_longitude = 121.568,               // Longitude (e.g., 121.568 for 121¢X 34' 5" East)
+	.gps_latitude = 25.0701,                // Latitude (e.g., 25.0701 for 25Â° 4' 12" North)
+	.gps_longitude = 121.568,               // Longitude (e.g., 121.568 for 121Â° 34' 5" East)
 	.gps_altitude = 43.2,                   // Altitude in meters (e.g., 43.2 meters above sea level)
 	.has_gps = 1                            // GPS information present (1 = true, 0 = false)
 };
@@ -108,7 +107,7 @@ static void video_meta_cb(void *parm)
 }
 #endif
 
-void snapshot_control_thread(void *param)
+static void snapshot_control_thread(void *param)
 {
 #if defined(configENABLE_TRUSTZONE) && (configENABLE_TRUSTZONE == 1)
 	rtw_create_secure_context(2048);
@@ -161,7 +160,6 @@ void mmf2_video_example_v1_shapshot_init(void)
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_PARAMS, (int)&video_v1_params);
 		mm_module_ctrl(video_v1_ctx, MM_CMD_SET_QUEUE_LEN, video_v1_params.fps * 3);
 		mm_module_ctrl(video_v1_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
-		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SNAPSHOT, 0);
 	} else {
 		rt_printf("video open fail\n\r");
 		goto mmf2_video_exmaple_v1_shapshot_fail;
@@ -191,8 +189,6 @@ void mmf2_video_example_v1_shapshot_init(void)
 		goto mmf2_video_exmaple_v1_shapshot_fail;
 	}
 
-	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, V1_CHANNEL);
-
 	//--------------snapshot setting---------------------------
 #if defined(ENABLE_SD_SNAPSHOT)
 	extern snapshot_user_config_t snap_config;
@@ -211,6 +207,8 @@ void mmf2_video_example_v1_shapshot_init(void)
 #if defined(ENABLE_META_INFO)
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_META_CB, (int)video_meta_cb);
 #endif
+
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, V1_CHANNEL);
 
 	return;
 mmf2_video_exmaple_v1_shapshot_fail:
