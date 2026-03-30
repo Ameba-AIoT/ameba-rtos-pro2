@@ -79,8 +79,6 @@ static uint8_t temp_rfile_name[MAX_FILENAME_SIZE] = {0};
 
 // For OTA progress status
 volatile uint8_t bt_progress;
-volatile uint8_t cancel_bt_upgrade = 0;
-volatile uint8_t cancel_wifi_upgrade = 0;
 
 volatile int critical_process_started = 0;
 
@@ -114,6 +112,12 @@ static uint8_t s_log_flush_buf[1024];  // 1KB is plenty; loop until ring empty
 
 char burst_names[MAX_BURST][64]; 
 volatile int burst_count = 0;
+
+static void ai_glass_ota_progress_reporter(uint8_t device_id, uint8_t progress) {
+    if (device_id == 1) { // WiFi
+        uart_resp_get_sys_upgrade(1, progress);
+    } 
+}
 
 static int usb_msc_device_init(void)
 {
@@ -911,6 +915,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 			
 			int ret = -1;
 				ret = heap_update_ota(g_heap_ota_data->wifi_data, g_heap_ota_data->wifi_length);
+				ota_register_status_callback(NULL); 
 				if (!ret) {
 					AI_GLASS_MSG("\n\r Ready to reboot\n");
 					if (g_heap_ota_data && (g_heap_ota_data->bt_data != NULL)) {
@@ -979,6 +984,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 
 				int ret = -1;
 				ret = heap_update_ota(g_heap_ota_data->wifi_data, g_heap_ota_data->wifi_length);
+				ota_register_status_callback(NULL); 
 				if (!ret) {
 					AI_GLASS_MSG("\n\r Ready to reboot\n");
 					if (g_heap_ota_data && (g_heap_ota_data->bt_data != NULL)) {
@@ -1040,6 +1046,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 
 				int ret = -1;
 				ret = heap_update_ota(g_heap_ota_data->wifi_data, g_heap_ota_data->wifi_length);
+				ota_register_status_callback(NULL); 
 				if (!ret) {
 					AI_GLASS_MSG("\n\r Ready to reboot\n");
 					if (g_heap_ota_data && (g_heap_ota_data->bt_data != NULL)) {
@@ -1103,6 +1110,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 					AI_GLASS_MSG("\n\r NN OTA done. Continue to upgrade wifi firmware...\r\n");
 					int ret = -1;
 					ret = heap_update_ota(g_heap_ota_data->wifi_data, g_heap_ota_data->wifi_length);
+					ota_register_status_callback(NULL); 
 					if (!ret) {
 						AI_GLASS_MSG("\n\r Ready to reboot\n");
 						if (g_heap_ota_data && (g_heap_ota_data->bt_data != NULL)) {
@@ -1174,6 +1182,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 				AI_GLASS_MSG("\n\r ISP_IQ OTA done. Continue to upgrade wifi firmware...\r\n");
 				int ret = -1;
 				ret = heap_update_ota(g_heap_ota_data->wifi_data, g_heap_ota_data->wifi_length);
+				ota_register_status_callback(NULL); 
 				if (!ret) {
 					AI_GLASS_MSG("\n\r Ready to reboot\n");
 					if (g_heap_ota_data && (g_heap_ota_data->bt_data != NULL)) {
@@ -1237,6 +1246,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 					AI_GLASS_MSG("\n\r ISP_IQ OTA done. Continue to upgrade wifi firmware...\r\n");
 					int ret = -1;
 					ret = heap_update_ota(g_heap_ota_data->wifi_data, g_heap_ota_data->wifi_length);
+					ota_register_status_callback(NULL); 
 					if (!ret) {
 						AI_GLASS_MSG("\n\r Ready to reboot\n");
 						if (g_heap_ota_data && (g_heap_ota_data->bt_data != NULL)) {
@@ -1312,6 +1322,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 					AI_GLASS_MSG("\n\r ISP_IQ OTA done. Continue to upgrade wifi firmware...\r\n");
 					int ret = -1;
 					ret = heap_update_ota(g_heap_ota_data->wifi_data, g_heap_ota_data->wifi_length);
+					ota_register_status_callback(NULL); 
 					if (!ret) {
 						AI_GLASS_MSG("\n\r Ready to reboot\n");
 						if (g_heap_ota_data && (g_heap_ota_data->bt_data != NULL)) {
@@ -1391,6 +1402,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 						AI_GLASS_MSG("\n\r ISP_IQ OTA done. Continue to upgrade wifi firmware...\r\n");
 						int ret = -1;
 						ret = heap_update_ota(g_heap_ota_data->wifi_data, g_heap_ota_data->wifi_length);
+						ota_register_status_callback(NULL); 
 						if (!ret) {
 							AI_GLASS_MSG("\n\r Ready to reboot\n");
 							if (g_heap_ota_data && (g_heap_ota_data->bt_data != NULL)) {

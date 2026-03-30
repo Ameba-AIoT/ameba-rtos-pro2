@@ -9,9 +9,7 @@
 #include "hal_crypto.h"
 #include "hal_eddsa.h"
 #include "fwfs.h"
-#if UPDATE_UPGRADE_PROGRESS_TO_8773
-#include "ai_glass_initialize.h"
-#endif
+
 sys_thread_t TaskOTA = NULL;
 #define STACK_SIZE		1024
 #define TASK_PRIORITY	tskIDLE_PRIORITY + 1
@@ -21,18 +19,64 @@ sys_thread_t TaskOTA = NULL;
 // User can check target firmware postbuild routine.
 #define USE_CHECKSUM 1
 
+volatile uint8_t cancel_wifi_upgrade; 
+volatile uint8_t cancel_bt_upgrade;
+
 #if UPDATE_UPGRADE_PROGRESS_TO_8773
 // For OTA progress status
 volatile uint8_t progress;
-// static TimerHandle_t ota_progress_timer = NULL;
-
-// void ota_progress_timer_callback(TimerHandle_t xTimer)
-// {
-//     uart_resp_get_sys_upgrade((uint8_t) 1, progress);
-// 	   printf("Send wifi ota progress: %u\r\n", progress);
-// }
-
 #endif
+
+/*********************Callback Storage and Management*********************/
+static ota_status_callback_t g_ota_status_callback = NULL;
+
+/**
+ * @brief Register a callback for reporting OTA upgrade status
+ * @param callback: Pointer to callback function, or NULL to unregister
+ * @return 0 on success, -1 on failure
+ */
+int ota_register_status_callback(ota_status_callback_t callback)
+{
+	g_ota_status_callback = callback;
+	return 0;
+}
+
+/**
+ * @brief Invoke the status callback to report upgrade progress
+ * @param device_id: Device identifier (1=WiFi FW, 2=BT FW)
+ * @param progress: Progress percentage (0-100)
+ * @return void
+ */
+void ota_invoke_status_callback(uint8_t device_id, uint8_t progress)
+{
+	if (g_ota_status_callback != NULL) {
+		g_ota_status_callback(device_id, progress);
+	}
+}
+
+/**
+ * @brief Invoke the cancel check callback
+ * @param device_id: Device identifier (1=WiFi FW, 2=BT FW)
+ * @return 2 if bt upgrade should be cancelled, 1 if wifi upgrade should be cancelled, 0 otherwise
+ */
+uint8_t ota_invoke_cancel_check(uint8_t device_id)
+{
+	if (device_id == 1) {
+        cancel_wifi_upgrade = 1;
+        printf("[OTA] Wifi cancellation invoked\n");
+		return cancel_wifi_upgrade;
+    }
+	if (device_id == 2) {
+        cancel_bt_upgrade = 1;
+        printf("[OTA] BT cancellation invoked\n");
+		return cancel_bt_upgrade;
+    }
+
+	return 0;
+
+}	
+
+/**************************************************************************/
 
 
 /**
@@ -1739,15 +1783,14 @@ int ext_storage_update_ota(char *filename)
 	// Start reading and updating firmware
 	printf("\n\r[%s] Start OTA update\n\r", __FUNCTION__);
 	#if UPDATE_UPGRADE_PROGRESS_TO_8773
-	    uart_resp_get_sys_upgrade((uint8_t) 1, (uint8_t) 0);
-		int loop_counter = 0;
+	ota_invoke_status_callback((uint8_t) 1, (uint8_t) 0);
 	#endif
+	int loop_counter = 0;
 	while (idx < file_size) {
-		#if UPDATE_UPGRADE_PROGRESS_TO_8773
 		loop_counter++;
-		if (cancel_wifi_upgrade) {
+		#if UPDATE_UPGRADE_PROGRESS_TO_8773
+		if (ota_invoke_cancel_check((uint8_t) 1)) {
 			printf("\n\r[%s] OTA upgrade canceled by user\n\r", __FUNCTION__);
-			progress = 0;
 			loop_counter = 0;
 			ret = -2;
 			goto update_ota_exit;
@@ -1767,7 +1810,7 @@ int ext_storage_update_ota(char *filename)
 		if ((idx == (file_size - 4)) && (bytes_read == 0)) {
 			printf("\n\r[%s] OTA update completed successfully\n\r", __FUNCTION__);
 			#if UPDATE_UPGRADE_PROGRESS_TO_8773
-				uart_resp_get_sys_upgrade((uint8_t) 1, (uint8_t) 100);
+				ota_invoke_status_callback((uint8_t) 1, (uint8_t) 100);
 			#endif
 			ret = 0;
 			goto update_ota_exit;
@@ -1778,16 +1821,13 @@ int ext_storage_update_ota(char *filename)
 			if (progress > 99) {
 				progress = 99;
 			}
-		}
 
-		if (loop_counter % 10 == 0) {
-			uart_resp_get_sys_upgrade((uint8_t) 1, progress);
-			printf("[OTA Progress] Sent progress update: %u%% after %d loops\n", progress, loop_counter);
+			if (loop_counter % 10 == 0) {
+				ota_invoke_status_callback((uint8_t) 1, progress);
+				printf("[OTA Progress] Sent progress update: %u%% after %d loops\n", progress, loop_counter);
+			}
+			printf("[Firmware updating] ==============================  updating: %u / %llu Bytes (%u%%)\n",idx, file_size, progress);
 		}
-		#endif
-
-		#if UPDATE_UPGRADE_PROGRESS_TO_8773	
-		printf("[Firmware updating] ==============================  updating: %u / %llu Bytes (%u%%)\n",idx, file_size, progress);
 		#else
 		printf("[Firmware updating] ==============================  updating: %u / %llu Bytes \n",idx, file_size);
 		#endif
@@ -1828,8 +1868,9 @@ update_ota_exit:
 	if (my_file) {
 		fclose(my_file);
 	}
-	#if UPDATE_UPGRADE_PROGRESS_TO_8773
+	
 	loop_counter = 0;
+	#if UPDATE_UPGRADE_PROGRESS_TO_8773
 	progress = 0;
 	#endif
 
@@ -2056,7 +2097,7 @@ int heap_update_ota(uint8_t *buffer, uint32_t length)
         }
 
 #if UPDATE_UPGRADE_PROGRESS_TO_8773
-		if (cancel_wifi_upgrade) {
+		if (ota_invoke_cancel_check((uint8_t) 1)) {
 			printf("OTA was cancelled!\n");
 			ret = -2;
 			progress = 0;
@@ -2070,7 +2111,7 @@ int heap_update_ota(uint8_t *buffer, uint32_t length)
         }
 		if (progress != last_wifi_progress) {
 			last_wifi_progress = progress;
-			uart_resp_get_sys_upgrade((uint8_t) 1, progress);
+			ota_invoke_status_callback((uint8_t) 1, (uint8_t) progress);
 			printf("[HEAP OTA Progress] Sent progress update: %u%% \n", progress);
 		}
         printf("[Firmware updating] ============================== updating: %d / %lu Bytes (%d%%)\n",
@@ -2099,7 +2140,7 @@ int heap_update_ota(uint8_t *buffer, uint32_t length)
     }
 #if UPDATE_UPGRADE_PROGRESS_TO_8773
 	progress = 100;
-	uart_resp_get_sys_upgrade((uint8_t) 1, progress);
+	ota_invoke_status_callback((uint8_t) 1, (uint8_t) progress);
 #endif
     printf("\n\r[%s] OTA update completed successfully\n\r", __FUNCTION__);
 

@@ -23,17 +23,22 @@
 #define OTA_NN_MDL 	5
 #define OTA_CER 	6
 
-#define UPDATE_UPGRADE_PROGRESS_TO_8773   1
+#define UPDATE_UPGRADE_PROGRESS_TO_8773 1
 
 /*******************************************************************/
 
-#if UPDATE_UPGRADE_PROGRESS_TO_8773
+/****************Callback function types for OTA status reporting***/
+/**
+ * @brief Callback function type for reporting OTA upgrade progress
+ * @param device_id: Device identifier (1=WiFi FW, 2=BT FW)
+ * @param progress: Progress percentage (0-100)
+ * @return void
+ */
+typedef void (*ota_status_callback_t)(uint8_t device_id, uint8_t progress);
 
-#include <uart_service.h>
-#include <uart_cmd.h>
+/**
 
-#endif
-
+/**************************************************************************/
 
 /****************Define the structures used*************************/
 typedef struct {
@@ -121,5 +126,33 @@ int heap_update_boot_ota(uint8_t *buffer, uint32_t length);
 int heap_update_nn_ota(uint8_t *buffer, uint32_t length);
 int heap_update_isp_iq_ota(uint8_t *buffer, uint32_t length);
 #endif
+
+/***************Callback Management Functions***********************/
+/**
+ * @brief Register a callback for reporting OTA upgrade status
+ * @param callback: Pointer to callback function, or NULL to unregister
+ * @return 0 on success, -1 on failure
+ */
+int ota_register_status_callback(ota_status_callback_t callback);
+
+/**
+ * @brief Invoke the status callback to report upgrade progress
+ * @param device_id: Device identifier (1=WiFi FW, 2=BT FW)
+ * @param progress: Progress percentage (0-100)
+ * @return void
+ */
+void ota_invoke_status_callback(uint8_t device_id, uint8_t progress);
+
+/**
+ * @brief Invoke the cancel check callback
+ * @param device_id: Device identifier (1=WiFi FW, 2=BT FW)
+ * @return 1 if upgrade should be cancelled, 0 otherwise
+ */
+uint8_t ota_invoke_cancel_check(uint8_t device_id);
+
+extern volatile uint8_t cancel_wifi_upgrade; 
+extern volatile uint8_t cancel_bt_upgrade;	
+
+/**************************************************************************/
 
 #endif
