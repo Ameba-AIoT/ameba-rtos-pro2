@@ -1789,7 +1789,7 @@ int ext_storage_update_ota(char *filename)
 	while (idx < file_size) {
 		loop_counter++;
 		#if UPDATE_UPGRADE_PROGRESS_TO_8773
-		if (ota_invoke_cancel_check((uint8_t) 1)) {
+		if (cancel_wifi_upgrade) {
 			printf("\n\r[%s] OTA upgrade canceled by user\n\r", __FUNCTION__);
 			loop_counter = 0;
 			ret = -2;
@@ -2097,7 +2097,7 @@ int heap_update_ota(uint8_t *buffer, uint32_t length)
         }
 
 #if UPDATE_UPGRADE_PROGRESS_TO_8773
-		if (ota_invoke_cancel_check((uint8_t) 1)) {
+		if (cancel_wifi_upgrade) {
 			printf("OTA was cancelled!\n");
 			ret = -2;
 			progress = 0;

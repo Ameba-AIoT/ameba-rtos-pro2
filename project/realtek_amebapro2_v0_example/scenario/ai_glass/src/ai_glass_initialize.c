@@ -1591,8 +1591,8 @@ static void ai_glass_resp_bt_fw_upgrade(uartcmdpacket_t *param)
 static void ai_glass_get_cancel_sys_upgrade(uartcmdpacket_t *param)
 {
 	AI_GLASS_INFO("get UART_TX_OPC_RESP_CANCEL_SYS_UPGRADE\r\n");
-	cancel_bt_upgrade = 1;
-	cancel_wifi_upgrade = 1;
+	ota_invoke_cancel_check(1);
+	ota_invoke_cancel_check(2);
 	AI_GLASS_INFO("end of UART_TX_OPC_RESP_CANCEL_SYS_UPGRADE\r\n");
 }
 
