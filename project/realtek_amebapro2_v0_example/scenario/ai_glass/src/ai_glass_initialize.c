@@ -900,6 +900,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 	uint8_t power_result = 0;
 	uart_resp_request_sys_upgrade(status);
 	AI_GLASS_INFO("After 8430 CMD acknowledgement\r\n");
+	ota_register_status_callback(ai_glass_ota_progress_reporter);
 
 	if (info.upgradetype == 0x02) {
 		AI_GLASS_INFO("Start WiFI OTA\r\n");
@@ -2178,7 +2179,7 @@ lifetimesnapshottake:
 			status = AI_GLASS_PROC_FAIL;
 			uart_resp_snapshot(param, status);
 		}
-		if (mode == 0) {
+		if (mode == 0 || dual_snapshot == 1) {
 			while (1) {
 				uartcmdinfo_t *new_cmd = NULL;
 				int ret = uart_wait_for_next_cmd_or_idle(1000, &new_cmd);
