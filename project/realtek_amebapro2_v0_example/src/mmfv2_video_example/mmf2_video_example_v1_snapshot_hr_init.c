@@ -133,11 +133,10 @@ static mm_siso_t *siso_video_filesaver_v1	= NULL;
 #define JPEG_FPS	sensor_params[USE_SENSOR].sensor_fps
 
 //set output resolution to high reesolution
-#define OUT_IMG_WIDTH sensor_params[sen_id[2]].sensor_width
-#define OUT_IMG_HEIGHT sensor_params[sen_id[2]].sensor_height
-#define OUT_IMG_OVERLAP_WIDTH (((sensor_params[sen_id[3]].sensor_width * 2) - sensor_params[sen_id[2]].sensor_width) / 2)
-#define OUT_IMG_OVERLAP_HEIGHT (((sensor_params[sen_id[3]].sensor_height * 2) - sensor_params[sen_id[2]].sensor_height) / 2)
-
+#define OUT_IMG_WIDTH sensor_params[sen_id[HR_RAW_MODE]].sensor_width
+#define OUT_IMG_HEIGHT sensor_params[sen_id[HR_RAW_MODE]].sensor_height
+#define OUT_IMG_OVERLAP_WIDTH (((sensor_params[sen_id[HR_SEQ_MODE]].sensor_width * 2) - sensor_params[sen_id[HR_RAW_MODE]].sensor_width) / 2)
+#define OUT_IMG_OVERLAP_HEIGHT (((sensor_params[sen_id[HR_SEQ_MODE]].sensor_height * 2) - sensor_params[sen_id[HR_RAW_MODE]].sensor_height) / 2)
 static uint8_t *hr_nv12_image = NULL;
 static uint32_t hr_nv12_size = OUT_IMG_WIDTH * OUT_IMG_HEIGHT * 3 / 2;
 #define SAVE_DBG_IMG 0 //save raw image and NV12 image
@@ -152,7 +151,8 @@ static enum hal_isp_ae_region max_dyn_region_idx = 0; // Data range: 0 ~ 3. 0: u
 static int tiled_nv12_cnt = 0;
 static video_pre_init_params_t init_params;
 static ainr_ctx_t *ainr_ctx = NULL;
-
+static int isp_gain = 256;
+static int drc_blending_rate = 15;
 /*
 allocate virt addr and free virt addr
 dma use phy addr
@@ -434,13 +434,17 @@ static void file_process(char *file_path, uint32_t data_addr, uint32_t data_size
 		if(init_params.isp_ae_init_gain > (256 * 12)) { // IMX681 AINR flow for exposure gain > 12x 
 #else
 		if(init_params.isp_ae_init_gain > (256 * 16)) { // OV13B10 AINR flow for exposure gain > 16x 
-			init_params.isp_awb_init_rgain = init_params.isp_awb_init_rgain * 0.9;
-			init_params.isp_awb_init_bgain = init_params.isp_awb_init_bgain * 0.9;
 #endif
 			if (ainr_ctx == NULL) {
 				ainr_ctx = ainr_init();
 			}
 			if(ainr_ctx) {
+#if USE_SENSOR == SENSOR_IMX681
+				//fix ainr process rgain, bgain shift
+				init_params.isp_awb_init_rgain = init_params.isp_awb_init_rgain * 0.9;
+				init_params.isp_awb_init_bgain = init_params.isp_awb_init_bgain * 0.9;
+#endif
+
 				uint8_t *ainr_raw_image = splited_raw_image[raw_index].virt_addr;
 				uint32_t ainr_raw_image_size = data_size;
 				if (ainr_process_frame(ainr_ctx, (const void *)data_addr, ainr_raw_image, ainr_raw_image_size, 256) != OK) {
@@ -467,7 +471,7 @@ static void file_process(char *file_path, uint32_t data_addr, uint32_t data_size
 			printf("save %s\r\n", rawfilename);
 		} else {
 			printf("raw image malloc fail\r\n");
-			return; 
+			return;
 		}
 #endif
 		file_proc_stat = SPLIT_RAW_IMAGE_START;
@@ -526,8 +530,10 @@ static int hr_init_ae_awb(video_pre_init_params_t *init_params, int wait_ae_time
 	init_params->video_drop_enable = 0;
 	init_params->dyn_iq_mode = 0;
 	init_params->init_isp_items.init_wdr_mode = WDR_AUTO;
+	init_params->init_isp_items.init_wdr_level = 50;
 	init_params->init_max_dyn_region_en = 1;
 	init_params->sens_pwr_dis = 0;
+	init_params->isp_gain_mode = 0;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)init_params);
  	video_v1_params.direct_output = 1;
 	video_v1_params.out_mode = 2; //set to contiuous mode
@@ -564,12 +570,14 @@ static int hr_init_ae_awb(video_pre_init_params_t *init_params, int wait_ae_time
 	isp_get_blue_balance(&awb_bgain);
 
 	video_get_max_dyn_region_idx(JPEG_CHANNEL, &max_dyn_region_idx);
-	//printf("video_get_dyn_region_idx value %d\r\n", max_dyn_region_idx);
 	
 	uint8_t direct_wdr_level = 0;
 	video_get_dir_wdr_level(JPEG_CHANNEL, &direct_wdr_level);
 	init_params->init_isp_items.init_wdr_level = direct_wdr_level;
-	//printf("video_get_dir_wdr_level value %u\r\n", direct_wdr_level);
+	
+	isp_get_isp_gain(&isp_gain);
+	isp_get_drc_blending_rate(&drc_blending_rate);
+	printf(" DRC region: %d, WDR level: %u, ISP gain: %d, DRC rate: %d\r\n", max_dyn_region_idx, direct_wdr_level, isp_gain, drc_blending_rate);
 
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
 
@@ -578,10 +586,12 @@ static int hr_init_ae_awb(video_pre_init_params_t *init_params, int wait_ae_time
 	if(ae_gain >= 1024) { //ae gain >= 4x
 		init_params->isp_ae_init_exposure = ae_time << 1;
 		init_params->isp_ae_init_gain = ae_gain >> 1;
+		init_params->isp_gain = MAX(isp_gain / 2, 256);
 	}
 	else {
 		init_params->isp_ae_init_exposure = ae_time;
 		init_params->isp_ae_init_gain = ae_gain;
+		init_params->isp_gain = isp_gain;
 	}
 	printf("ae time %d gain %d\r\n", init_params->isp_ae_init_exposure, init_params->isp_ae_init_gain);
 	init_params->isp_awb_enable = 1;
@@ -602,6 +612,7 @@ static int hr_raw_capture(video_pre_init_params_t *init_params, int proc_raw_idx
 	init_params->dyn_iq_mode = 0;
 	init_params->init_max_dyn_region_en = 0;
 	init_params->sens_pwr_dis = 0;
+	init_params->isp_gain_mode = 0;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)init_params);
 	video_v1_params.direct_output = 0;
 	video_v1_params.out_mode = 2; //set to contiuous mode
@@ -665,6 +676,7 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 	init_params->init_isp_items.init_wdr_mode = WDR_DIRECT;
 	init_params->init_max_dyn_region_en = 0;
 	init_params->sens_pwr_dis = 1;
+	init_params->isp_gain_mode = 1;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)init_params);
 	video_v1_params.direct_output = 0;
 	video_v1_params.out_mode = 2; //set to contiuous mode
@@ -682,6 +694,9 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 	video_set_isp_ch_buf(JPEG_CHANNEL, 2);
 	int timeout_count = 0;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL);
+	int drc_mode = DRC_MANUAL;
+	isp_set_drc_mode(drc_mode);
+	isp_set_drc_blending_rate(drc_blending_rate);
 	while(file_proc_stat != PROCESS_DONE) {
 		vTaskDelay(1);
 		timeout_count++;
@@ -693,7 +708,7 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 	}
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
 
-#if SAVE_DBG_IMG	
+#if SAVE_DBG_IMG
 	char nv12filename[128] = "sd:/12M.nv12";
 	snprintf(nv12filename, sizeof(nv12filename), "sd:/12M_%d.nv12", proc_raw_idx);
 	save_file_to_sd(nv12filename,  (uint8_t *)hr_nv12_image, hr_nv12_size);

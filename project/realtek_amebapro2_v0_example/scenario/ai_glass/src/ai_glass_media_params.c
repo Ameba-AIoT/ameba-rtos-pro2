@@ -645,14 +645,14 @@ static int media_set_stream_params(const ai_glass_stream_param_t *params)
 
 static int media_set_wifi_params(const ai_glass_wifi_param_t *params)
 {
-       if (params) {
-               wifi_params.channel = params->channel;
-			   memcpy(wifi_params.ssid_buf, params->ssid_buf, sizeof(wifi_params.ssid_buf));
-        	   memcpy(wifi_params.password_buf, params->password_buf, sizeof(wifi_params.password_buf));
-               return MEDIA_OK;
-       } else {
-               return MEDIA_FAIL;
-       }
+    if (params) {
+         wifi_params.channel = params->channel;
+		memcpy(wifi_params.ssid_buf, params->ssid_buf, sizeof(wifi_params.ssid_buf));
+        memcpy(wifi_params.password_buf, params->password_buf, sizeof(wifi_params.password_buf));
+        return MEDIA_OK;
+    } else {
+        return MEDIA_FAIL;
+    }
 }
 
 
@@ -1141,7 +1141,6 @@ int media_get_stream_params(ai_glass_stream_param_t *params)
     return MEDIA_FAIL;
 }
 
-
 int media_update_record_params(const ai_glass_record_param_t *params)
 {
 	int ret = media_set_record_params(params);
@@ -1214,10 +1213,28 @@ void media_get_preinit_isp_data(video_pre_init_params_t *isp_data)
 }
 void media_update_preinit_isp_ae(void)
 {
+	int last_ae_time = 0, last_ae_gain = 0, wait_ae_timeout = 1000;
 	int ae_exposure_time = 0;
 	int ae_gain = 0;
 	isp_get_exposure_time(&ae_exposure_time);
 	isp_get_ae_gain(&ae_gain);
+	int wait_time = 0;
+	uint32_t converge_start_time = mm_read_mediatime_ms();
+	while((ae_exposure_time != last_ae_time) || (ae_gain != last_ae_gain)) {
+		vTaskDelay(50);
+		wait_time += 50;
+		last_ae_time = ae_exposure_time;
+		last_ae_gain = ae_gain;
+		isp_get_exposure_time(&ae_exposure_time);
+		isp_get_ae_gain(&ae_gain);
+		if(wait_time >= wait_ae_timeout) {
+			AI_GLASS_WARN("wait ae stable timeout\r\n");
+			break;	
+		}
+	}
+	uint32_t converge_end_time = mm_read_mediatime_ms();
+	uint32_t converge_time = converge_end_time - converge_start_time;
+	AI_GLASS_MSG("Converge time: %lu\r\n", converge_time);
 	ai_glass_pre_init_params.isp_ae_init_exposure = ae_exposure_time;
 	ai_glass_pre_init_params.isp_ae_init_gain = ae_gain;
 }
@@ -1276,6 +1293,7 @@ void initial_media_parameters(void)
 			pre_init_params.dyn_iq_mode = 0;
 			pre_init_params.init_max_dyn_region_en = 1;
 			pre_init_params.sens_pwr_dis = 0;
+			pre_init_params.isp_gain_mode = 0;
 		#if defined(ENABLE_META_INFO)
 			unsigned char uuid[16] = {0xc7, 0x98, 0x2c, 0x28, 0x0a, 0xfc, 0x49, 0xe6, 0xaa, 0xe4, 0x7f, 0x8f, 0x64, 0xee, 0x65, 0x01};
 			pre_init_params.meta_enable = 1;
@@ -1389,7 +1407,6 @@ int media_update_wifi_params(const ai_glass_wifi_param_t *params)
 	}
 	return MEDIA_FAIL;
 }
-
 
 void deinitial_media(void)
 {

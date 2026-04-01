@@ -1984,6 +1984,11 @@ void video_pre_init_procedure(int ch, video_pre_init_params_t *parm)
 
 	hal_video_isp_init_dyn_iq_mode(ch, parm->dyn_iq_mode);
 
+	if(parm->isp_gain_mode) {
+		printf("hal_video_set_isp_gain enable %d\r\n", parm->isp_gain);
+		hal_video_set_isp_gain(ch, parm->isp_gain_mode, parm->isp_gain);
+	}
+
 #endif
 }
 

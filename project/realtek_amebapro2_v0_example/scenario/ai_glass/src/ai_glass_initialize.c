@@ -57,8 +57,6 @@
 #define UPDATE_RECORD_TIME          3
 #define UPDATE_WIFI_AP_CREDENTIALS  4
 
-char ssid_buf[MAX_SSID_LEN + 1] = {0};
-char password_buf[MAX_PASSWORD_LEN + 1] = {0};
 // Definition for buffer size
 #define MAX_FILENAME_SIZE           128
 
@@ -81,6 +79,7 @@ static uint8_t temp_rfile_name[MAX_FILENAME_SIZE] = {0};
 volatile uint8_t bt_progress;
 
 volatile int critical_process_started = 0;
+volatile int burst_save_done = 0;
 
 // Funtion Prototype
 static void ai_glass_deinit_external_disk(void);
@@ -1674,12 +1673,12 @@ static void ai_glass_get_power_down(uartcmdpacket_t *param)
     }
 #endif
 	// Todo: get power down command
-	uart_resp_get_power_down(param, result);
-	xSemaphoreGive(video_proc_sema);
 	uint32_t stop_pdtime = mm_read_mediatime_ms();
 	uint32_t pdtime = stop_pdtime - start_pdtime;
-	check = 0;
 	printf("Final power down time: %lu\r\n",pdtime);
+	uart_resp_get_power_down(param, result);
+	check = 0;
+	xSemaphoreGive(video_proc_sema);
 endofpowerdown:
 
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_POWER_DOWN %lu\r\n", mm_read_mediatime_ms());
@@ -1912,7 +1911,6 @@ static void ai_glass_update_wifi_info(uartcmdpacket_t *param)
 		}
 		break;
 	}
-
 	uart_resp_update_wifi_info(param, resp_stat);
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_UPDATE_WIFI_INFO\r\n");
 }
@@ -2032,7 +2030,7 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 		} else if (mode == 0) {
 lifetimesnapshot:
 			AI_GLASS_MSG("Process LIFETIME SNAPSHOT\r\n");
-
+			critical_process_started = 1;
 			if (dual_snapshot != 1) {
 				AI_GLASS_MSG("Received isp info from LF snapshot param\r\n");
 				isp_info.isp_exposure_time = snapshot_param[49] | (snapshot_param[50] << 8) | (snapshot_param[51] << 16) | (snapshot_param[52] << 24);
@@ -2200,6 +2198,8 @@ lifetimesnapshottake:
 					lifetime_snapshot_take(filename, param);
 					goto lifetimesnapshottake;
 				} else { // ret == 0
+			
+#if BURST_MODE_MAX_COUNT == 1
 					// Idle → finalize
 					AI_GLASS_MSG("wait for lifetime snapshot deinit\r\n");
 					extdisk_save_file_cntlist();
@@ -2212,6 +2212,23 @@ lifetimesnapshottake:
 					status = AI_GLASS_CMD_COMPLETE;
 					uart_resp_snapshot(param, status);
 					break;
+#else
+				
+					if (burst_save_done) {
+						// Idle → finalize
+						AI_GLASS_MSG("wait for lifetime snapshot deinit\r\n");
+						extdisk_save_file_cntlist();
+						while (lifetime_snapshot_deinitialize()) {
+							vTaskDelay(1);
+						}
+						uartcmdpacket_t dummy_param;
+						ai_glass_get_file_cnt(&dummy_param);
+						status = AI_GLASS_CMD_COMPLETE;
+						uart_resp_snapshot(param, status);
+						
+						break;
+					}
+#endif
 				}
 			}
 		}
@@ -2946,7 +2963,7 @@ static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 
     // Debug print
     print_camera_config(&g_camera_cfg);
-	printf("CameraConfig sent successfully (%lu bytes)\n", length);
+	
     if (status == 0) {
         printf("CameraConfig sent successfully (%lu bytes)\n", length);
     } else {

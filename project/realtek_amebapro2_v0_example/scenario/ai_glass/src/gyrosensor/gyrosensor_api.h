@@ -16,7 +16,7 @@
 #include "ex_api.h"
 
 #undef AI_DEMO_MPU6050
-#define AI_DEMO_ICM42670P//AI_DEMO_ICM42670P
+#define AI_DEMO_ICM42670P
 
 // ignore the accelerometer data from g-sensor
 #define IGN_ACC_DATA    1
