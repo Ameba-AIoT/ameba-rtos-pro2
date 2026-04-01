@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 235774de8f6d86d8e92e9c5f152c00eb17b22b3b
+* [amebapro2][wlan] wowlan support decode 11v wpa3 packet
+
 SHA-1: 4dfa8648f4f9aa3d06b044769a88457209a8f614
 * [amebapro2][bt] modify external pta api
 
