@@ -215,10 +215,10 @@ void main(void)
 	setup();
 
 	/* Execute ai glass example */
-	if (g_mp_mode == 0) {
-		ai_glass_init();
-	} else {
+	if (g_mp_mode == 1) {
 		printf("Entered MP mode\r\n");
+	} else {
+		ai_glass_init();
 	}
 
 	extern void sys_backtrace_enable(void);
