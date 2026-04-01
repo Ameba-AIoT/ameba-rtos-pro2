@@ -9,8 +9,12 @@
 #include "video_boot.h"
 #include "mmf2_mediatime_8735b.h"
 #include "ai_glass_initialize.h"
+#include "ftl_common_api.h"
+#include "ai_glass_media.h"
 
 #define UART_LOG_BAUDRATE   3000000;  // set log baud rate as 3000000
+
+#define MP_MODE_DEFAULT 0 // 0: ai glass application, 1: mp mode rf tuning
 
 #if CONFIG_WLAN
 #include <wifi_fast_connect.h>
@@ -27,6 +31,7 @@ uint32_t initial_tick_count = 0;
 int errno;
 #endif
 
+static uint8_t g_mp_mode = MP_MODE_DEFAULT;
 
 /* overwrite log uart baud rate for application. ROM and bootloader will remain 115200
  * set LOGUART_TX_OFF 1 to turn off uart output from application
@@ -74,6 +79,47 @@ void atcmd_uart_init(void)
 static void (*wputc)(phal_uart_adapter_t puart_adapter, uint8_t tx_data) = hal_uart_wputc;
 #endif
 
+// AT command handler for MP mode
+void fMPMODE(void *arg)
+{
+    int argc = 0;
+    char *argv[MAX_ARGC] = {0};
+    
+    argc = parse_param(arg, argv);
+    
+    if (argc < 2) {
+        // Query mode: AT+MPMODE?
+        printf("+MPMODE: %d (0=AI Glass, 1=MP)\r\n", g_mp_mode);
+        return;
+    }
+    
+    // Set mode: AT+MPMODE=0 or AT+MPMODE=1
+    uint8_t mode = atoi(argv[1]);
+    if (mode > 1) {
+        printf("Error: Invalid mode (0=AI Glass, 1=MP)\r\n");
+        return;
+    }
+    
+    g_mp_mode = mode;
+    
+    // Save to flash
+    ftl_common_write(FLASH_MP_MODE_BLOCK_BASE, &g_mp_mode, sizeof(g_mp_mode));
+    
+    printf("OK: MP mode set to %d, Auto reboot\r\n", g_mp_mode);
+	sys_reset();
+}
+
+// MP mode AT command table
+static log_item_t mp_mode_items[] = {
+    {"AT+MPMODE", fMPMODE,},
+};
+
+// Register MP mode AT command
+void atcmd_mp_mode_init(void)
+{
+    log_service_add_table(mp_mode_items, sizeof(mp_mode_items) / sizeof(mp_mode_items[0]));
+}
+
 void log_uart_port_init(int log_uart_tx, int log_uart_rx, uint32_t baud_rate)
 {
 	baud_rate = UART_LOG_BAUDRATE;  // set log baud rate as 3000000
@@ -114,6 +160,16 @@ void setup(void)
 // #endif
 // 	wlan_network();
 // #endif
+
+atcmd_mp_mode_init();
+
+ftl_common_read(FLASH_MP_MODE_BLOCK_BASE, &g_mp_mode, sizeof(g_mp_mode));
+
+if (g_mp_mode == 1)  {
+    // MP mode: disable fast connect and initialize network
+    wifi_fast_connect_enable(0);
+    wlan_network();
+}
 
 #if defined(LOGUART_TX_OFF) && (LOGUART_TX_OFF==1)
 	atcmd_uart_init();
@@ -159,7 +215,11 @@ void main(void)
 	setup();
 
 	/* Execute ai glass example */
-	ai_glass_init();
+	if (g_mp_mode == 0) {
+		ai_glass_init();
+	} else {
+		printf("Entered MP mode\r\n");
+	}
 
 	extern void sys_backtrace_enable(void);
 	sys_backtrace_enable();

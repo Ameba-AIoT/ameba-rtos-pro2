@@ -31,8 +31,9 @@
 #define FLASH_GYRO_OFFSET_BLOCK_BASE   (FLASH_WIFI_CHANNEL_BLOCK_BASE + FLASH_WIFI_CHANNEL_BLOCK_SIZE)
 #define FLASH_GYRO_OFFSET_BLOCK_SIZE   0x20
 
-//Nor Flash Address to store camera/storage/gsensor status
-
+//Nor Flash address for storing mp mode
+#define FLASH_MP_MODE_BLOCK_BASE        (FLASH_GYRO_OFFSET_BLOCK_BASE + FLASH_GYRO_OFFSET_BLOCK_SIZE)
+#define FLASH_MP_MODE_BLOCK_SIZE        0x20
 
 // Todo: Nand Flash Address To Store Snapshot/Record data
 
