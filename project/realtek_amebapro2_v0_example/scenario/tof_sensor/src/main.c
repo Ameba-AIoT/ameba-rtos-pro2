@@ -1,90 +1,170 @@
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <math.h>
-#include "basic_types.h"
-#include "diag.h"
-#include "i2c_api.h"
-#include "ex_api.h"
-#include "freertos_service.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#include "vl53l5cx_api.h"
-#include "tof_sens_ctrl_api.h"
+#include "diag.h"
+#include "hal.h"
+#include "log_service.h"
+#include "video_api.h"
+#include <platform_opts.h>
+#include <platform_opts_bt.h>
+#include "video_boot.h"
+#include "mmf2_mediatime_8735b.h"
 
-#define MBED_I2C_MTR_SDA 		PE_4
-#define MBED_I2C_MTR_SCL 		PE_3
+#if CONFIG_WLAN
+#include <wifi_fast_connect.h>
+extern void wlan_network(void);
+#endif
 
-#define MBED_I2C_BUS_CLK		400000
-#define I2C_DATA_LENGTH			128
-#define I2C_DEVICE_ADDRESS		0x29
-#define I2C_BUFFER_SIZE			32
+extern void console_init(void);
+extern void mpu_rodata_protect_init(void);
 
-tof_sens_ctx_t tof_sens_ctx = {
-	.tof_i2c_cfg.bus_clk_hz = MBED_I2C_BUS_CLK,
-	.tof_i2c_cfg.i2c_addr = I2C_DEVICE_ADDRESS,
-	.tof_i2c_cfg.i2c_data_length = I2C_DATA_LENGTH,
-	.tof_i2c_cfg.i2c_buffer_size = I2C_BUFFER_SIZE,
-	.tof_i2c_cfg.i2c_max_packet_size = I2C_DATA_LENGTH,
-	.tof_i2c_cfg.sda = MBED_I2C_MTR_SDA,
-	.tof_i2c_cfg.scl = MBED_I2C_MTR_SCL,
-	.image_res = TOF_SENS_RESOLUTION_8X8,
-};
+void tof_sens_example_osd_dist_array_init(void);
+void tof_sens_example_osd_init(void);
 
-void tof_sens_task(void *param)
+// tick count initial value used when start scheduler
+uint32_t initial_tick_count = 0;
+
+#ifdef _PICOLIBC__
+int errno;
+#endif
+
+/* overwrite log uart baud rate for application. ROM and bootloader will remain 115200
+ * set LOGUART_TX_OFF 1 to turn off uart output from application
+ */
+#include "stdio_port_func.h"
+extern hal_uart_adapter_t log_uart;
+
+//#define LOGUART_TX_OFF 1
+
+#if defined(LOGUART_TX_OFF) && (LOGUART_TX_OFF==1)
+static void (*user_wputc)(phal_uart_adapter_t puart_adapter, uint8_t tx_data) = (void *)0xffffffff;
+static void wputc(phal_uart_adapter_t puart_adapter, uint8_t tx_data)
 {
-	bool status;
-	int image_width = 0;
-	int image_height = 0;
-
-	printf("Initializing sensor board. This can take up to 10s. Please wait.\r\n");
-	if (tof_sens_init(&tof_sens_ctx, &tof_sens_ctx.vl53l5cx_sensor) == false) {
-		printf("Sensor not found - check your wiring. Freezing\r\n");
-		while (1)
-			;
+	if ((uint32_t)user_wputc == (uint32_t)hal_uart_wputc) {
+		user_wputc(puart_adapter, tx_data);
 	}
-	vTaskDelay(100);
-
-	image_width = sqrt(tof_sens_ctx.image_res);
-	image_height = image_width;
-
-	status = tof_sens_start_ranging(&tof_sens_ctx.vl53l5cx_sensor);
-	if (!status) {
-		printf("Start ranging failed\r\n");
-		goto tof_sens_fail;
-	}
-	printf("Start ranging\r\n");
-
-	while (1) {
-		// Poll sensor for new data
-		int data_is_ready = 0;
-		data_is_ready = tof_sens_data_ready(&tof_sens_ctx.vl53l5cx_sensor);
-		if (data_is_ready) {
-			if (tof_sens_get_ranging_data(&tof_sens_ctx.vl53l5cx_sensor, &tof_sens_ctx.vl53l5cx_data)) { // Read distance data into array
-				printf("ToF ranging data: \r\n");
-				for (int y = 0; y < image_height; y++) {
-					for (int x = image_width - 1; x >= 0; x--) {
-						printf("\t%d", tof_sens_ctx.vl53l5cx_data.distance_mm[y * image_width + x]);
-					}
-					printf("\n");
-				}
-				printf("\n");
-			}
-		}
-		vTaskDelay(5);
-	}
-	vTaskDelete(NULL);
-
-tof_sens_fail:
-	return;
 }
 
+void fUART(void *arg)
+{
+	int argc = 0;
+	char *argv[MAX_ARGC] = {0};
+	argc = parse_param(arg, argv);
+
+	if (argc != 2)	{
+		return;
+	}
+
+	if (strncmp(argv[1], "ON", 2) == 0) {
+		user_wputc = hal_uart_wputc;
+	} else {
+		user_wputc = (void *)0xffffffff;
+	}
+}
+
+static log_item_t uart_items[] = {
+	{"UART", fUART,},
+};
+
+void atcmd_uart_init(void)
+{
+	log_service_add_table(uart_items, sizeof(uart_items) / sizeof(uart_items[0]));
+}
+#else
+static void (*wputc)(phal_uart_adapter_t puart_adapter, uint8_t tx_data) = hal_uart_wputc;
+#endif
+
+void log_uart_port_init(int log_uart_tx, int log_uart_rx, uint32_t baud_rate)
+{
+	baud_rate = 115200;  //115200, 1500000, 3000000
+
+	hal_status_t ret;
+	uint8_t uart_idx;
+
+#if defined(CONFIG_BUILD_NONSECURE) && (CONFIG_BUILD_NONSECURE == 1)
+	/* prevent pin confliction */
+	uart_idx = hal_uart_pin_to_idx(log_uart_rx, UART_Pin_RX);
+	hal_pinmux_unregister(log_uart_rx, (PID_UART0 + uart_idx));
+	hal_pinmux_unregister(log_uart_tx, (PID_UART0 + uart_idx));
+#endif
+
+	//* Init the UART port hadware
+	ret = hal_uart_init(&log_uart, log_uart_tx, log_uart_rx, NULL);
+	if (ret == HAL_OK) {
+		hal_uart_set_baudrate(&log_uart, baud_rate);
+		hal_uart_set_format(&log_uart, 8, UartParityNone, 1);
+
+		// hook the putc function to stdio port for printf
+#if defined(CONFIG_BUILD_NONSECURE) && (CONFIG_BUILD_NONSECURE == 1)
+		stdio_port_init((void *)&log_uart, (stdio_putc_t)wputc, (stdio_getc_t)&hal_uart_rgetc);
+#else
+		stdio_port_init_s((void *)&log_uart, (stdio_putc_t)wputc, (stdio_getc_t)&hal_uart_rgetc);
+		stdio_port_init_ns((void *)&log_uart, (stdio_putc_t)wputc, (stdio_getc_t)&hal_uart_rgetc);
+#endif
+	}
+}
+
+void setup(void)
+{
+#if CONFIG_WLAN
+#if ENABLE_FAST_CONNECT
+	wifi_fast_connect_enable(1);
+#else
+	wifi_fast_connect_enable(0);
+#endif
+	wlan_network();
+#endif
+
+#if defined(LOGUART_TX_OFF) && (LOGUART_TX_OFF==1)
+	atcmd_uart_init();
+#endif
+
+}
+
+void set_initial_tick_count(void)
+{
+	// Check DWT_CTRL(0xe0001000) CYCCNTENA(bit 0). If DWT cycle counter is enabled, set tick count initial value based on DWT cycle counter.
+	if ((*((volatile uint32_t *) 0xe0001000)) & 1) {
+		(*((volatile uint32_t *) 0xe0001000)) &= (~((uint32_t) 1)); // stop DWT cycle counter
+		uint32_t dwt_cyccnt = (*((volatile uint32_t *) 0xe0001004));
+		uint32_t systick_load = (configCPU_CLOCK_HZ / configTICK_RATE_HZ) - 1UL;
+		initial_tick_count = dwt_cyccnt / systick_load;
+	}
+
+	// Auto set the media time offset
+	video_boot_stream_t *isp_fcs_info;
+	video_get_fcs_info(&isp_fcs_info);  //Get the fcs info
+	uint32_t media_time_ms = initial_tick_count + isp_fcs_info->fcs_start_time;
+	mm_set_mediatime_in_ms(media_time_ms);
+}
+
+static void example_tof_sens(void)
+{
+	// Overlay distance array on video stream,
+	// Set a detection region based on FOV and detect the nearest object within it
+	tof_sens_example_osd_init();
+
+	// Print distance array
+	// tof_sens_example_dist_array_init();
+}
+
+/**
+  * @brief  Main program.
+  * @param  None
+  * @retval None
+  */
 void main(void)
 {
-	if (xTaskCreate(tof_sens_task, "ToF_sensor_task", 4096, NULL, tskIDLE_PRIORITY + 1, NULL) != pdPASS) {
-		printf("\n\r%s xTaskCreate failed", __FUNCTION__);
-	}
-	vTaskStartScheduler();
+	/* for debug, protect rodata*/
+	//mpu_rodata_protect_init();
+	console_init();
 
+	voe_t2ff_prealloc();
+
+	setup();
+
+	example_tof_sens();
+	/* set tick count initial value before start scheduler */
+	set_initial_tick_count();
+	vTaskStartScheduler();
 	while (1);
 }
