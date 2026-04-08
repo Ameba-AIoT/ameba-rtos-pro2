@@ -39,7 +39,7 @@
 #define SNAPSHOT_12M_ROTATION   DEFAULT_LIFESNAP_ROTATION 
 
 #define SNAPSHOT_12M_QLEVEL     8 // can be 0~100, higher means higher quality
-#define ENABLE_AINR 		   1 // enable AINR for high res snapshot
+#define ENABLE_AINR 		   0 // enable AINR for high res snapshot
 #define SAVE_DBG_IMG 0
 
 //set output resolution to high resolution
