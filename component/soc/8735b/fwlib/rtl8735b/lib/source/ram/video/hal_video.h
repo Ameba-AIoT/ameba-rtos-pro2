@@ -938,7 +938,6 @@ static __inline__ int hal_video_set_isp_gain(int ch, int mode, int isp_gain)
 	return OK;
 }
 
-
 #endif // #if !defined (CONFIG_VOE_PLATFORM) || !CONFIG_VOE_PLATFORM // Run on TM9
 /** @} */ /* End of group hal_enc */
 

@@ -287,9 +287,9 @@ typedef struct {
 	int colot_temperature;
 
 	int y_average;
-    uint32_t white_num;
-    uint32_t rg_sum;
-    uint32_t bg_sum;
+	uint32_t white_num;
+	uint32_t rg_sum;
+	uint32_t bg_sum;
 
 	int hdr_mode;
 	int sensor_fps;
@@ -298,12 +298,12 @@ typedef struct {
 
 	u32 time_stamp;
 
-    uint32_t wdr_hist_contrast;
-    uint32_t wdr_hist_contrast_origin;
+	uint32_t wdr_hist_contrast;
+	uint32_t wdr_hist_contrast_origin;
 
 	uint8_t ae_algo_dbg_buf[ISP_DEBUG_INFO_LEN];
 
-    uint32_t reserved;
+	uint32_t reserved;
 
 } isp_statis_meta_t;
 
@@ -345,7 +345,7 @@ typedef struct {
 
 typedef struct {
 	isp_grid_t grid;
-	uint8_t bitmap[ISP_MASK_GRID_CELLS/8];
+	uint8_t bitmap[ISP_MASK_GRID_CELLS / 8];
 
 } isp_grid_mask_entry_t;
 
