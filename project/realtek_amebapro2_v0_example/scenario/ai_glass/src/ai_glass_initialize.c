@@ -79,7 +79,6 @@ static uint8_t temp_rfile_name[MAX_FILENAME_SIZE] = {0};
 volatile uint8_t bt_progress;
 
 volatile int critical_process_started = 0;
-volatile int burst_save_done = 0;
 
 // Funtion Prototype
 static void ai_glass_deinit_external_disk(void);
@@ -2140,6 +2139,7 @@ lifetimesnapshottake:
 				} else {
 					status = AI_GLASS_PROC_FAIL;
 					uart_resp_snapshot(param, status);
+					critical_process_started = 0;
 				}
 				while (1) {
 					uartcmdinfo_t *new_cmd = NULL;
@@ -2166,9 +2166,11 @@ lifetimesnapshottake:
 			} else if (ret == -2) {
 				status = AI_GLASS_BUSY;
 				uart_resp_snapshot(param, status);
+				critical_process_started = 0;
 			} else {
 				status = AI_GLASS_PROC_FAIL;
 				uart_resp_snapshot(param, status);
+				critical_process_started = 0;
 			}
 			// Save filelist to EMMC
 			// extdisk_save_file_cntlist();
@@ -2176,6 +2178,7 @@ lifetimesnapshottake:
 			AI_GLASS_WARN("Not implement yet\r\n");
 			status = AI_GLASS_PROC_FAIL;
 			uart_resp_snapshot(param, status);
+			critical_process_started = 0;
 		}
 		if (mode == 0 || dual_snapshot == 1) {
 			while (1) {
@@ -2213,8 +2216,7 @@ lifetimesnapshottake:
 					uart_resp_snapshot(param, status);
 					break;
 #else
-				
-					if (burst_save_done) {
+					if (xEventGroupWaitBits(s_lifetime_event, BIT(0), pdTRUE, pdFALSE, portMAX_DELAY)) {
 						// Idle → finalize
 						AI_GLASS_MSG("wait for lifetime snapshot deinit\r\n");
 						extdisk_save_file_cntlist();
@@ -2225,7 +2227,7 @@ lifetimesnapshottake:
 						ai_glass_get_file_cnt(&dummy_param);
 						status = AI_GLASS_CMD_COMPLETE;
 						uart_resp_snapshot(param, status);
-						
+						critical_process_started = 0;
 						break;
 					}
 #endif
@@ -3597,6 +3599,30 @@ void fLFRECORD(void *arg)
     AI_GLASS_INFO("end of UART_RX_OPC_CMD_RECORD_START\r\n");
 }
 
+void fSTOPLFRECORD(void *arg)
+{
+    AI_GLASS_MSG("get UART_RX_OPC_CMD_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
+	if (current_state == STATE_RECORDING) {
+		if (xSemaphoreTake(send_response_timermutex, portMAX_DELAY) == pdTRUE) {
+			if (send_response_timer_setstop == 0) {
+				if (send_response_timer != NULL) {
+					if (xTimerIsTimerActive(send_response_timer) == pdTRUE) {
+						xTimerStop(send_response_timer, 0);
+					}
+				}
+				lifetime_recording_deinitialize();
+				xSemaphoreGive(video_proc_sema);
+				send_response_timer_setstop = 1;
+				xSemaphoreGive(send_response_timermutex);
+			} else {
+				AI_GLASS_MSG("The recording timer has stop\r\n");
+				xSemaphoreGive(send_response_timermutex);
+			}
+		}
+	}
+	AI_GLASS_MSG("end of UART_RX_OPC_CMD_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
+}
+
 static void fTESTGSENSORCFG(void *arg) {
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_GSENSOR_CFG\r\n");
     uint8_t buf[512];
@@ -3618,6 +3644,78 @@ static void fTESTGSENSORCFG(void *arg) {
 	AI_GLASS_INFO("UART_RX_OPC_CMD_GSENSOR_CFG END\r\n");
 }
 
+void gyro_calibrate_gsensor_thread(void *param)
+{
+	AI_GLASS_MSG("The calibration is about to begin. Please keep your AI glasses still...\r\n");
+	int delay_sec = 3;
+	while (delay_sec) {
+		AI_GLASS_MSG("%d...\r\n", delay_sec);
+		vTaskDelay(1000 / portTICK_PERIOD_MS); // Delay delay_sec second to make sure the glasses is stable before calibration
+		delay_sec--;
+	}
+
+	int duration_ms = 10000; // Default reading duration: 10 seconds
+	AI_GLASS_MSG("Start to calibrate gyro sensor.. It will take %d seconds\r\n", duration_ms / 1000);
+	gyroscope_fifo_init();
+
+	// Read gyro sensor data for a period of time and compute the mean as the offset
+	uint32_t start_time = mm_read_mediatime_ms();
+	float sum_dps[3] = {0.0f, 0.0f, 0.0f};
+#if !IGN_ACC_DATA
+	float sum_g[3] = {0.0f, 0.0f, 0.0f};
+#endif
+	int total_samples = 0;
+
+	while (1) {
+		uint32_t current_time = mm_read_mediatime_ms();
+		if (current_time - start_time >= duration_ms) {
+			break;
+		}
+
+		int read_cnt = gyroscope_fifo_read(gdata, 100);
+		if (read_cnt > 0) {
+			for (int i = 0; i < read_cnt; i++) {
+				sum_dps[0] += gdata[i].dps[0];
+				sum_dps[1] += gdata[i].dps[1];
+				sum_dps[2] += gdata[i].dps[2];
+#if !IGN_ACC_DATA
+				sum_g[0] += gdata[i].g[0];
+				sum_g[1] += gdata[i].g[1];
+				sum_g[2] += gdata[i].g[2];
+#endif
+			}
+			total_samples += read_cnt;
+		}
+		vTaskDelay(30);
+	}
+
+	if (total_samples > 0) {
+		float offset_dps[3];
+		offset_dps[0] = sum_dps[0] / total_samples;
+		offset_dps[1] = sum_dps[1] / total_samples;
+		offset_dps[2] = sum_dps[2] / total_samples;
+		AI_GLASS_MSG("Gyro calibration done. Total samples: %d\r\n", total_samples);
+		AI_GLASS_MSG("Gyro offset (dps): X %f Y %f Z %f\r\n", offset_dps[0], offset_dps[1], offset_dps[2]);
+#if !IGN_ACC_DATA
+		float offset_g[3];
+		offset_g[0] = sum_g[0] / total_samples;
+		offset_g[1] = sum_g[1] / total_samples;
+		offset_g[2] = sum_g[2] / total_samples;
+		AI_GLASS_MSG("Acc offset (g): X %f Y %f Z %f\r\n", offset_g[0], offset_g[1], offset_g[2]);
+#endif
+	} else {
+		AI_GLASS_MSG("Gyro calibration failed. No data read.\r\n");
+	}
+
+	vTaskDelete(NULL);
+}
+
+static void fCALIGSENSOR(void *arg) {
+	if (xTaskCreate(gyro_calibrate_gsensor_thread, ((const char *)"calib_gyro_task"), 32 * 1024, NULL, tskIDLE_PRIORITY + 7, NULL) != pdPASS) {
+		AI_GLASS_ERR("\n\r%s xTaskCreate(calib_gyro_task) failed", __FUNCTION__);
+	}
+}
+
 log_item_t at_ai_glass_items[ ] = {
 	{"AT+AIGLASSFORMAT",    fDISKFORMAT,            {NULL, NULL}},
 	{"AT+AIGLASSGSENSOR",   fTESTGSENSOR,           {NULL, NULL}},
@@ -3628,7 +3726,9 @@ log_item_t at_ai_glass_items[ ] = {
 	{"AT+AIGLASSCLEARMEDIAFLASH", fCLEARMEDIAFLASH, {NULL, NULL}},
 	{"AT+AIGLASSCHANGESENSOR", fCHANGESENSOR,       {NULL, NULL}},
 	{"AT+AIGLASSLFRECORD", fLFRECORD,               {NULL, NULL}},
+	{"AT+AIGLASSSTOPLFRECORD", fSTOPLFRECORD,       {NULL, NULL}},
 	{"AT+AIGLASSGSENSORCFG", fTESTGSENSORCFG,       {NULL, NULL}},
+	{"AT+CALIGSENSOR",   fCALIGSENSOR,           	{NULL, NULL}},
 };
 #endif
 void ai_glass_log_init(void)

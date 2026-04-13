@@ -34,11 +34,11 @@ video_boot_stream_t video_boot_stream = {
 		.stream_id = STREAM_ID_V1,
 		.type = CODEC_H264,
 		.resolution = 0,
-		.width  = 176,
-		.height = 144,
-		.bps = 1024 * 1024,
-		.fps = 15,
-		.gop = 15,
+		.width  = sensor_params[USE_SENSOR].sensor_width,
+		.height = sensor_params[USE_SENSOR].sensor_height,
+		.bps = 2 * 1024 * 1024,
+		.fps = sensor_params[USE_SENSOR].sensor_fps,
+		.gop = sensor_params[USE_SENSOR].sensor_fps << 1,
 		.rc_mode = 2,
 		.minQp = 25,
 		.maxQp = 48,
@@ -520,20 +520,20 @@ void user_boot_config_init(void *parm)
 #endif
 #ifdef META_DATA_TEST
 	video_boot_stream.meta_enable = 1;
-	video_boot_stream.meta_size = VIDEO_BOOT_META_USER_SIZE + 100;
+	video_boot_stream.meta_size = VIDEO_BOOT_META_USER_SIZE;
 	//video_boot_stream.extra_fcs_meta_enable_extend = 1;//Insert the 3A info into Meta
 #endif
 #ifdef ISP_CONTROL_TEST
 	//If you don't want to setup the parameters, you can setup the 0xffff to skip the procedure.For example video_boot_stream.init_isp_items.init_brightness = 0xffff;
 	video_boot_stream.init_isp_items.enable = 1;
-	video_boot_stream.init_isp_items.init_brightness = 0;    //Default:0
-	video_boot_stream.init_isp_items.init_contrast = 50;     //Default:50
-	video_boot_stream.init_isp_items.init_flicker = 1;        //Default:1
+	video_boot_stream.init_isp_items.init_brightness = 10;    //Default:0
+	video_boot_stream.init_isp_items.init_contrast = 100;     //Default:50
+	video_boot_stream.init_isp_items.init_flicker = 2;        //Default:1
 	video_boot_stream.init_isp_items.init_hdr_mode = 0;       //Default:0
-	video_boot_stream.init_isp_items.init_mirrorflip = 0xf0;  //Mirror and flip
-	video_boot_stream.init_isp_items.init_saturation = 50;    //Default:50
-	video_boot_stream.init_isp_items.init_wdr_level = 50;     //Default:50
-	video_boot_stream.init_isp_items.init_wdr_mode = 2;       //Default:0
+	video_boot_stream.init_isp_items.init_mirrorflip = 0xf3;  //Mirror and flip
+	video_boot_stream.init_isp_items.init_saturation = 75;    //Default:50
+	video_boot_stream.init_isp_items.init_wdr_level = 80;     //Default:50
+	video_boot_stream.init_isp_items.init_wdr_mode = 1;       //Default:0
 	video_boot_stream.init_isp_items.init_mipi_mode = 0;	  //Default:0
 #endif
 }
