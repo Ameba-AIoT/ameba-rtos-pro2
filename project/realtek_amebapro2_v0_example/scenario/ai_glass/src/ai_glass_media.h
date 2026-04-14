@@ -36,8 +36,8 @@
 #define FLASH_MP_MODE_BLOCK_SIZE        0x20
 
 //Nor Flash address for storing query info sensor cache
-#define FLASH_QUERY_INFO_BLOCK_BASE     (FLASH_MP_MODE_BLOCK_BASE + FLASH_MP_MODE_BLOCK_SIZE)
-#define FLASH_QUERY_INFO_BLOCK_SIZE     0x20
+// #define FLASH_QUERY_INFO_BLOCK_BASE     (FLASH_MP_MODE_BLOCK_BASE + FLASH_MP_MODE_BLOCK_SIZE)
+// #define FLASH_QUERY_INFO_BLOCK_SIZE     0x20
 
 // Flash address for query info sensor cache
 // Offset from FLASH_APP_BASE: 0x1000 (FW_SELECT) + 0x100 (AI_SNAP) + 0x100 (REC)

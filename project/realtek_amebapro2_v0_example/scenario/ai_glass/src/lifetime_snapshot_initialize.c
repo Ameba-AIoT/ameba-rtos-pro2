@@ -55,6 +55,7 @@ static uint32_t nv16_take_time = 0;
 static uint32_t nv12_gen_time = 0;
 static uint32_t jpeg_enc_time = 0;
 static uint32_t emmc_save_time = 0;
+static uint32_t start_saving_in_progress_time = 0;
 
 static char snapshot_name[MAXIMUM_FILE_SIZE];
 
@@ -129,6 +130,7 @@ static int drc_blending_rate = 15;
 static uint8_t raw_index = 0;
 static uint8_t jpg_index = 0;
 static uint8_t raw_taken = 0;
+static uint8_t dual_take = 0;
 
 // Hardware 12M snapshot
 static uint8_t *jpeg_nv12_addr = NULL;
