@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: caf4887530a9df372ead1244f52ea3afb802cf16
+* [amebapro2][kvs] add example kvs_webrtc_v2_mmf for new version of freertos kvs webrtc
+
 SHA-1: 235774de8f6d86d8e92e9c5f152c00eb17b22b3b
 * [amebapro2][wlan] wowlan support decode 11v wpa3 packet
 
