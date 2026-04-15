@@ -1260,7 +1260,6 @@ int lifetime_hr_snapshot_initialize(isp_info_sync_t *isp_info)
 	init_params.init_max_dyn_region_en = 0;
 	init_params.sens_pwr_dis = 0;
 	init_params.isp_gain_mode = 0;
-	init_params.meta_enable = 0;
 	ls_video_params.params.stream_id = JPEG_CHANNEL;
 	ls_video_params.params.rotation = SNAPSHOT_12M_ROTATION;
 	ls_video_params.params.type = VIDEO_NV16;

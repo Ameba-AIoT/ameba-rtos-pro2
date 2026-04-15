@@ -22,33 +22,33 @@
     @ --- Process sample 0 ---
     uxtb    r6, r4              @ r6 = denoised[0]
     uxtb    r7, r5              @ r7 = original[0]
-    add     r6, r6, r6, lsl #1  @ r6 = denoised[0] * 3
-    add     r6, r6, r7          @ r6 = (denoised[0] * 3) + original[0]
-    lsr     r6, r6, #2          @ r6 = mixed_index
+    rsb     r6, r6, r6, lsl #4  @ r6 = denoised[0] * 15
+    add     r6, r6, r7          @ r6 = (denoised[0] * 15) + original[0]
+    lsr     r6, r6, #4          @ r6 = mixed_index
     ldrh    r6, [r12, r6, lsl #1] @ r6 = decoded_val_0
 
     @ --- Process sample 1 ---
     ubfx    r8, r4, #8, #8      @ r8 = denoised[1]
     ubfx    r9, r5, #8, #8      @ r9 = original[1]
-    add     r8, r8, r8, lsl #1
+    rsb     r8, r8, r8, lsl #4
     add     r8, r8, r9
-    lsr     r8, r8, #2
+    lsr     r8, r8, #4
     ldrh    r8, [r12, r8, lsl #1] @ r8 = decoded_val_1
 
     @ --- Process sample 2 ---
     ubfx    r7, r4, #16, #8     @ r7 = denoised[2]
     ubfx    r9, r5, #16, #8     @ r9 = original[2]
-    add     r7, r7, r7, lsl #1
+    rsb     r7, r7, r7, lsl #4
     add     r7, r7, r9
-    lsr     r7, r7, #2
+    lsr     r7, r7, #4
     ldrh    r7, [r12, r7, lsl #1] @ r7 = decoded_val_2
 
     @ --- Process sample 3 ---
     lsr     r4, r4, #24         @ r4 = denoised[3]
     lsr     r5, r5, #24         @ r5 = original[3]
-    add     r4, r4, r4, lsl #1
+    rsb     r4, r4, r4, lsl #4
     add     r4, r4, r5
-    lsr     r4, r4, #2
+    lsr     r4, r4, #4
     ldrh    r4, [r12, r4, lsl #1] @ r4 = decoded_val_3
 
     @ --- Pack 4 16-bit results into 2 32-bit words ---

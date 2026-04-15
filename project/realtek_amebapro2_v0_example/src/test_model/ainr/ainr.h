@@ -9,8 +9,8 @@
 #define MODEL_INPUT_SIZE_W MODEL_INPUT_SIZE_H
 #define OVERLAP_H 4
 #define OVERLAP_W 4
-#define MIXUP_FACTOR MIXUP_FACTOR_025
-#define MIXUP_FACTOR_025 1
+#define MIXUP_FACTOR MIXUP_FACTOR_00625
+#define MIXUP_FACTOR_00625 1
 
 typedef struct {
 	unsigned long start_time;

@@ -191,10 +191,7 @@ static video_params_t video_fake_params = {
 	.gop = 6,
 	.rc_mode = 2,
 	.use_static_addr = 1,
-	.direct_output = 0,
-	.ext_fmt = 0,
-	.out_mode = 2
-
+	.direct_output = 1
 };
 
 //streaming
@@ -1216,82 +1213,25 @@ void media_get_preinit_isp_data(video_pre_init_params_t *isp_data)
 }
 void media_update_preinit_isp_ae(void)
 {
-	int last_ae_time = 0, last_ae_gain = 0, wait_ae_timeout = 1000;
 	int ae_exposure_time = 0;
 	int ae_gain = 0;
-	int wait_time = 0;
-	int awb_rgain = 0;
-	int awb_bgain = 0;
-	uint32_t converge_start_time = mm_read_mediatime_ms();
-#if ENABLE_META_INFO
-	int frame_cnt = 0;
-	int last_frame_cnt = 0;
-	video_meta_t meta_data;
-	memset(&meta_data, 0, sizeof(meta_data));
-	mm_module_ctrl(video_fake_ctx, CMD_VIDEO_GET_META_DATA, (int)&meta_data);
-	while(meta_data.isp_statis_meta == 0) {
-		vTaskDelay(34);
-		mm_module_ctrl(video_fake_ctx, CMD_VIDEO_GET_META_DATA, (int)&meta_data);
-	}
-	frame_cnt = meta_data.isp_statis_meta->frame_count;
-	ae_exposure_time = meta_data.isp_statis_meta->exposure_h;
-	ae_gain = meta_data.isp_statis_meta->gain_h;
-#else
 	isp_get_exposure_time(&ae_exposure_time);
 	isp_get_ae_gain(&ae_gain);
-#endif
-	while((ae_exposure_time != last_ae_time) || (ae_gain != last_ae_gain)) {
-#if ENABLE_META_INFO
-		vTaskDelay(34);
-		wait_time += 34;
-		last_frame_cnt = frame_cnt;
-		mm_module_ctrl(video_fake_ctx, CMD_VIDEO_GET_META_DATA, (int)&meta_data);
-		frame_cnt = meta_data.isp_statis_meta->frame_count;
-		if(last_frame_cnt != frame_cnt) {
-			last_ae_time = ae_exposure_time;
-			last_ae_gain = ae_gain;
-			ae_exposure_time = meta_data.isp_statis_meta->exposure_h;
-			ae_gain = meta_data.isp_statis_meta->gain_h;
-			//printf("frame %d -> %d\r\n", last_frame_cnt, frame_cnt);
-			//printf("ae time %d->%d\r\n", last_ae_time, ae_time);
-			//printf("ae gain %d->%d\r\n", last_ae_gain, ae_gain);
-		}
-#else
-		vTaskDelay(50);
-		wait_time += 50;
-		last_ae_time = ae_exposure_time;
-		last_ae_gain = ae_gain;
-		isp_get_exposure_time(&ae_exposure_time);
-		isp_get_ae_gain(&ae_gain);
-#endif
-		if(wait_time >= wait_ae_timeout) {
-			AI_GLASS_WARN("wait ae stable timeout\r\n");
-			break;	
-		}
-	}
-#if ENABLE_META_INFO
-	awb_rgain = meta_data.isp_statis_meta->wb_r_gain;
-	awb_bgain = meta_data.isp_statis_meta->wb_b_gain;
-#else
-	isp_get_red_balance(&awb_rgain);
-	isp_get_blue_balance(&awb_bgain);
-#endif
-	uint32_t converge_end_time = mm_read_mediatime_ms();
-	uint32_t converge_time = converge_end_time - converge_start_time;
-	AI_GLASS_MSG("Converge time: %lu\r\n", converge_time);
-	ai_glass_pre_init_params.isp_awb_init_rgain = awb_rgain;
-	ai_glass_pre_init_params.isp_awb_init_bgain = awb_bgain;
 	ai_glass_pre_init_params.isp_ae_init_exposure = ae_exposure_time;
 	ai_glass_pre_init_params.isp_ae_init_gain = ae_gain;
 }
 void media_update_preinit_isp_awb(void)
 {
+	int awb_rgain = 0;
+	int awb_bgain = 0;
+	isp_get_red_balance(&awb_rgain);
+	isp_get_blue_balance(&awb_bgain);
+	ai_glass_pre_init_params.isp_awb_init_rgain = awb_rgain;
+	ai_glass_pre_init_params.isp_awb_init_bgain = awb_bgain;
 	video_get_max_dyn_region_idx(0, &max_dyn_region_idx);
-
 	uint8_t direct_wdr_level = 0;
 	video_get_dir_wdr_level(0, &direct_wdr_level);
 	ai_glass_pre_init_params.init_isp_items.init_wdr_level = direct_wdr_level;
-	
 	printf(" DRC region: %d, WDR level: %u\r\n", max_dyn_region_idx, direct_wdr_level);
 }
 void initial_media_parameters(void)
@@ -1343,8 +1283,6 @@ void initial_media_parameters(void)
 			pre_init_params.meta_size = VIDEO_META_USER_SIZE;
 		#endif
 			memcpy(pre_init_params.video_meta_uuid, uuid, VIDEO_META_UUID_SIZE);
-			video_fake_params.meta_enable = 1;
-			mm_module_ctrl(video_fake_ctx, CMD_VIDEO_META_CB, MMF_VIDEO_DEFAULT_META_CB);
 		#endif
 			// Since the fcs has open the channl, we do not need to apply the preinit setting again
 			media_update_preinit_isp_data(&pre_init_params);
@@ -1454,7 +1392,6 @@ void deinitial_media(void)
 {
 	if (video_fake_ctx) {
 		mm_module_ctrl(video_fake_ctx, CMD_VIDEO_STREAM_STOP, OPEN_CHANNEL);
-		video_fake_params.meta_enable = 0;
 		mm_module_close(video_fake_ctx);
 		video_fake_ctx = NULL;
 		AI_GLASS_MSG("Close the fake channel used to keep VOE on\r\n");

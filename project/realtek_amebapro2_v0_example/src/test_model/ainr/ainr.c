@@ -31,13 +31,11 @@ nnlite_model_t ainr_imx681 = {
 	.filename   = "NN_MDL/ainr_mulaw_1024_imx681.nb",
 	.modelname  = "ainr"
 };
-
 nnlite_model_t ainr_ov13b10 = {
 	.type       = NNLITE_CREATE_NETWORK_TYPE_FWFS,
 	.filename   = "NN_MDL/ainr_mulaw_1024_ov13b10.nb",
 	.modelname  = "ainr"
 };
-
 nnlite_model_t planar_to_nchw_blc = {
 	.type       = NNLITE_CREATE_NETWORK_TYPE_FWFS,
 	.filename   = "NN_MDL/planar_to_nchw_1024_lut.nb",
@@ -161,7 +159,7 @@ ainr_ctx_t *ainr_init(void)
 	}
 	ctx->image_h = sensor_params[SENSOR_IMX681_12M].sensor_height;
 	ctx->image_w = sensor_params[SENSOR_IMX681_12M].sensor_width;
-#elif USE_SENSOR == SENSOR_OV13B10
+#else
 	ctx->nnlite_ctx = nnlite_deploy_model(&ainr_ov13b10);
 	if (ctx->nnlite_ctx == NULL) {
 		printf("Failed to deploy AINR model\r\n");
@@ -170,7 +168,7 @@ ainr_ctx_t *ainr_init(void)
 	}
 	ctx->image_h = sensor_params[SENSOR_OV13B10_12M].sensor_height;
 	ctx->image_w = sensor_params[SENSOR_OV13B10_12M].sensor_width;
-#endif	
+#endif
 	ctx->planar_to_nchw_ctx = nnlite_deploy_model(&planar_to_nchw_blc);
 	if (ctx->planar_to_nchw_ctx == NULL) {
 		printf("Failed to deploy planar_to_nchw_blc model\r\n");
@@ -448,7 +446,7 @@ static int denoise_tiled(ainr_ctx_t *ctx, uint16_t *denoised_packed_bayer_output
 			update_time_stats(&(ctx->time_stats.nn_inference), xTaskGetTickCount());
 
 			ctx->time_stats.mixup_decode.start_time = xTaskGetTickCount();
-#if MIXUP_FACTOR == MIXUP_FACTOR_025
+#if MIXUP_FACTOR == MIXUP_FACTOR_00625
 			ainr_mixup_and_decode_fast(patch_denoised_u8, patch_input_encoded_u8, patch_denoised_decoded, patch_elements);
 #else
 #error "[ainr] invalid mix factor"

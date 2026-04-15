@@ -389,7 +389,7 @@ static inline void ainr_mixup_and_decode_fast(const uint8_t *denoised_input, con
     
     while (n--) {
         
-        uint8_t mixed_index = (((uint16_t)(*denoised_input) * 3 + (*original_input)) >> 2);
+        uint8_t mixed_index = (((uint16_t)(*denoised_input) * 15 + (*original_input)) >> 4);
         
         *output = ulaw_decode_lut[mixed_index];
 
