@@ -122,10 +122,15 @@ struct uvc_format_framebased uvc_format_h265 = {
 	.bVariableSize          = 1,
 };
 
+#if 0
 #define FRAME_INTV_0 416666
 #define FRAME_INTV_1 666666
 #define FRAME_INTV_2 1000000
-
+#else
+#define FRAME_INTV_0 2500000
+#define FRAME_INTV_1 4000000
+#define FRAME_INTV_2 5000000
+#endif
 struct UVC_FRAME_UNCOMPRESSED(3) uvc_frame_yuv_480p = {
 	.bLength		= UVC_DT_FRAME_UNCOMPRESSED_SIZE(3),
 	.bDescriptorType	= USB_DT_CS_INTERFACE,
