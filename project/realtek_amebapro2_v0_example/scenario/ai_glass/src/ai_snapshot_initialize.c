@@ -39,10 +39,7 @@ typedef struct {
 // static video_params_t ai_video_params;
 static jpeg_aisnapshot_context_t *ai_snap_ctx = NULL;
 
-static video_pre_init_params_t ai_snap_pre_init_param = {
-	.video_drop_enable = 1,
-	.video_drop_frame = DROP_FRAME,
-};
+static video_pre_init_params_t ai_snap_pre_init_param;
 
 static int video_snapshot_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 {
@@ -126,7 +123,7 @@ int ai_snapshot_initialize(void)
 		ai_snap_ctx->video_snapshot_ctx = mm_module_open(&video_module);
 		video_params_t *snapshot_param = &(ai_snap_ctx->video_snapshot_params);
 		snapshot_param->stream_id = MAIN_STREAM_ID;
-		snapshot_param->type = VIDEO_JPEG;
+		snapshot_param->type = VIDEO_H264_JPEG;
 		snapshot_param->width = ai_snap_param.width;
 		snapshot_param->height = ai_snap_param.height;
 		snapshot_param->rotation = ai_snap_param.rotation;
@@ -147,11 +144,11 @@ int ai_snapshot_initialize(void)
 		ai_snap_ctx->snapshot_write = aisnapshot_write_picture;
 		if (ai_snap_ctx->video_snapshot_ctx) {
 			media_get_preinit_isp_data(&ai_glass_pre_init_params);
+			ai_glass_pre_init_params.video_drop_enable = 1;
+			ai_glass_pre_init_params.video_drop_frame = DROP_FRAME;
 			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&ai_glass_pre_init_params);
-
 			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_SNAPSHOT_CB, (int)video_snapshot_cb);
 			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_SET_PARAMS, (int) & (ai_snap_ctx->video_snapshot_params));
-			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&ai_snap_pre_init_param);
 			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, MM_CMD_SET_QUEUE_LEN, 2);//Default 30
 			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
 			mm_module_ctrl(ai_snap_ctx->video_snapshot_ctx, CMD_VIDEO_APPLY, ai_snap_ctx->video_snapshot_params.stream_id);

@@ -34,7 +34,7 @@
 #endif
 
 //#define ENABLE_META_INFO  //Enable the marco to wirte the META data to frame
-#define ENABLE_SD_SNAPSHOT //Enable the snapshot to sd card
+//#define ENABLE_SD_SNAPSHOT //Enable the snapshot to sd card
 //#define ENABLE_JPEG_EXIF
 
 static void atcmd_userctrl_init(void);
@@ -124,8 +124,8 @@ void mmf2_video_example_v1_shapshot_init(void)
 
 	/*sensor capacity check & video parameter setting*/
 	video_v1_params.resolution = VIDEO_FHD;
-	video_v1_params.width = 1920;
-	video_v1_params.height = 1080;
+	video_v1_params.width = sensor_params[USE_SENSOR].sensor_width;
+	video_v1_params.height = sensor_params[USE_SENSOR].sensor_height;
 	video_v1_params.fps = sensor_params[USE_SENSOR].sensor_fps;
 	video_v1_params.gop = sensor_params[USE_SENSOR].sensor_fps;
 	/*rtsp parameter setting*/
