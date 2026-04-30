@@ -1333,8 +1333,8 @@ int wifi_set_dhcp_offload(void)
 	//dhcp header& body
 	memcpy(eth_frame + sizeof(eth_header) + sizeof(ip_header) + 8, dhcp_payload, len);
 
-	lease_time = LwIP_GetLEASETIME(0) / 60;
-	lease_used_time = LwIP_GetLEASEUSED(0);
+	lease_time = LwIP_GetLEASETIME(0);
+	lease_used_time = LwIP_GetLEASEUSED(0) * 60;
 	if (lease_used_time == 0) {
 		lease_used_time = 1;
 	}
