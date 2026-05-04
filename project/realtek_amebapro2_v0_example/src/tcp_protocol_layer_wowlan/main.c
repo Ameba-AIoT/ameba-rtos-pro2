@@ -33,6 +33,7 @@
 #define ARP_SLEEPTIME_THRESHOLD 	(5 * 60)
 #define ARP_THRESHOLD_L 	(3)
 #define ARP_THRESHOLD_H 	(8)
+#define ARP_DEAUTH_COUNT_THRESHOLD 	(100)
 __attribute__((section(".retention.data"))) uint16_t retention_arp_interval __attribute__((aligned(32))) = 0;
 __attribute__((section(".retention.data"))) uint16_t retention_deauth_count __attribute__((aligned(32))) = 0;
 #endif
@@ -428,24 +429,40 @@ void tcp_app_task(void *param)
 						rtw_hal_set_arpreq_period(retention_arp_interval);
 					}
 
-					retention_deauth_count++;
+					if (retention_deauth_count < ARP_DEAUTH_COUNT_THRESHOLD) {
+						retention_deauth_count++;
+					}
 				}
-				dcache_clean_invalidate_by_addr((uint32_t *) &retention_deauth_count, sizeof(retention_deauth_count));
-				RTW_API_INFO("[%s] deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, retention_deauth_count, retention_arp_interval);
+
+				if (retention_deauth_count < ARP_DEAUTH_COUNT_THRESHOLD) {
+					dcache_clean_invalidate_by_addr((uint32_t *) &retention_deauth_count, sizeof(retention_deauth_count));
+				}
+				RTW_API_INFO("[%s] (wowlan wake if) deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, retention_deauth_count, retention_arp_interval);
+			} else {
+				rtw_hal_set_arpreq_period(retention_arp_interval);
+				RTW_API_INFO("[%s] (wowlan wake else) deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, retention_deauth_count, retention_arp_interval);
 			}
 		}
 	}  else if (pm_reason & (BIT(9) | BIT(10) | BIT(11) | BIT(12))) { //GPIO wake
 		rtw_hal_set_arpreq_period(retention_arp_interval);
+		RTW_API_INFO("[%s] (GPIO wake) deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, retention_deauth_count, retention_arp_interval);
 
-	} else if (pm_reason & BIT(6)) { //Timer wake
+	} else if (pm_reason & (BIT(0) | BIT(6) | BIT(7) | BIT(8))) { //Timer wake
 		rtw_hal_set_arpreq_period(retention_arp_interval);
+		RTW_API_INFO("[%s] (Timer wake) deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, retention_deauth_count, retention_arp_interval);
 	} else {
+#if 1
 		//Cold boot.
 		retention_arp_interval = 50;
 		retention_deauth_count = 0;
 		dcache_clean_invalidate_by_addr((uint32_t *) &retention_arp_interval, sizeof(retention_arp_interval));
 		dcache_clean_invalidate_by_addr((uint32_t *) &retention_deauth_count, sizeof(retention_deauth_count));
-		RTW_API_INFO("[%s] Cold boot, deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, retention_deauth_count, retention_arp_interval);
+		RTW_API_INFO("[%s] (Cold boot) pm_reason: %x, deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, pm_reason, retention_deauth_count, retention_arp_interval);
+#else
+		//client need read arp interval from client flash(NVRAM) and to set the arp interval
+		rtw_hal_set_arpreq_period(retention_arp_interval);
+		RTW_API_INFO("[%s] (Cold boot) deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, retention_deauth_count, retention_arp_interval);
+#endif
 	}
 #endif
 	//dynamic dtim
