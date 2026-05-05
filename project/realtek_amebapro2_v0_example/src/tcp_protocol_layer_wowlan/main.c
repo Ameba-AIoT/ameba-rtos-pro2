@@ -1292,7 +1292,7 @@ void main(void)
 
 			rtw_hal_read_aoac_rpt_from_txfifo(NULL, 0, 0);
 
-			uint16_t dhcp_lease_used = rtw_hal_read_wowlan_lease_used();
+			uint32_t dhcp_lease_used = rtw_hal_read_wowlan_lease_used();
 			printf("\r\ndhcp_lease_used = %d\r\n", dhcp_lease_used);
 			extern uint8_t lwip_set_dhcp_resume_lease_used(uint32_t lease_used);
 			lwip_set_dhcp_resume_lease_used(dhcp_lease_used);
