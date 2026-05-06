@@ -310,7 +310,7 @@ void snapshot_save_task(void *param) {
             }
 			emmc_save_time = mm_read_mediatime_ms() - emmc_save_time;
 			AI_GLASS_MSG("-------------------emmc_save_time = %d----------------------\r\n", emmc_save_time);
-			if (lfsnap_status == LIFESNAP_DONE && save_count >= total_burst) {
+			if (lfsnap_status == LIFESNAP_DONE && (save_count >= total_burst || next_cmd_seen == 1)) {
 				AI_GLASS_MSG("lfsnap_status is LIFESNAP_DONE\r\n");
 				xEventGroupSetBits(s_lifetime_event, BIT(0));
 			}
@@ -1309,7 +1309,9 @@ int lifetime_hr_snapshot_initialize(isp_info_sync_t *isp_info)
 		AI_GLASS_ERR("siso_array_filesaver open fail\n\r");
 		goto endoflifesnapshot;
 	}
-	if (lfsnap_status == LIFESNAP_DONE && burst_count == 1) {
+	printf("=================lfsnap_status :%d , burst_count:%d====================\r\n",lfsnap_status, burst_count);
+	if (lfsnap_status == LIFESNAP_DONE && burst_count == 0) {
+		printf("lfsnap_status :%d , burst_count:%d\r\n",lfsnap_status, burst_count);
 		lfsnap_status = LIFESNAP_START;
 		total_burst = 1;
 	}
@@ -1496,9 +1498,10 @@ int lifetime_highres_save(const char *file_name, uartcmdpacket_t *param)
 				}
 			}
 
-			AI_GLASS_INFO("Life snapshot save done\r\n");
+			AI_GLASS_INFO("Life snapshot quit\r\n");
 			raw_taken = 0;
 			jpg_index = 0;
+			save_count = 0;
 			total_burst = 1;
 			for (int i = 0; i <= burst_count; i++) {
 				burst_names[i][0] = '\0';   // clear slots 0..burst_count inclusive

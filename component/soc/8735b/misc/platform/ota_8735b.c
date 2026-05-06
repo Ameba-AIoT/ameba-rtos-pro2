@@ -2052,7 +2052,7 @@ int heap_update_ota(uint8_t *buffer, uint32_t length)
 
 	printf("\n\r[%s] Current firmware timestamp (hex): 0x%08X\n\r", __FUNCTION__, fw_timest);
 
-	if (fw_timest >= ota_timestamp) {
+	if (fw_timest > ota_timestamp) {
 		printf("\n\r[%s] OTA is older or same, skip update\n\r", __FUNCTION__);
 		ret = -4;
     	goto update_ota_exit;

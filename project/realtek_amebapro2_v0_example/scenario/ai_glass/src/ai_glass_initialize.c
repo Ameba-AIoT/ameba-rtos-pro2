@@ -1949,6 +1949,22 @@ static void ai_glass_get_file_cnt(uartcmdpacket_t *param)
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_GET_FILE_CNT\r\n");
 }
 
+static void ai_glass_get_sd_info(uartcmdpacket_t *param)
+{
+	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_SD_INFO %lu\r\n", mm_read_mediatime_ms());
+	critical_process_started = 1;
+	ai_glass_init_external_disk();
+	uint64_t device_used_bytes = fatfs_get_used_space_byte();
+	uint64_t device_total_bytes = device_used_bytes + fatfs_get_free_space_byte();
+	uint32_t device_used_Kbytes = (uint32_t)(device_used_bytes / 1024);
+	uint32_t device_total_Kbytes = (uint32_t)(device_total_bytes / 1024);
+
+	uart_resp_get_sd_info(param, device_total_Kbytes, device_used_Kbytes);
+	critical_process_started = 0;
+	AI_GLASS_MSG("Get device memory: %lu/%luKB\r\n", device_used_Kbytes, device_total_Kbytes);
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_GET_SD_INFO %lu\r\n", mm_read_mediatime_ms());
+}
+
 static void ai_glass_snapshot(uartcmdpacket_t *param)
 {
 	uint8_t status = AI_GLASS_CMD_COMPLETE;
@@ -2114,55 +2130,55 @@ lifetimesnapshottake:
 						status = AI_GLASS_PROC_FAIL;
 						uart_resp_snapshot(param, status);
 					}
-					while (1) {
-						uartcmdinfo_t *new_cmd = NULL;
-						int ret = uart_wait_for_next_cmd_or_idle(1000, &new_cmd);
+					// while (1) {
+					// 	uartcmdinfo_t *new_cmd = NULL;
+					// 	int ret = uart_wait_for_next_cmd_or_idle(1000, &new_cmd);
 
-						if (ret == 1 && BURST_MODE_MAX_COUNT == 2) {
-							// Snapshot detected
-							AI_GLASS_MSG("Snapshot detected, continuing snapshot recurring\r\n");
+					// 	if (ret == 1 && BURST_MODE_MAX_COUNT == 2) {
+					// 		// Snapshot detected
+					// 		AI_GLASS_MSG("Snapshot detected, continuing snapshot recurring\r\n");
 
-							// Use filename already prepared earlier
-							const char *filename = burst_names[burst_count - 1];
+					// 		// Use filename already prepared earlier
+					// 		const char *filename = burst_names[burst_count - 1];
 
-							// Print out the filename for verification
-							AI_GLASS_MSG("Taking snapshot with filename: %s\r\n", filename);
+					// 		// Print out the filename for verification
+					// 		AI_GLASS_MSG("Taking snapshot with filename: %s\r\n", filename);
 
-							isp_info_sync_t isp_info = {0};
-							lifetime_hr_snapshot_initialize(&isp_info);
+					// 		isp_info_sync_t isp_info = {0};
+					// 		lifetime_hr_snapshot_initialize(&isp_info);
 
-							goto lifetimesnapshottake;
-						} else { // ret == 0
-							break;
-						}
-					}
+					// 		goto lifetimesnapshottake;
+					// 	} else { // ret == 0
+					// 		break;
+					// 	}
+					// }
 				} else {
 					status = AI_GLASS_PROC_FAIL;
 					uart_resp_snapshot(param, status);
 					critical_process_started = 0;
 				}
-				while (1) {
-					uartcmdinfo_t *new_cmd = NULL;
-					int ret = uart_wait_for_next_cmd_or_idle(1000, &new_cmd);
+				// while (1) {
+				// 	uartcmdinfo_t *new_cmd = NULL;
+				// 	int ret = uart_wait_for_next_cmd_or_idle(1000, &new_cmd);
 
-					if (ret == 1 && BURST_MODE_MAX_COUNT == 2) {
-						// Snapshot detected
-						AI_GLASS_MSG("Snapshot detected, continuing snapshot recurring\r\n");
+				// 	if (ret == 1 && BURST_MODE_MAX_COUNT == 2) {
+				// 		// Snapshot detected
+				// 		AI_GLASS_MSG("Snapshot detected, continuing snapshot recurring\r\n");
 
-						// Use filename already prepared earlier
-						const char *filename = burst_names[burst_count - 1];
+				// 		// Use filename already prepared earlier
+				// 		const char *filename = burst_names[burst_count - 1];
 
-						// Print out the filename for verification
-						AI_GLASS_MSG("Taking snapshot with filename: %s\r\n", filename);
+				// 		// Print out the filename for verification
+				// 		AI_GLASS_MSG("Taking snapshot with filename: %s\r\n", filename);
 
-						isp_info_sync_t isp_info = {0};
-						lifetime_hr_snapshot_initialize(&isp_info);
+				// 		isp_info_sync_t isp_info = {0};
+				// 		lifetime_hr_snapshot_initialize(&isp_info);
 
-						goto lifetimesnapshottake;
-					} else { // ret == 0
-						break;
-					}
-				}
+				// 		goto lifetimesnapshottake;
+				// 	} else { // ret == 0
+				// 		break;
+				// 	}
+				// }
 			} else if (ret == -2) {
 				status = AI_GLASS_BUSY;
 				uart_resp_snapshot(param, status);
@@ -2182,25 +2198,25 @@ lifetimesnapshottake:
 		}
 		if (mode == 0 || dual_snapshot == 1) {
 			while (1) {
-				uartcmdinfo_t *new_cmd = NULL;
-				int ret = uart_wait_for_next_cmd_or_idle(1000, &new_cmd);
+				// uartcmdinfo_t *new_cmd = NULL;
+				// int ret = uart_wait_for_next_cmd_or_idle(1000, &new_cmd);
 
-				if (ret == 1 && BURST_MODE_MAX_COUNT == 2) {
-					// Snapshot detected
-					AI_GLASS_MSG("Snapshot detected, continuing snapshot recurring\r\n");
+				// if (next_cmd_seen  == 1 && BURST_MODE_MAX_COUNT == 2) {
+				// 	// Snapshot detected
+				// 	AI_GLASS_MSG("Snapshot detected, continuing snapshot recurring\r\n");
+				// 	next_cmd_seen = 0;
+				// 	// Use filename already prepared earlier
+				// 	const char *filename = burst_names[burst_count - 1];
 
-					// Use filename already prepared earlier
-					const char *filename = burst_names[burst_count - 1];
+				// 	// Print out the filename for verification
+				// 	AI_GLASS_MSG("Taking snapshot with filename: %s\r\n", filename);
 
-					// Print out the filename for verification
-					AI_GLASS_MSG("Taking snapshot with filename: %s\r\n", filename);
+				// 	isp_info_sync_t isp_info = {0};
+				// 	lifetime_hr_snapshot_initialize(&isp_info);
 
-					isp_info_sync_t isp_info = {0};
-					lifetime_hr_snapshot_initialize(&isp_info);
-
-					lifetime_snapshot_take(filename, param);
-					goto lifetimesnapshottake;
-				} else { // ret == 0
+				// 	// lifetime_snapshot_take(filename, param);
+				// 	goto lifetimesnapshottake;
+				// } else { // ret == 0
 			
 #if BURST_MODE_MAX_COUNT == 1
 					// Idle → finalize
@@ -2212,26 +2228,42 @@ lifetimesnapshottake:
 					critical_process_started = 0;
 					uartcmdpacket_t dummy_param;
 					ai_glass_get_file_cnt(&dummy_param);
+					ai_glass_get_sd_info(&dummy_param);
 					status = AI_GLASS_CMD_COMPLETE;
 					uart_resp_snapshot(param, status);
 					break;
 #else
-					if (xEventGroupWaitBits(s_lifetime_event, BIT(0), pdTRUE, pdFALSE, portMAX_DELAY)) {
-						// Idle → finalize
-						AI_GLASS_MSG("wait for lifetime snapshot deinit\r\n");
-						extdisk_save_file_cntlist();
-						while (lifetime_snapshot_deinitialize()) {
-							vTaskDelay(1);
-						}
-						uartcmdpacket_t dummy_param;
-						ai_glass_get_file_cnt(&dummy_param);
-						status = AI_GLASS_CMD_COMPLETE;
-						uart_resp_snapshot(param, status);
-						critical_process_started = 0;
-						break;
+				if (xEventGroupWaitBits(s_lifetime_event, BIT(0), pdTRUE, pdFALSE, portMAX_DELAY)) {
+					if (next_cmd_seen  == 1 && BURST_MODE_MAX_COUNT == 2) {
+						AI_GLASS_MSG("Snapshot detected, continuing snapshot recurring\r\n");
+						next_cmd_seen = 0;
+						// Use filename already prepared earlier
+						const char *filename = burst_names[burst_count];
+
+						// Print out the filename for verification
+						AI_GLASS_MSG("Stored burst filename %s for raw_index %d\r\n", burst_names[burst_count], burst_count);
+						AI_GLASS_MSG("Taking snapshot with filename: %s\r\n", filename);
+
+						isp_info_sync_t isp_info = {0};
+						lifetime_hr_snapshot_initialize(&isp_info);
+
+						goto lifetimesnapshottake;
 					}
-#endif
+					// Idle → finalize
+					AI_GLASS_MSG("wait for lifetime snapshot deinit\r\n");
+					extdisk_save_file_cntlist();
+					while (lifetime_snapshot_deinitialize()) {
+						vTaskDelay(1);
+					}
+					uartcmdpacket_t dummy_param;
+					ai_glass_get_file_cnt(&dummy_param);
+					ai_glass_get_sd_info(&dummy_param);
+					status = AI_GLASS_CMD_COMPLETE;
+					uart_resp_snapshot(param, status);
+					critical_process_started = 0;
+					break;
 				}
+#endif
 			}
 		}
 		xSemaphoreGive(video_proc_sema);
@@ -2324,6 +2356,7 @@ static void mp4_send_response_callback(struct tmrTimerControl *parm)
 				AI_GLASS_MSG("mp4_send_response_callback UART_TX_OPC_RESP_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
 				uartcmdpacket_t dummy_param;
 				ai_glass_get_file_cnt(&dummy_param);
+				ai_glass_get_sd_info(&dummy_param);
 				xSemaphoreGive(video_proc_sema);
 			} else {
 				if (current_state == STATE_RECORDING || current_state == STATE_IDLE) {
@@ -2366,6 +2399,7 @@ static void mp4_send_audio_response_callback(struct tmrTimerControl *parm)
 				AI_GLASS_MSG("mp4_send_audio_response_callback UART_TX_OPC_RESP_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
 				uartcmdpacket_t dummy_param;
 				ai_glass_get_file_cnt(&dummy_param);
+				ai_glass_get_sd_info(&dummy_param);
 				xSemaphoreGive(video_proc_sema);
 			} else {
 				if (current_state == STATE_RECORDING || current_state == STATE_IDLE) {
@@ -2568,6 +2602,7 @@ static void ai_glass_record_stop(uartcmdpacket_t *param)
 	}
 	uartcmdpacket_t dummy_param;
 	ai_glass_get_file_cnt(&dummy_param);
+	ai_glass_get_sd_info(&dummy_param);
 	uart_resp_record_stop(record_stop_status);
 	AI_GLASS_MSG("end of UART_RX_OPC_CMD_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
 }
@@ -2596,6 +2631,7 @@ static void ai_glass_audio_stop(uartcmdpacket_t *param)
 	}
 	uartcmdpacket_t dummy_param;
 	ai_glass_get_file_cnt(&dummy_param);
+	ai_glass_get_sd_info(&dummy_param);
 	uart_resp_audio_record_stop(record_stop_status);
 	AI_GLASS_MSG("end of UART_RX_OPC_CMD_AUDIO_STOP %lu\r\n", mm_read_mediatime_ms());
 }
@@ -2620,22 +2656,6 @@ static void ai_glass_delete_all_file(uartcmdpacket_t *param)
 		uart_resp_delete_all_file(status);
 	}
 	AI_GLASS_INFO("end of UART_RX_OPC_CMD_DELETE_ALL_FILES\r\n");
-}
-
-static void ai_glass_get_sd_info(uartcmdpacket_t *param)
-{
-	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_SD_INFO %lu\r\n", mm_read_mediatime_ms());
-	critical_process_started = 1;
-	ai_glass_init_external_disk();
-	uint64_t device_used_bytes = fatfs_get_used_space_byte();
-	uint64_t device_total_bytes = device_used_bytes + fatfs_get_free_space_byte();
-	uint32_t device_used_Kbytes = (uint32_t)(device_used_bytes / 1024);
-	uint32_t device_total_Kbytes = (uint32_t)(device_total_bytes / 1024);
-
-	uart_resp_get_sd_info(param, device_total_Kbytes, device_used_Kbytes);
-	critical_process_started = 0;
-	AI_GLASS_MSG("Get device memory: %lu/%luKB\r\n", device_used_Kbytes, device_total_Kbytes);
-	AI_GLASS_INFO("end of UART_RX_OPC_CMD_GET_SD_INFO %lu\r\n", mm_read_mediatime_ms());
 }
 
 static void ai_glass_set_ap_mode(uartcmdpacket_t *param)
@@ -2957,20 +2977,56 @@ void ai_glass_live_stop(uartcmdpacket_t *param)
 // UART_RX_OPC_CMD_GET_WIFI_PARAMETER
 static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_WIFI_PARAMETER\r\n");
-    uint8_t g_camera_cfg_buf[512];
-    size_t length = uart_serialize_camera_config(g_camera_cfg_buf, sizeof(g_camera_cfg_buf), &g_camera_cfg);
-
-    // Call your existing UART response function
-    int status = uart_resp_get_wifi_parameter(param, g_camera_cfg_buf, length);
-
-    // Debug print
-    print_camera_config(&g_camera_cfg);
+	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
+	uint8_t mode = query_pkt->data_buf[0];
 	
-    if (status == 0) {
-        printf("CameraConfig sent successfully (%lu bytes)\n", length);
-    } else {
-        printf("UART send failed: %d\n", status);
-    }
+	if (mode == 1) {
+		uint8_t g_camera_cfg_buf[512];
+		size_t length = uart_serialize_camera_config(g_camera_cfg_buf, sizeof(g_camera_cfg_buf), &g_camera_cfg);
+
+		// Call your existing UART response function
+		int status = uart_resp_get_wifi_parameter(param, g_camera_cfg_buf, length);
+
+		// Debug print
+		print_camera_config(&g_camera_cfg);
+		
+		if (status == 0) {
+			printf("CameraConfig sent successfully (%lu bytes)\n", length);
+		} else {
+			printf("UART send failed: %d\n", status);
+		}
+	} else if (mode == 2) {
+		u8 pbuf[6];
+		size_t length = 6;
+
+		otp_logical_read(0x11A, length, pbuf);
+		printf("[TEST] (1) "MAC_FMT"",MAC_ARG(pbuf));
+		
+		// Call your existing UART response function
+		int status = uart_resp_get_wifi_parameter(param, pbuf, length);
+
+		if (status == 0) {
+			printf("CameraConfig sent successfully (%lu bytes)\n", length);
+		} else {
+			printf("UART send failed: %d\n", status);
+		}
+	} else if (mode == 3) {
+		uint8_t dummy[1] = {0};
+        size_t length = 0; // sensor status will be built inside uart_resp_get_wifi_parameter
+
+        int status = uart_resp_get_wifi_parameter(param, dummy, length);
+
+        if (status == 0) {
+            printf("Sensor status sent successfully\n");
+        } else {
+            printf("UART send failed: %d\n", status);
+        }
+	} else {
+		uint8_t dummy[1] = {0};
+        size_t length = 0;
+		printf("Failed, wrong mode: %d\n", mode);
+	}
+    
 	AI_GLASS_INFO("UART_RX_OPC_CMD_GET_WIFI_PARAMETER END\r\n");
 }
 

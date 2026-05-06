@@ -35,15 +35,6 @@
 #define FLASH_MP_MODE_BLOCK_BASE        (FLASH_GYRO_OFFSET_BLOCK_BASE + FLASH_GYRO_OFFSET_BLOCK_SIZE)
 #define FLASH_MP_MODE_BLOCK_SIZE        0x20
 
-//Nor Flash address for storing query info sensor cache
-// #define FLASH_QUERY_INFO_BLOCK_BASE     (FLASH_MP_MODE_BLOCK_BASE + FLASH_MP_MODE_BLOCK_SIZE)
-// #define FLASH_QUERY_INFO_BLOCK_SIZE     0x20
-
-// Flash address for query info sensor cache
-// Offset from FLASH_APP_BASE: 0x1000 (FW_SELECT) + 0x100 (AI_SNAP) + 0x100 (REC)
-//   + 0x100 (LIFE_SNAP) + 0x100 (STREAM) + 0x150 (WIFI_CHANNEL) + 0x20 (GYRO_OFFSET)
-//   + 0x20 (MP_MODE) = 0x1690  + 0x20(COMBINED SENSOR STATUS)
-
 // Todo: Nand Flash Address To Store Snapshot/Record data
 
 #define WIDTH_2K    2560
