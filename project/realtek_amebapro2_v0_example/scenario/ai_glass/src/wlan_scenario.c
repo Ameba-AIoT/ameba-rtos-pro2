@@ -2060,6 +2060,15 @@ static void delete_file_cb(struct httpd_conn *conn)
 			AI_GLASS_MSG("jpg file num = %u\r\n", snapshot_num);
 			uart_resp_get_file_cnt(&dummy_param, film_num, snapshot_num, result);
 			AI_GLASS_INFO("end of UART_RX_OPC_CMD_GET_FILE_CNT\r\n");
+			AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_SD_INFO %lu\r\n", mm_read_mediatime_ms());
+
+			uint64_t device_used_bytes = fatfs_get_used_space_byte();
+			uint64_t device_total_bytes = device_used_bytes + fatfs_get_free_space_byte();
+			uint32_t device_used_Kbytes = (uint32_t)(device_used_bytes / 1024);
+			uint32_t device_total_Kbytes = (uint32_t)(device_total_bytes / 1024);
+			uart_resp_get_sd_info(&dummy_param, device_total_Kbytes, device_used_Kbytes);
+			AI_GLASS_MSG("Get device memory: %lu/%luKB\r\n", device_used_Kbytes, device_total_Kbytes);
+			AI_GLASS_INFO("end of UART_RX_OPC_CMD_GET_SD_INFO %lu\r\n", mm_read_mediatime_ms());
 		}
 		else {
 			WLAN_SCEN_ERR("File name is not extracted successfully\r\n");

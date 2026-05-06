@@ -2633,13 +2633,20 @@ EXIT:
 	return -1;
 }
 
-#define SLICE_SIZE (2 * 1024 * 1024)
+#define SLICE_SIZE (128 * 1024)
+__attribute__((weak)) volatile uint8_t uart_rx_active = 0;
+
 static void video_clean_invalidate_heap(uint32_t *heap_addr, uint32_t heap_size)
 {
 	//dcache_clean_invalidate_by_addr((uint32_t *)heap_addr, heap_size);
 	uint32_t remain_heap_size = heap_size;
+
 	//clean the slice the heap buffer for clean and invalidate to prevent a long blocking of irq
-	while (1) {
+	while (remain_heap_size > 0) {
+		while (uart_rx_active) {
+			vTaskDelay(5);
+		}
+		
 		uint32_t cleaned_size = (heap_size - remain_heap_size) / sizeof(uint32_t);
 		if (remain_heap_size <= SLICE_SIZE) {
 			dcache_clean_invalidate_by_addr((uint32_t *)(heap_addr + cleaned_size), remain_heap_size);
