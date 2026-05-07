@@ -1021,7 +1021,7 @@ uint32_t LwIP_GetLEASETIME(uint8_t idx)
 	return dhcp->offered_t0_lease;
 }
 
-uint32_t  LwIP_GetLEASEUSED(uint8_t idx)
+uint16_t  LwIP_GetLEASEUSED(uint8_t idx)
 {
 	struct netif *pnetif = &xnetif[idx];
 	struct dhcp *dhcp = NULL;

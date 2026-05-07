@@ -559,12 +559,7 @@ int bbm_create_nand(bbm_info_attr *bbm)//For the first time
 	for (i = 0; i < bbm->blk_cnt; i++) { //First time it need to scan the bad block, it need cost time to finish the procedure
 		ret = bbm_info->nand_read_cb(i * bbm->page_per_blk, bbm->page_size + bbm->spare_size, bbm->pbuf);
 
-		if (ret < 0) {
-			printf("nand read fail\r\n");
-			return ret;
-		}
-
-		if (bbm->pbuf[bbm->page_size] != 0xff) {
+		if (bbm->pbuf[bbm->page_size] != 0xff || ret < 0) {
 			bbm->pbbt[bbm->rba_table_index].start_tag = BBM_START_TAG;       /* "BB" */
 			bbm->pbbt[bbm->rba_table_index].bad_block = i;
 			bbm->pbbt[bbm->rba_table_index].end_tag = BBM_END_TAG;       /* "bb" */
@@ -773,6 +768,9 @@ int ftl_init_nand(void)
 		ret = bbm_check_is_init(bbm_info);
 		if (ret == 0) {
 			ret = bbm_create_nand(bbm_info);
+			if (ret < 0) {
+				goto EXIT;
+			}
 		}
 		//ftl_info_bbm_dump();
 #if CONFIG_FTL_VERIFY

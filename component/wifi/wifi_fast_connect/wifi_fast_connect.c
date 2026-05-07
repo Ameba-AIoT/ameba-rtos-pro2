@@ -372,9 +372,13 @@ int wifi_do_fast_connect(void)
 		}
 
 		if (wr_11v_enable) {
+			wifi.roam_en = 1;
 			channel = wr_11v_channel;
 			rtw_memcpy(wifi.bssid.octet, wr_11v_bssid, 6);
-			RTW_API_INFO("[%s] wr_11v_bssid: "MAC_FMT", wr_11v_channel: %d\n\r", __FUNCTION__, MAC_ARG(wr_11v_bssid), wr_11v_channel);
+			extern int rltk_set_roam_previous_ap_mac(u8 * bssid);
+			rltk_set_roam_previous_ap_mac(data->bssid);
+			RTW_API_INFO("[%s] data->bssid: "MAC_FMT", wr_11v_bssid: "MAC_FMT", wr_11v_channel: %d\n\r"
+						 , __FUNCTION__, MAC_ARG(data->bssid), MAC_ARG(wr_11v_bssid), wr_11v_channel);
 		}
 
 		key_id = channel >> 28;
@@ -664,12 +668,23 @@ WIFI_RETRY_LOOP:
 		}
 #if CONFIG_LWIP_LAYER
 		if (ret == RTW_SUCCESS) {
-			LwIP_DHCP(0, DHCP_START);
+
+			if (wr_11v_enable) {
+				extern uint8_t lwip_check_dhcp_resume(void);
+				if (lwip_check_dhcp_resume() == 1) {
+					extern int dhcp_resume(void);
+					printf("\n\rresume DHCP %s\n\r", dhcp_resume() == 0 ? "OK" : "FAIL");
+				} else {
+					LwIP_DHCP(0, DHCP_START);
+				}
+			} else {
+				LwIP_DHCP(0, DHCP_START);
 #if LWIP_VERSION_MAJOR >= 2 && LWIP_VERSION_MINOR >= 1
 #if LWIP_IPV6_DHCP6
-			LwIP_DHCP6(0, DHCP6_START);
+				LwIP_DHCP6(0, DHCP6_START);
 #endif
 #endif
+			}
 		}
 #endif
 		free(data);

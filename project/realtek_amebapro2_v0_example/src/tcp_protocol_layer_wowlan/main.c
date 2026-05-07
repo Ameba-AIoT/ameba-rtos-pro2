@@ -33,6 +33,7 @@
 #define ARP_SLEEPTIME_THRESHOLD 	(5 * 60)
 #define ARP_THRESHOLD_L 	(3)
 #define ARP_THRESHOLD_H 	(8)
+#define ARP_DEAUTH_COUNT_THRESHOLD 	(100)
 __attribute__((section(".retention.data"))) uint16_t retention_arp_interval __attribute__((aligned(32))) = 0;
 __attribute__((section(".retention.data"))) uint16_t retention_deauth_count __attribute__((aligned(32))) = 0;
 #endif
@@ -428,24 +429,40 @@ void tcp_app_task(void *param)
 						rtw_hal_set_arpreq_period(retention_arp_interval);
 					}
 
-					retention_deauth_count++;
+					if (retention_deauth_count < ARP_DEAUTH_COUNT_THRESHOLD) {
+						retention_deauth_count++;
+					}
 				}
-				dcache_clean_invalidate_by_addr((uint32_t *) &retention_deauth_count, sizeof(retention_deauth_count));
-				RTW_API_INFO("[%s] deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, retention_deauth_count, retention_arp_interval);
+
+				if (retention_deauth_count < ARP_DEAUTH_COUNT_THRESHOLD) {
+					dcache_clean_invalidate_by_addr((uint32_t *) &retention_deauth_count, sizeof(retention_deauth_count));
+				}
+				RTW_API_INFO("[%s] (wowlan wake if) deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, retention_deauth_count, retention_arp_interval);
+			} else {
+				rtw_hal_set_arpreq_period(retention_arp_interval);
+				RTW_API_INFO("[%s] (wowlan wake else) deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, retention_deauth_count, retention_arp_interval);
 			}
 		}
 	}  else if (pm_reason & (BIT(9) | BIT(10) | BIT(11) | BIT(12))) { //GPIO wake
 		rtw_hal_set_arpreq_period(retention_arp_interval);
+		RTW_API_INFO("[%s] (GPIO wake) deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, retention_deauth_count, retention_arp_interval);
 
-	} else if (pm_reason & BIT(6)) { //Timer wake
+	} else if (pm_reason & (BIT(0) | BIT(6) | BIT(7) | BIT(8))) { //Timer wake
 		rtw_hal_set_arpreq_period(retention_arp_interval);
+		RTW_API_INFO("[%s] (Timer wake) deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, retention_deauth_count, retention_arp_interval);
 	} else {
+#if 1
 		//Cold boot.
 		retention_arp_interval = 50;
 		retention_deauth_count = 0;
 		dcache_clean_invalidate_by_addr((uint32_t *) &retention_arp_interval, sizeof(retention_arp_interval));
 		dcache_clean_invalidate_by_addr((uint32_t *) &retention_deauth_count, sizeof(retention_deauth_count));
-		RTW_API_INFO("[%s] Cold boot, deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, retention_deauth_count, retention_arp_interval);
+		RTW_API_INFO("[%s] (Cold boot) pm_reason: %x, deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, pm_reason, retention_deauth_count, retention_arp_interval);
+#else
+		//client need read arp interval from client flash(NVRAM) and to set the arp interval
+		rtw_hal_set_arpreq_period(retention_arp_interval);
+		RTW_API_INFO("[%s] (Cold boot) deauth_cnt: %d, arp_interval: %d\n\r", __FUNCTION__, retention_deauth_count, retention_arp_interval);
+#endif
 	}
 #endif
 	//dynamic dtim
@@ -1016,26 +1033,71 @@ void main(void)
 					//	extern uint8_t rtw_hal_read_ch_pno_scan_from_txfifo(uint8_t reason);
 					//	channel = rtw_hal_read_ch_pno_scan_from_txfifo(wowlan_wake_reason);
 					//	printf("\r\nwake up from pno and camp on ch %d\r\n", channel);
-				} else if (wowlan_wake_reason == RX_HW_PATTERN_PKT) {
-					wlan_mcu_ok = 0;
-					uint32_t packet_len = 0;
-					u8 type, category, action;
-					uint8_t *wakeup_packet = rtl8735b_read_wakeup_packet(&packet_len, wowlan_wake_reason);
-					type = *(wakeup_packet);
-					category = *(wakeup_packet + 24);
-					action = *(wakeup_packet + 25);
+				} else if ((wowlan_wake_reason == RX_HW_PATTERN_PKT) || (wowlan_wake_reason == RX_WPA3_11V_PKT)) {
 					//check action frame(0xd0) and 11v(Category code/Action code)
-					if ((type == 0xd0) && (category == 0x0a) && (action == 0x07)) {
-						RTW_API_INFO("[%s] Wakeup from 11v\n\r", __FUNCTION__);
-						uint8_t bssid[6];
-						uint8_t channel = 0;
-						//Get btm from 11v to get channel / bssid
-						memcpy(bssid, wakeup_packet + 33, 6);
-						channel = *(wakeup_packet + 44);
-						extern void wifi_set_11v_ch_bssid(uint8_t channel, uint8_t *bssid);
-						wifi_set_11v_ch_bssid(channel, bssid);
+					if (wowlan_wake_reason == RX_HW_PATTERN_PKT) {
+						wlan_mcu_ok = 0;
+						uint32_t packet_len = 0;
+						u8 type, category, action, req_mode, disassc_imm, ess_disassc_imm;
+						u16 disassoc_tmr = 0;
+						uint8_t *wakeup_packet = rtl8735b_read_wakeup_packet(&packet_len, wowlan_wake_reason);
+						type = *(wakeup_packet);
+						category = *(wakeup_packet + 24);
+						action = *(wakeup_packet + 25);
+						req_mode = *(wakeup_packet + 27);
+						if (req_mode & BIT(2)) {
+							disassc_imm = 1;
+						}
+						if (req_mode & BIT(4)) {
+							ess_disassc_imm = 1;
+						}
+						memcpy(&disassoc_tmr, wakeup_packet + 28, 2);
+
+						printf("type=0x%02X category=0x%02X action=0x%02X", type, category, action);
+						if ((type == 0xd0) && (category == 0x0a) && (action == 0x07)) {
+							RTW_API_INFO("[%s] Wakeup from 11v\n\r", __FUNCTION__);
+							uint8_t bssid[6];
+							uint8_t channel = 0;
+							//Get btm from 11v to get channel / bssid
+							memcpy(bssid, wakeup_packet + 33, 6);
+							channel = *(wakeup_packet + 44);
+							extern void wifi_set_11v_ch_bssid(uint8_t channel, uint8_t *bssid);
+							wifi_set_11v_ch_bssid(channel, bssid);
+							tcp_resume = 1;
+						}
+						free(wakeup_packet);
+					} else {
+						wlan_mcu_ok = 0;
+						uint32_t packet_len = 0;
+						u8 type, category, action, req_mode, disassc_imm, ess_disassc_imm;
+						u16 disassoc_tmr = 0;
+						uint8_t *wakeup_packet = rtl8735b_read_wakeup_packet(&packet_len, wowlan_wake_reason);
+						type = *(wakeup_packet);
+						category = *(wakeup_packet + 32);
+						action = *(wakeup_packet + 33);
+						req_mode = *(wakeup_packet + 35);
+						if (req_mode & BIT(2)) {
+							disassc_imm = 1;
+						}
+						if (req_mode & BIT(4)) {
+							ess_disassc_imm = 1;
+						}
+						memcpy(&disassoc_tmr, wakeup_packet + 36, 2);
+
+						printf("type=0x%02X category=0x%02X action=0x%02X", type, category, action);
+						if ((type == 0xd0) && (category == 0x0a) && (action == 0x07)) {
+							RTW_API_INFO("[%s] Wakeup from 11v\n\r", __FUNCTION__);
+							uint8_t bssid[6];
+							uint8_t channel = 0;
+							//Get btm from 11v to get channel / bssid
+							memcpy(bssid, wakeup_packet + 41, 6);
+							channel = *(wakeup_packet + 52);
+							extern void wifi_set_11v_ch_bssid(uint8_t channel, uint8_t *bssid);
+							wifi_set_11v_ch_bssid(channel, bssid);
+							tcp_resume = 1;
+						}
+						free(wakeup_packet);
 					}
-					free(wakeup_packet);
 				} else if (wowlan_wake_reason == FW_PNO_TIMEOUT) {
 					printf("\r\nwake up from pno and no channel can't be scan\r\n");
 				} else if (wowlan_wake_reason == FW_PNO_RECV_BCN_WAKEUP) {
@@ -1230,8 +1292,9 @@ void main(void)
 
 			rtw_hal_read_aoac_rpt_from_txfifo(NULL, 0, 0);
 
-			uint16_t dhcp_lease_used = rtw_hal_read_wowlan_lease_used();
-			extern uint8_t lwip_set_dhcp_resume_lease_used(uint16_t lease_used);
+			uint32_t dhcp_lease_used = rtw_hal_read_wowlan_lease_used();
+			printf("\r\ndhcp_lease_used = %d\r\n", dhcp_lease_used);
+			extern uint8_t lwip_set_dhcp_resume_lease_used(uint32_t lease_used);
 			lwip_set_dhcp_resume_lease_used(dhcp_lease_used);
 		}
 	}

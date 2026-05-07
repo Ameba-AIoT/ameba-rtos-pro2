@@ -146,6 +146,10 @@ void wifi_set_802_11v_bss_pkt_offload(void)
 	memcpy((&bss_pattern.mask), data_mask, 6);
 
 	wifi_wowlan_set_pattern(bss_pattern);
+
+	//for wpa3
+	extern void rtw_hal_sw_parser_11v_enable(u8 enable);
+	rtw_hal_sw_parser_11v_enable(1);
 }
 
 #ifdef CONFIG_WOWLAN_TCP_KEEP_ALIVE
@@ -1329,8 +1333,8 @@ int wifi_set_dhcp_offload(void)
 	//dhcp header& body
 	memcpy(eth_frame + sizeof(eth_header) + sizeof(ip_header) + 8, dhcp_payload, len);
 
-	lease_time = LwIP_GetLEASETIME(0) / 60;
-	lease_used_time = LwIP_GetLEASEUSED(0);
+	lease_time = LwIP_GetLEASETIME(0);
+	lease_used_time = LwIP_GetLEASEUSED(0) * 60;
 	if (lease_used_time == 0) {
 		lease_used_time = 1;
 	}

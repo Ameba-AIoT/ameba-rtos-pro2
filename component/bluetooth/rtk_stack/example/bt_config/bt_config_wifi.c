@@ -109,6 +109,7 @@ int BC_req_scan_hdl(BC_band_t band, struct BC_wifi_scan_result *BC_scan_result)
 	uint8_t *pscan_channel;
 	int pscan_config_size;
 	rtw_scan_param_t scan_param;
+	BC_band_t supported_band = BC_BAND_UNKNOWN;
 
 	BC_printf("Scan Request");
 	memset(BC_scan_result, 0, sizeof(struct BC_wifi_scan_result));
@@ -122,6 +123,13 @@ int BC_req_scan_hdl(BC_band_t band, struct BC_wifi_scan_result *BC_scan_result)
 	}
 
 	BC_printf("Scan %s AP\r\n", (band == BC_BAND_2G) ? "2.4G" : "5G");
+
+	supported_band = BC_req_band_hdl();
+	if((supported_band & band) == 0 ) {
+		BC_printf("Can not Scan %s AP\r\n", (band == BC_BAND_2G) ? "2.4G" : "5G");
+		return 0;
+	}
+
 	os_sem_create(&wifi_scan_sema, 0, 1);
 #if defined(CONFIG_BT_CES_DEMO) && CONFIG_BT_CES_DEMO
     /* message CA7 to start wifi scan */

@@ -62,6 +62,7 @@ extern "C" {
 #define RX_ICMP_REPLY                   0x80
 #define ICMP_MAX_SEND                   0x81
 #define MQTT_FW_RX_TCP_PKT_WAKEUP       0x84
+#define RX_WPA3_11V_PKT                 0x82
 
 //wlan lib wowlan api
 
