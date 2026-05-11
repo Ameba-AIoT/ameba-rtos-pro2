@@ -246,22 +246,22 @@ static void video_output_cb(void *param1, void  *param2, uint32_t arg)
 		case VOE_ENC_BUF_OVERFLOW:
 		case VOE_ENC_QUEUE_OVERFLOW:
 			video_dprintf(VIDEO_LOG_MSG, "VOE CH%d ENC %s full (queue/used/out/rsvd) %d/%dKB%dKB%dKB\n"
-							  , enc2out->ch
-							  , enc2out->cmd_status == VOE_ENC_BUF_OVERFLOW ? "buff" : "queue"
-							  , enc2out->enc_time
-							  , enc2out->enc_used >> 10
-							  , voe_info.ch_info[ch].param.out_buf_size >> 10
-							  , voe_info.ch_info[ch].param.out_rsvd_size >> 10);
+						  , enc2out->ch
+						  , enc2out->cmd_status == VOE_ENC_BUF_OVERFLOW ? "buff" : "queue"
+						  , enc2out->enc_time
+						  , enc2out->enc_used >> 10
+						  , voe_info.ch_info[ch].param.out_buf_size >> 10
+						  , voe_info.ch_info[ch].param.out_rsvd_size >> 10);
 			video_encbuf_clean(enc2out->ch, CODEC_H264 | CODEC_HEVC);
 			video_ctrl(enc2out->ch, VIDEO_FORCE_IFRAME, 1);
 			break;
 		case VOE_JPG_BUF_OVERFLOW:
 		case VOE_JPG_QUEUE_OVERFLOW:
 			video_dprintf(VIDEO_LOG_MSG, "VOE CH%d JPG %s full (queue/used/out/rsvd) %d/%dKB\n"
-							  , enc2out->ch
-							  , enc2out->cmd_status == VOE_JPG_BUF_OVERFLOW ? "buff" : "queue"
-							  , enc2out->jpg_time
-							  , enc2out->jpg_used >> 10);
+						  , enc2out->ch
+						  , enc2out->cmd_status == VOE_JPG_BUF_OVERFLOW ? "buff" : "queue"
+						  , enc2out->jpg_time
+						  , enc2out->jpg_used >> 10);
 			//video_encbuf_clean(enc2out->ch, CODEC_JPEG);
 			break;
 		default:
@@ -275,7 +275,7 @@ static void video_output_cb(void *param1, void  *param2, uint32_t arg)
 	if (voe_info.ch_info[ch].forcei == 1) {
 		if (enc2out->codec & (CODEC_H264 | CODEC_HEVC)) {
 			uint8_t *ptr = (uint8_t *)enc2out->enc_addr;
-			
+
 			int is_valid_start_code = (ptr[0] == 0 && ptr[1] == 0 && ptr[2] == 0 && ptr[3] == 1);
 			if (!is_valid_start_code) {
 				video_dprintf(VIDEO_LOG_ERR, "\r\nStream Error: (%d/%d) %x %x %x %x\r\n", enc2out->enc_len, enc2out->finish, *ptr, *(ptr + 1), *(ptr + 2), *(ptr + 3));
@@ -294,7 +294,7 @@ static void video_output_cb(void *param1, void  *param2, uint32_t arg)
 					is_key_info = 1;
 				}
 			}
-			if(is_key_info) {
+			if (is_key_info) {
 				voe_info.ch_info[ch].forcei = 0;
 			} else {
 				goto video_frame_release;
@@ -302,8 +302,8 @@ static void video_output_cb(void *param1, void  *param2, uint32_t arg)
 		}
 	}
 
-	if(voe_info.ch_info[ch].dyn_drop_frame) {
-		if((enc2out->codec & (CODEC_H264 | CODEC_HEVC)) && (voe_info.ch_info[ch].dyn_drop_frame == 1)) {
+	if (voe_info.ch_info[ch].dyn_drop_frame) {
+		if ((enc2out->codec & (CODEC_H264 | CODEC_HEVC)) && (voe_info.ch_info[ch].dyn_drop_frame == 1)) {
 			//when drop last frame force next frame output I frame
 			video_ctrl(enc2out->ch, VIDEO_FORCE_IFRAME, 1);
 		}
@@ -330,15 +330,15 @@ video_frame_release:
 
 	if (enc2out->codec & (CODEC_H264 | CODEC_HEVC)) {
 		video_dprintf(VIDEO_LOG_INF, "(%s-%s)(0x%X -- %d)(ch%d)(wh=%d x %d) \n"
-						, (enc2out->codec & CODEC_H264) != 0 ? "H264" : "HEVC"
-						, (enc2out->type == VCENC_INTRA_FRAME) ? "I" : "P"
-						, enc2out->enc_addr, enc2out->enc_len, enc2out->ch, enc2out->width, enc2out->height);
+					  , (enc2out->codec & CODEC_H264) != 0 ? "H264" : "HEVC"
+					  , (enc2out->type == VCENC_INTRA_FRAME) ? "I" : "P"
+					  , enc2out->enc_addr, enc2out->enc_len, enc2out->ch, enc2out->width, enc2out->height);
 	}
-	
+
 	if ((enc2out->codec & CODEC_JPEG) != 0) {
 		video_encbuf_release(enc2out->ch, CODEC_JPEG, enc2out->jpg_len);
 		enc2out->codec = enc2out->codec & (~CODEC_JPEG);
-	}	
+	}
 
 	if ((enc2out->codec & (CODEC_H264 | CODEC_HEVC)) != 0) {
 		video_encbuf_release(enc2out->ch, enc2out->codec, enc2out->enc_len);
@@ -546,7 +546,7 @@ int video_ctrl(int ch, int cmd, int arg)
 	break;
 	case VIDEO_FORCE_IFRAME: {
 		ret = hal_video_force_i(ch);
-		if(ret == OK) {
+		if (ret == OK) {
 			voe_info.ch_info[ch].forcei = 1;
 		}
 	}
@@ -956,16 +956,16 @@ int video_get_rc(int ch, rate_ctrl_s *rc_ctrl)
 static int video_rc_validate_and_fix(int ch, rate_ctrl_s *rc_ctrl)
 {
 	int ret = RC_SUCESS;
-	
-	if(rc_ctrl->isp_fps || rc_ctrl->fps) {
+
+	if (rc_ctrl->isp_fps || rc_ctrl->fps) {
 		int ispfps, encfps;
 		video_get_realfps(ch, &ispfps, &encfps);
-		if(rc_ctrl->isp_fps > ispfps) {
+		if (rc_ctrl->isp_fps > ispfps) {
 			video_dprintf(VIDEO_LOG_MSG, "[%s] invalid ispfps\r\n", __FUNCTION__);
 			rc_ctrl->isp_fps = 0;
 			ret = ret | RC_ERR_ISPFPS;
 		}
-		if(rc_ctrl->fps > ispfps) {
+		if (rc_ctrl->fps > ispfps) {
 			video_dprintf(VIDEO_LOG_MSG, "[%s] invalid fps\r\n", __FUNCTION__);
 			rc_ctrl->fps = 0;
 			ret = ret | RC_ERR_FPS;
@@ -984,7 +984,7 @@ static int video_rc_validate_and_fix(int ch, rate_ctrl_s *rc_ctrl)
 		ret = ret | RC_ERR_GOP;
 	}
 
-	if(rc_ctrl->minqp || rc_ctrl->maxqp) {
+	if (rc_ctrl->minqp || rc_ctrl->maxqp) {
 		// check if both qp values are set and in valid range
 		if ((rc_ctrl->minqp == 0 || rc_ctrl->maxqp == 0) ||	// Both must be set
 			(rc_ctrl->minqp > rc_ctrl->maxqp) ||			// minqp should not be greater than maxqp
@@ -996,8 +996,8 @@ static int video_rc_validate_and_fix(int ch, rate_ctrl_s *rc_ctrl)
 			ret = ret | RC_ERR_QP;
 		}
 	}
-	
-	if(rc_ctrl->qpMinI || rc_ctrl->qpMaxI) {
+
+	if (rc_ctrl->qpMinI || rc_ctrl->qpMaxI) {
 		// check if both qp values are set and in valid range
 		if ((rc_ctrl->qpMinI == 0 || rc_ctrl->qpMaxI == 0) ||	// Both must be set
 			(rc_ctrl->qpMinI > rc_ctrl->qpMaxI) ||				// qpMinI should not be greater than qpMaxI
@@ -1093,13 +1093,13 @@ void video_set_isp_info(isp_info_t *info)
 
 void video_set_sensor_fps(int max_fps, int min_fps)
 {
-	if(min_fps > max_fps) {
+	if (min_fps > max_fps) {
 		video_dprintf(VIDEO_LOG_ERR, "invalid sensor fps setting\r\n");
 		return;
 	}
 	int cur_min_fps = 0;
 	isp_get_min_fps(&cur_min_fps);
-	if(max_fps >= cur_min_fps) {
+	if (max_fps >= cur_min_fps) {
 		//If raise sensor fps. raise maxfps first.
 		isp_set_max_fps(max_fps);
 		isp_set_min_fps(min_fps);
@@ -1558,7 +1558,7 @@ void video_init_peri(void)
 		}
 
 		// Enable Sensor PWR
-		if(video_pre_init_param.sens_pwr_dis) {
+		if (video_pre_init_param.sens_pwr_dis) {
 			video_dprintf(VIDEO_LOG_INF, "disable sensor power\n");
 		} else {
 			hal_gpio_init(&sensor_en_gpio, g_video_peri_info.pwr_ctrl_pin);
@@ -1954,7 +1954,7 @@ void video_pre_init_procedure(int ch, video_pre_init_params_t *parm)
 		hal_video_isp_set_init_iq_mode(ch, 1);
 		hal_video_set_max_dyn_region_en(ch, 1);
 	}
-	
+
 	if (parm->isp_init_raw) {
 		//for trigger first raw
 		video_dprintf(VIDEO_LOG_INF, "hal_video_isp_init_raw(%d, 1)\r\n", ch);
@@ -1977,12 +1977,17 @@ void video_pre_init_procedure(int ch, video_pre_init_params_t *parm)
 					  parm->zoom_coef[ISP_ZOOM_FILTER_COEF_NUM - 3], parm->zoom_coef[ISP_ZOOM_FILTER_COEF_NUM - 4]);
 		hal_video_isp_zoom_filter_coef_init(ch, &(parm->zoom_coef[0]));
 	}
-	
-	if(parm->init_isp_items.init_wdr_mode == WDR_DIRECT) {
+
+	if (parm->init_isp_items.init_wdr_mode == WDR_DIRECT) {
 		hal_video_set_dir_wdr_level(ch, parm->init_isp_items.init_wdr_level);
 	}
 
 	hal_video_isp_init_dyn_iq_mode(ch, parm->dyn_iq_mode);
+
+	if (parm->isp_gain_mode) {
+		video_dprintf(VIDEO_LOG_INF, "hal_video_set_isp_gain enable %d\r\n", parm->isp_gain);
+		hal_video_set_isp_gain(ch, parm->isp_gain_mode, parm->isp_gain);
+	}
 
 #endif
 }
@@ -2390,7 +2395,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 				goto EXIT;
 			} else {
 				video_dprintf(VIDEO_LOG_INF, "ch%d scale up\r\n", ch);
-				if(v_stream->dyn_scale_up_en == 1 && enc_in_w == origin_width && enc_in_h == origin_height) {
+				if (v_stream->dyn_scale_up_en == 1 && enc_in_w == origin_width && enc_in_h == origin_height) {
 					video_dprintf(VIDEO_LOG_INF, "ch%d hal_video_set_zoom_1x1_up_en = 1\r\n");
 					hal_video_set_zoom_1x1_up_en(ch, 1);
 				}
@@ -2404,7 +2409,8 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 				}
 			}
 		} else {
-			video_dprintf(VIDEO_LOG_ERR, "error:invalid params dyn_scale_up_en %d, resolution %dx%d -> %dx%d\r\n", v_stream->dyn_scale_up_en, origin_width, origin_height, enc_in_w, enc_in_h);
+			video_dprintf(VIDEO_LOG_ERR, "error:invalid params dyn_scale_up_en %d, resolution %dx%d -> %dx%d\r\n", v_stream->dyn_scale_up_en, origin_width, origin_height,
+						  enc_in_w, enc_in_h);
 			status = NOK;
 			goto EXIT;
 		}
@@ -3275,7 +3281,7 @@ void video_get_version()
 	printf("sensor_timestamp: %04d/%02d/%02d \r\n", *(unsigned short *)(snr_voe_ver + 0), snr_voe_ver[2], snr_voe_ver[3]);
 
 	printf("fcs_version: 0x%04X \r\n", fcs_version);
-	
+
 	unsigned char *iq_addr = NULL;
 	iq_addr = video_load_iq(voe_info.iq_addr);
 	memcpy(iq_timestamp, iq_addr + 12, 8);
@@ -4682,7 +4688,7 @@ int video_get_error_group(int error_id)
 #if USE_VIDEO_HR_FLOW
 void video_get_dir_wdr_level(int ch, uint8_t *level) //only for hr flow
 {
-	if(hal_video_get_dir_wdr_level(ch, level) != OK) {
+	if (hal_video_get_dir_wdr_level(ch, level) != OK) {
 		video_dprintf(VIDEO_LOG_MSG, "video_get_dir_wdr_level fail. default set 50\r\n");
 		*level = 50;
 	}
@@ -4690,7 +4696,7 @@ void video_get_dir_wdr_level(int ch, uint8_t *level) //only for hr flow
 
 void video_get_max_dyn_region_idx(int ch, enum hal_isp_ae_region *idx) //only for hr flow
 {
-	if(hal_video_get_max_dyn_region_idx(ch, idx) != OK) {
+	if (hal_video_get_max_dyn_region_idx(ch, idx) != OK) {
 		video_dprintf(VIDEO_LOG_MSG, "video_get_max_dyn_region_idx fail. default set REGION_UPPER_LEFT\r\n");
 		*idx = REGION_UPPER_LEFT;
 	}
@@ -4701,7 +4707,7 @@ static int video_set_dyn_roi(int ch, isp_crop_t *crop_info)
 {
 	int ret = OK;
 	int scale_up_flow = 0;
-	if(video_get_stream_info(ch) == 0) {
+	if (video_get_stream_info(ch) == 0) {
 		video_dprintf(VIDEO_LOG_MSG, "[%s] ch%d not open\r\n", __FUNCTION__, ch);
 		return NOK;
 	}
@@ -4712,10 +4718,10 @@ static int video_set_dyn_roi(int ch, isp_crop_t *crop_info)
 	if (in_width >= out_width && in_height >= out_height) { //scale down
 		video_dprintf(VIDEO_LOG_INF, "[%s] ch%d scale down %dx%d->%dx%d\r\n", __FUNCTION__, ch, in_width, in_height, out_width, out_height);
 	} else if (in_width < out_width && in_height < out_height) {//scale up
-		if(voe_info.scale_up_info.enable == 0) {
+		if (voe_info.scale_up_info.enable == 0) {
 			video_dprintf(VIDEO_LOG_ERR, "[%s] error: scale up not available\r\n", __FUNCTION__);
 			return NOK;
-		} else if(ch != 0) {
+		} else if (ch != 0) {
 			video_dprintf(VIDEO_LOG_ERR, "[%s] error: scale up only available in ch0\r\n", __FUNCTION__);
 			return NOK;
 		}
@@ -4728,29 +4734,29 @@ static int video_set_dyn_roi(int ch, isp_crop_t *crop_info)
 
 	ret = hal_video_set_dynamic_zoom(ch, *crop_info);
 
-	if(ret != OK) {
+	if (ret != OK) {
 		video_dprintf(VIDEO_LOG_ERR, "[%s] error: ch%d %d %d %d %d crop fail\r\n", __FUNCTION__, ch, crop_info->start_x, crop_info->start_y, in_width, in_height);
 		return NOK;
 	} else {
 		voe_info.ch_info[ch].param.use_roi = 1;
 	}
 
-	if(scale_up_flow) {
+	if (scale_up_flow) {
 		//scale-up is effective on the current frame; drop both this frame and the next frame to avoid corruption
 		voe_info.ch_info[0].dyn_drop_frame = 2;
 		//scale up roi need to sync every video channel
-		for(int i = 1; i < MAX_CHANNEL; i++) {
-			if(video_get_stream_info(i)) {
+		for (int i = 1; i < MAX_CHANNEL; i++) {
+			if (video_get_stream_info(i)) {
 				video_dprintf(VIDEO_LOG_INF, "scale up sync to ch %d\r\n", i);
 				ret = hal_video_set_dynamic_zoom(i, *crop_info);
-				if(ret == OK) {
+				if (ret == OK) {
 					voe_info.ch_info[i].param.use_roi = 1;
 				}
 				voe_info.ch_info[i].dyn_drop_frame = 2;
 			}
 		}
 	}
-	
+
 	return ret;
 }
 

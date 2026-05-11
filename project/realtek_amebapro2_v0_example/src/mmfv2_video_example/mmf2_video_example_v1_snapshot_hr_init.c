@@ -15,6 +15,7 @@
 #include "isp_ctrl_api.h"
 #include "librtsremosaic.h"
 #include <ainr.h>
+#include "us_ticker_api.h"
 /*
 Usage Guide:
 1. Please modify sensor driver setting and enable FCS bootup. Only support imx681 and ov13b10.
@@ -72,6 +73,11 @@ Usage Guide:
 				"source":"binary",
 				"file":"ainr_mulaw_1024_imx681.nb"
 			},
+			"ainr_mulaw_1024_ov13b10":{
+				"name" : "ainr_mulaw_1024_ov13b10.nb",
+				"source":"binary",
+				"file":"ainr_mulaw_1024_ov13b10.nb"
+			},
 			"planar_to_nchw_blc_1024":{
 				"name" : "planar_to_nchw_1024_lut.nb",
 				"source":"binary",
@@ -79,6 +85,12 @@ Usage Guide:
 			}
 		}
 	(3) AINR requires 12M DDR. With total DDR = 128 MB, burst mode is not supported.
+
+6. Enable meta data function for faster AE converge
+	(1) #define USE_META_DATA 1
+	(2) For FCS Mode, aslo enable meta data in user boot config
+		component\video\driver\RTL8735B\video_user_boot.c
+		#define META_DATA_TEST
 
 Burst mode:
 
@@ -128,16 +140,17 @@ static mm_siso_t *siso_video_filesaver_v1	= NULL;
 #define JPEG_FPS	sensor_params[USE_SENSOR].sensor_fps
 
 //set output resolution to high reesolution
-#define OUT_IMG_WIDTH sensor_params[sen_id[2]].sensor_width
-#define OUT_IMG_HEIGHT sensor_params[sen_id[2]].sensor_height
-#define OUT_IMG_OVERLAP_WIDTH (((sensor_params[sen_id[3]].sensor_width * 2) - sensor_params[sen_id[2]].sensor_width) / 2)
-#define OUT_IMG_OVERLAP_HEIGHT (((sensor_params[sen_id[3]].sensor_height * 2) - sensor_params[sen_id[2]].sensor_height) / 2)
-
+#define OUT_IMG_WIDTH sensor_params[sen_id[HR_RAW_MODE]].sensor_width
+#define OUT_IMG_HEIGHT sensor_params[sen_id[HR_RAW_MODE]].sensor_height
+#define OUT_IMG_OVERLAP_WIDTH (((sensor_params[sen_id[HR_SEQ_MODE]].sensor_width * 2) - sensor_params[sen_id[HR_RAW_MODE]].sensor_width) / 2)
+#define OUT_IMG_OVERLAP_HEIGHT (((sensor_params[sen_id[HR_SEQ_MODE]].sensor_height * 2) - sensor_params[sen_id[HR_RAW_MODE]].sensor_height) / 2)
 static uint8_t *hr_nv12_image = NULL;
 static uint32_t hr_nv12_size = OUT_IMG_WIDTH * OUT_IMG_HEIGHT * 3 / 2;
 #define SAVE_DBG_IMG 0 //save raw image and NV12 image
 #define BURST_MODE_MAX_COUNT 1 //when set to 1, disable burst mode. for DDR 128M, maaximun can set to 2
-#if USE_SENSOR == SENSOR_IMX681
+#define USE_META_DATA 0
+#define ETGAIN_TOLERANCE_PERCENT 10 //AE converge tolerance: etgain change within this % is considered stable
+#if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_OV13B10)
 #define ENABLE_AINR 1
 #else
 #define ENABLE_AINR 0
@@ -147,7 +160,8 @@ static enum hal_isp_ae_region max_dyn_region_idx = 0; // Data range: 0 ~ 3. 0: u
 static int tiled_nv12_cnt = 0;
 static video_pre_init_params_t init_params;
 static ainr_ctx_t *ainr_ctx = NULL;
-
+static int isp_gain = 256;
+static int drc_blending_rate = 15;
 /*
 allocate virt addr and free virt addr
 dma use phy addr
@@ -196,7 +210,8 @@ OUT_IMG_WIDTH => full width
 h => full height
 */
 __attribute__((optimize("-O2")))
-static int yuv420stitch_step_4c(uint8_t *tiled_yuv, uint8_t *output_buf, const uint16_t w, const uint16_t h, const uint16_t overlap_width, const uint16_t overlap_height, uint32_t * const out_size, const enum file_process_status proc_stat)
+static int yuv420stitch_step_4c(uint8_t *tiled_yuv, uint8_t *output_buf, const uint16_t w, const uint16_t h, const uint16_t overlap_width,
+								const uint16_t overlap_height, uint32_t *const out_size, const enum file_process_status proc_stat)
 {
 	const uint16_t w_half = w / 2;
 	const uint16_t w_tiled = w_half + overlap_width;
@@ -256,31 +271,29 @@ static void get_remosaiced_cord(uint16_t x, uint16_t y, uint16_t *rm_x, uint16_t
 	*rm_x = x;
 	*rm_y = y;
 	switch (x & 0x3) {
-		case 1:
-			// 1 -> 2
-			*rm_x += 1;
-			break;
-		case 2:
-			// 2 -> 1
-			*rm_x -= 1;
-			break;
+	case 1:
+		// 1 -> 2
+		*rm_x += 1;
 		break;
-		default:
-			break;
+	case 2:
+		// 2 -> 1
+		*rm_x -= 1;
+		break;
+	default:
+		break;
 	}
 	switch (y & 0x3) {
-		case 1:
-			// 1 -> 2
-			*rm_y += 1;
-			break;
-		case 2:
-			// 2 -> 1
-			*rm_y -= 1;
-			break;
+	case 1:
+		// 1 -> 2
+		*rm_y += 1;
 		break;
-		default:
-			break;
-    }
+	case 2:
+		// 2 -> 1
+		*rm_y -= 1;
+		break;
+	default:
+		break;
+	}
 }
 
 static void *alloc_split_raw_item(splited_raw_item_t *splited_raw, uint32_t split_raw_size)
@@ -299,9 +312,9 @@ static void *alloc_split_raw_item(splited_raw_item_t *splited_raw, uint32_t spli
 
 	uintptr_t base_addr = (uintptr_t)splited_raw->virt_addr;
 	uintptr_t aligned_addr = (base_addr + align_size - 1) & ~(uintptr_t)(align_size - 1);
-	
-	for(int i = 0; i < SPLIT_RAW_NUM; i++) {
-		splited_raw->phy_addr[i] = (void*)(aligned_addr + i * split_raw_size_align);
+
+	for (int i = 0; i < SPLIT_RAW_NUM; i++) {
+		splited_raw->phy_addr[i] = (void *)(aligned_addr + i * split_raw_size_align);
 	}
 
 	return splited_raw->virt_addr;
@@ -309,22 +322,22 @@ static void *alloc_split_raw_item(splited_raw_item_t *splited_raw, uint32_t spli
 
 static void free_split_raw_item(splited_raw_item_t *splited_raw)
 {
-	if(splited_raw->virt_addr) {
+	if (splited_raw->virt_addr) {
 		free(splited_raw->virt_addr);
 		splited_raw->virt_addr = NULL;
 	}
-	for(int i = 0; i < SPLIT_RAW_NUM; i++) {
+	for (int i = 0; i < SPLIT_RAW_NUM; i++) {
 		splited_raw->phy_addr[i] = NULL;
 	}
 }
 
 static void config_verification_path_buf_4c(struct verify_ctrl_config *v_cfg, const uint32_t img_buf_addr[4],
-	const uint16_t w, const uint16_t h, const uint16_t overlap_width, const uint16_t overlap_height)
+		const uint16_t w, const uint16_t h, const uint16_t overlap_width, const uint16_t overlap_height)
 {
 	const uint32_t y_len = (w / 2 + overlap_width) * (h / 2 + overlap_height);
 	const uint32_t uv_len = y_len;
 
-	if(v_cfg == NULL) {
+	if (v_cfg == NULL) {
 		printf("[%s] fail\r\n", __FUNCTION__);
 		return;
 	}
@@ -368,13 +381,13 @@ static void config_verification_path_buf_4c(struct verify_ctrl_config *v_cfg, co
 		v_cfg->verify_nlsc_center[i].verify_nlsc_bcenter_x = center_x;
 		v_cfg->verify_nlsc_center[i].verify_nlsc_bcenter_y = center_y;
 	}
-	for(int i = 0; i < SPLIT_RAW_NUM; i++) {
+	for (int i = 0; i < SPLIT_RAW_NUM; i++) {
 		SCB_CleanDCache_by_Addr((uint32_t *)img_buf_addr[i], y_len + uv_len);
 	}
 }
 
 #define IMG_WRITE_SIZE          4096
-static int save_file_to_sd(char* fp, uint8_t *file_buf, uint32_t buf_size)
+static int save_file_to_sd(char *fp, uint8_t *file_buf, uint32_t buf_size)
 {
 	FILE *m_file;
 	if (!file_buf) {
@@ -386,9 +399,9 @@ static int save_file_to_sd(char* fp, uint8_t *file_buf, uint32_t buf_size)
 		printf("Open file to write failed!!! %s\r\n", fp);
 		return -1;
 	}
-    for (uint32_t i = 0; i < buf_size; i += IMG_WRITE_SIZE) {
-        fwrite(file_buf + i, 1, ((i + IMG_WRITE_SIZE) >= buf_size) ? (buf_size - i) : IMG_WRITE_SIZE, m_file);
-    }
+	for (uint32_t i = 0; i < buf_size; i += IMG_WRITE_SIZE) {
+		fwrite(file_buf + i, 1, ((i + IMG_WRITE_SIZE) >= buf_size) ? (buf_size - i) : IMG_WRITE_SIZE, m_file);
+	}
 	//int count = fwrite(file_buf, buf_size, 1, m_file);
 	fclose(m_file);
 	return 0;
@@ -421,16 +434,25 @@ static void file_process(char *file_path, uint32_t data_addr, uint32_t data_size
 	img_buf_size = OUT_IMG_WIDTH * OUT_IMG_HEIGHT * 2;
 	uint32_t out_size;
 
-	if(file_proc_cmd == SPLIT_RAW_IMAGE) {
+	if (file_proc_cmd == SPLIT_RAW_IMAGE) {
 		//get 12M raw.
 		printf("12M raw 0x%x, data len = %lu\r\n", data_addr, data_size);
-#if ENABLE_AINR && (USE_SENSOR == SENSOR_IMX681)
-		if(init_params.isp_ae_init_gain > (256 * 12)) {
-			// IMX681 AINR flow for exposure gain > 12x
+#if ENABLE_AINR
+#if USE_SENSOR == SENSOR_IMX681
+		if (init_params.isp_ae_init_gain > (256 * 12)) { // IMX681 AINR flow for exposure gain > 12x
+#else
+		if (init_params.isp_ae_init_gain >= (256 * 12)) { // OV13B10 AINR flow for exposure gain >= 12x
+#endif
 			if (ainr_ctx == NULL) {
 				ainr_ctx = ainr_init();
 			}
-			if(ainr_ctx) {
+			if (ainr_ctx) {
+#if USE_SENSOR == SENSOR_IMX681
+				//workaround imx681 ainr model rgain, bgain shift
+				init_params.isp_awb_init_rgain = init_params.isp_awb_init_rgain * 9 / 10;
+				init_params.isp_awb_init_bgain = init_params.isp_awb_init_bgain * 9 / 10;
+#endif
+
 				uint8_t *ainr_raw_image = splited_raw_image[raw_index].virt_addr;
 				uint32_t ainr_raw_image_size = data_size;
 				if (ainr_process_frame(ainr_ctx, (const void *)data_addr, ainr_raw_image, ainr_raw_image_size, 256) != OK) {
@@ -449,15 +471,15 @@ static void file_process(char *file_path, uint32_t data_addr, uint32_t data_size
 		//temporary use split raw memory for 12M raw buffer
 		raw_image = splited_raw_image[raw_index].virt_addr;
 		raw_image_size = data_size;
-		if(raw_image) {
-			raw_reform(raw_image, (uint8_t*)data_addr, raw_image_size);
+		if (raw_image) {
+			raw_reform(raw_image, (uint8_t *)data_addr, raw_image_size);
 			char rawfilename[128] = "sd:/12M.raw";
 			snprintf(rawfilename, sizeof(rawfilename), "sd:/12M_%d.raw", raw_index);
-			save_file_to_sd(rawfilename,  (uint8_t *)raw_image, raw_image_size);
+			save_file_to_sd(rawfilename, (uint8_t *)raw_image, raw_image_size);
 			printf("save %s\r\n", rawfilename);
 		} else {
 			printf("raw image malloc fail\r\n");
-			return; 
+			return;
 		}
 #endif
 		file_proc_stat = SPLIT_RAW_IMAGE_START;
@@ -466,15 +488,15 @@ static void file_process(char *file_path, uint32_t data_addr, uint32_t data_size
 		for (uint8_t i = 0; i < SPLIT_RAW_NUM; i++) {
 			tiled_raws[i] = (uint8_t *)splited_raw_image[raw_index].phy_addr[i];
 		}
-		
-		cap_raw_tiling_with_remosaic_4c((uint8_t*)data_addr, tiled_raws, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_OVERLAP_WIDTH, OUT_IMG_OVERLAP_HEIGHT, REMOSAIC_DISABLE, REMOSAIC_DIRECT_MODE, GR);
+
+		cap_raw_tiling_with_remosaic_4c((uint8_t *)data_addr, tiled_raws, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_OVERLAP_WIDTH, OUT_IMG_OVERLAP_HEIGHT,
+										REMOSAIC_DISABLE, REMOSAIC_DIRECT_MODE, GR);
 		/*for(int i = 0; i < SPLIT_RAW_NUM; i++) {
 			printf("tiled_raws_%d: 0x%x\r\n", i, tiled_raws[i]);
 		}*/
 
-	} else if(file_proc_cmd == MERGE_NV12_IMAGE) {
-		switch (file_proc_stat)
-		{
+	} else if (file_proc_cmd == MERGE_NV12_IMAGE) {
+		switch (file_proc_stat) {
 		case PROCESS_START:
 		case MERGE_UL_NV12_1:
 		case MERGE_UR_NV12_1:
@@ -519,8 +541,19 @@ static int hr_init_ae_awb(video_pre_init_params_t *init_params, int wait_ae_time
 	init_params->init_isp_items.init_wdr_level = 50;
 	init_params->init_max_dyn_region_en = 1;
 	init_params->sens_pwr_dis = 0;
+	init_params->isp_gain_mode = 0;
+#if USE_META_DATA
+	unsigned char uuid[16] = {0xc7, 0x98, 0x2c, 0x28, 0x0a, 0xfc, 0x49, 0xe6, 0xaa, 0xe4, 0x7f, 0x8f, 0x64, 0xee, 0x65, 0x01};
+	init_params->meta_enable = 1;
+	init_params->meta_size = VIDEO_META_USER_SIZE;
+	memcpy(init_params->video_meta_uuid, uuid, VIDEO_META_UUID_SIZE);
+	video_v1_params.meta_enable = 1;
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_META_CB, MMF_VIDEO_DEFAULT_META_CB);
+	init_params->video_drop_enable = 1;
+	init_params->video_drop_frame = 6; //during Fast AE, AE values remain unchanged. drop frames to avoid AE converge check issue.
+#endif
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)init_params);
- 	video_v1_params.direct_output = 1;
+	video_v1_params.direct_output = 0; //direct_output=1 drops frames before meta data is written
 	video_v1_params.out_mode = 2; //set to contiuous mode
 	video_v1_params.width = sensor_params[sen_id[sen_drv_mode_id]].sensor_width;
 	video_v1_params.height = sensor_params[sen_id[sen_drv_mode_id]].sensor_height;
@@ -529,55 +562,117 @@ static int hr_init_ae_awb(video_pre_init_params_t *init_params, int wait_ae_time
 	video_v1_params.ext_fmt = 0;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_PARAMS, (int)&video_v1_params);
 	//video open in normal resolution, and wait ae converge. (FCS mode can save time.)
-	if(mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL) != OK) {
+	if (mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL) != OK) {
 		return NOK;
 	}
-	int last_ae_time = 0, last_ae_gain = 0;
-	int ae_time, ae_gain, awb_rgain, awb_bgain;
+	unsigned long tick1 = us_ticker_read();
+	int last_ae_time = 0, last_ae_gain = 0, last_frame_cnt = 0;
+	int ae_time, ae_gain, awb_rgain, awb_bgain, frame_cnt;
+#if USE_META_DATA
+	video_meta_t meta_data;
+	memset(&meta_data, 0, sizeof(meta_data));
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_GET_META_DATA, (int)&meta_data);
+	while (meta_data.isp_statis_meta == 0 || (meta_data.isp_statis_meta && meta_data.isp_statis_meta->exposure_h == 0)) {
+		vTaskDelay(34);
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_GET_META_DATA, (int)&meta_data);
+	}
+	frame_cnt = meta_data.isp_statis_meta->frame_count;
+	ae_time = meta_data.isp_statis_meta->exposure_h;
+	ae_gain = meta_data.isp_statis_meta->gain_h;
+#else
 	isp_get_exposure_time(&ae_time);
 	isp_get_ae_gain(&ae_gain);
+#endif
 	int wait_time = 0;
-	while((ae_time != last_ae_time) || (ae_gain != last_ae_gain)) {
+	uint64_t last_etgain = (uint64_t)last_ae_time * last_ae_gain;
+	uint64_t etgain = (uint64_t)ae_time * ae_gain;
+	while (1) {
+		uint64_t etgain_diff = etgain > last_etgain ? etgain - last_etgain : last_etgain - etgain;
+		// converged when etgain change is within ETGAIN_TOLERANCE_PERCENT%
+		// max: ae_time=200000, ae_gain=96*256=24576
+		if (etgain_diff <= last_etgain * ETGAIN_TOLERANCE_PERCENT / 100) {
+			break;
+		}
+#if USE_META_DATA
+		vTaskDelay(34);
+		wait_time += 34;
+		last_frame_cnt = frame_cnt;
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_GET_META_DATA, (int)&meta_data);
+		if (meta_data.isp_statis_meta == NULL) {
+			printf("[%s] isp_statis_meta became NULL unexpectedly\r\n", __FUNCTION__);
+			break;
+		}
+		frame_cnt = meta_data.isp_statis_meta->frame_count;
+		if (last_frame_cnt != frame_cnt) {
+			last_ae_time = ae_time;
+			last_ae_gain = ae_gain;
+			last_etgain = etgain;
+			ae_time = meta_data.isp_statis_meta->exposure_h;
+			ae_gain = meta_data.isp_statis_meta->gain_h;
+			etgain = (uint64_t)ae_time * ae_gain;
+			//printf("frame %d -> %d\r\n", last_frame_cnt, frame_cnt);
+			//printf("ae time %d->%d\r\n", last_ae_time, ae_time);
+			//printf("ae gain %d->%d\r\n", last_ae_gain, ae_gain);
+			//printf("etgain %llu->%llu\r\n", last_etgain, etgain);
+		}
+#else
 		vTaskDelay(100);
 		wait_time += 100;
 		last_ae_time = ae_time;
 		last_ae_gain = ae_gain;
+		last_etgain = etgain;
 		isp_get_exposure_time(&ae_time);
 		isp_get_ae_gain(&ae_gain);
-		//printf("ae time %d->%d\r\n", last_ae_time, ae_time);
-		//printf("ae gain %d->%d\r\n", last_ae_gain, ae_gain);
-		if(wait_time >= wait_ae_timeout) {
+		etgain = (uint64_t)ae_time * ae_gain;
+#endif
+		if (wait_time >= wait_ae_timeout) {
 			printf("wait ae stable timeout\r\n");
-			break;	
+			break;
 		}
 	}
+#if USE_META_DATA
+	awb_rgain = meta_data.isp_statis_meta->wb_r_gain;
+	awb_bgain = meta_data.isp_statis_meta->wb_b_gain;
+#else
 	isp_get_red_balance(&awb_rgain);
 	isp_get_blue_balance(&awb_bgain);
+#endif
+	printf("\r\nae converge use %dus.\n", (us_ticker_read() - tick1));
 
 	video_get_max_dyn_region_idx(JPEG_CHANNEL, &max_dyn_region_idx);
 	//printf("video_get_dyn_region_idx value %d\r\n", max_dyn_region_idx);
-	
+
 	uint8_t direct_wdr_level = 0;
 	video_get_dir_wdr_level(JPEG_CHANNEL, &direct_wdr_level);
 	init_params->init_isp_items.init_wdr_level = direct_wdr_level;
-	//printf("video_get_dir_wdr_level value %u\r\n", direct_wdr_level);
+
+	isp_get_isp_gain(&isp_gain);
+	isp_get_drc_blending_rate(&drc_blending_rate);
+	printf(" DRC region: %d, WDR level: %u, ISP gain: %d, DRC rate: %d\r\n", max_dyn_region_idx, direct_wdr_level, isp_gain, drc_blending_rate);
 
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
 
 	//set ae, awb init parameters for high resolution (12M) snapshot
 	init_params->isp_ae_enable = 1;
-	if(ae_gain >= 1024) { //ae gain >= 4x
+	if (ae_gain >= 1024) { //ae gain >= 4x
 		init_params->isp_ae_init_exposure = ae_time << 1;
 		init_params->isp_ae_init_gain = ae_gain >> 1;
-	}
-	else {
+		init_params->isp_gain = MAX(isp_gain / 2, 256);
+	} else {
 		init_params->isp_ae_init_exposure = ae_time;
 		init_params->isp_ae_init_gain = ae_gain;
+		init_params->isp_gain = isp_gain;
 	}
 	printf("ae time %d gain %d\r\n", init_params->isp_ae_init_exposure, init_params->isp_ae_init_gain);
 	init_params->isp_awb_enable = 1;
 	init_params->isp_awb_init_rgain = awb_rgain;
 	init_params->isp_awb_init_bgain = awb_bgain;
+
+#if USE_META_DATA
+	init_params->meta_enable = 0;
+	init_params->video_drop_enable = 0;
+	video_v1_params.meta_enable = 0;
+#endif
 	return OK;
 }
 
@@ -593,6 +688,7 @@ static int hr_raw_capture(video_pre_init_params_t *init_params, int proc_raw_idx
 	init_params->dyn_iq_mode = 0;
 	init_params->init_max_dyn_region_en = 0;
 	init_params->sens_pwr_dis = 0;
+	init_params->isp_gain_mode = 0;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)init_params);
 	video_v1_params.direct_output = 0;
 	video_v1_params.out_mode = 2; //set to contiuous mode
@@ -602,31 +698,31 @@ static int hr_raw_capture(video_pre_init_params_t *init_params, int proc_raw_idx
 	video_v1_params.type = VIDEO_NV16;
 	video_v1_params.ext_fmt = 0;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_PARAMS, (int)&video_v1_params);
-	
+
 	//split 12M raw into 2 * 6M raw
 	file_proc_cmd = SPLIT_RAW_IMAGE;
 	file_proc_stat = PROCESS_START;
 	raw_index = proc_raw_idx;
 	video_set_isp_ch_buf(JPEG_CHANNEL, 1);
 	int timeout_count = 0;
-	if(mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL) != OK) {
+	if (mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL) != OK) {
 		return NOK;
 	}
-	while(file_proc_stat != SPLIT_RAW_IMAGE_START) {
+	while (file_proc_stat != SPLIT_RAW_IMAGE_START) {
 		vTaskDelay(1);
 		timeout_count++;
-		if(timeout_count > 100000) {
+		if (timeout_count > 100000) {
 			printf("wait hr raw process start timeout\r\n");
 			ret = NOK;
 			break;
 		}
 	}
 	//process raw image and video close simutaneously.
-	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);	
-	while(file_proc_stat != PROCESS_DONE) {
+	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
+	while (file_proc_stat != PROCESS_DONE) {
 		vTaskDelay(1);
 		timeout_count++;
-		if(timeout_count > 100000) {
+		if (timeout_count > 100000) {
 			printf("wait hr raw timeout\r\n");
 			ret = NOK;
 			break;
@@ -641,7 +737,7 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 	//switch to verify sequece driver
 	int sen_drv_mode_id = HR_SEQ_MODE;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_SENSOR_ID, sen_drv_mode_id);
-	if(init_params->v_cfg == NULL) {
+	if (init_params->v_cfg == NULL) {
 		init_params->v_cfg = malloc(sizeof(struct verify_ctrl_config));
 	}
 	//sent 4 * 3M raw to voe
@@ -656,6 +752,7 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 	init_params->init_isp_items.init_wdr_mode = WDR_DIRECT;
 	init_params->init_max_dyn_region_en = 0;
 	init_params->sens_pwr_dis = 1;
+	init_params->isp_gain_mode = 1;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)init_params);
 	video_v1_params.direct_output = 0;
 	video_v1_params.out_mode = 2; //set to contiuous mode
@@ -673,10 +770,13 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 	video_set_isp_ch_buf(JPEG_CHANNEL, 2);
 	int timeout_count = 0;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL);
-	while(file_proc_stat != PROCESS_DONE) {
+	int drc_mode = DRC_MANUAL;
+	isp_set_drc_mode(drc_mode);
+	isp_set_drc_blending_rate(drc_blending_rate);
+	while (file_proc_stat != PROCESS_DONE) {
 		vTaskDelay(1);
 		timeout_count++;
-		if(timeout_count > 100000) {
+		if (timeout_count > 100000) {
 			printf("hr nv12 convert timeout\r\n");
 			ret = NOK;
 			break;
@@ -684,14 +784,14 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 	}
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
 
-#if SAVE_DBG_IMG	
+#if SAVE_DBG_IMG
 	char nv12filename[128] = "sd:/12M.nv12";
 	snprintf(nv12filename, sizeof(nv12filename), "sd:/12M_%d.nv12", proc_raw_idx);
-	save_file_to_sd(nv12filename,  (uint8_t *)hr_nv12_image, hr_nv12_size);
+	save_file_to_sd(nv12filename, (uint8_t *)hr_nv12_image, hr_nv12_size);
 	printf("save %s\r\n", nv12filename);
 #endif
 
-	if(init_params->v_cfg) {
+	if (init_params->v_cfg) {
 		free(init_params->v_cfg);
 		init_params->v_cfg = NULL;
 	}
@@ -704,8 +804,8 @@ static char jpgfilename[128] = "sd:/12M.jpg";
 static void hr_jpg_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 {
 	printf("jpeg addr=%x, len=%lu\r\n", jpeg_addr, jpeg_len);
-	save_file_to_sd(jpgfilename, (uint8_t*)jpeg_addr, jpeg_len);
-	printf("save %s\r\n", jpgfilename);	
+	save_file_to_sd(jpgfilename, (uint8_t *)jpeg_addr, jpeg_len);
+	printf("save %s\r\n", jpgfilename);
 	jpg_save_done = 1;
 }
 static int hr_nv12_to_jpeg(video_pre_init_params_t *init_params, int jpg_save_timeout, int jpg_idx)
@@ -729,10 +829,10 @@ static int hr_nv12_to_jpeg(video_pre_init_params_t *init_params, int jpg_save_ti
 	jpg_save_done = 0;
 	if (mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_EXT_INPUT, (int)hr_nv12_image) == OK) {
 		int jpeg_wait_time = 0;
-		while(!jpg_save_done) {
+		while (!jpg_save_done) {
 			vTaskDelay(1);
 			jpeg_wait_time++;
-			if(jpeg_wait_time > jpg_save_timeout) {
+			if (jpeg_wait_time > jpg_save_timeout) {
 				printf("hr jpg save timeout\r\n");
 				ret = NOK;
 				break;
@@ -742,7 +842,7 @@ static int hr_nv12_to_jpeg(video_pre_init_params_t *init_params, int jpg_save_ti
 		ret = NOK;
 	}
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
-	
+
 	return ret;
 }
 
@@ -762,13 +862,13 @@ void mmf2_video_example_v1_snapshot_hr_init(void)
 	printf("\r\n voe heap size = %d\r\n", voe_heap_size);
 	printf("output resolution w=%d, h=%d, overlap_width=%d, overlap_height=%d\r\n", OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_OVERLAP_WIDTH, OUT_IMG_OVERLAP_HEIGHT);
 	printf("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
-	
+
 	//prevent memory fragment, allocate hr splited raw buffer
-	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
+	for (int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
 		int tiled_w = OUT_IMG_WIDTH / 2 + OUT_IMG_OVERLAP_WIDTH;
 		int tiled_h = OUT_IMG_HEIGHT / 2 + OUT_IMG_OVERLAP_HEIGHT;
 		uint32_t tiled_img_size = tiled_w * tiled_h * 2;
-		if(alloc_split_raw_item(&(splited_raw_image[i]), tiled_img_size) == NULL) {
+		if (alloc_split_raw_item(&(splited_raw_image[i]), tiled_img_size) == NULL) {
 			printf("splited raw image malloc failed\n");
 			printf("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
 			goto mmf2_video_exmaple_v1_shapshot_hr_fail;
@@ -776,10 +876,10 @@ void mmf2_video_example_v1_snapshot_hr_init(void)
 	}
 
 	//prevent memory fragment, allocate hr nv12 buffer
-	if(hr_nv12_image == NULL) {
+	if (hr_nv12_image == NULL) {
 		hr_nv12_image = malloc(hr_nv12_size);
 	}
-	if(hr_nv12_image == NULL) {
+	if (hr_nv12_image == NULL) {
 		printf("hr_nv12_image malloc fail\r\n");
 		printf("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
 		goto mmf2_video_exmaple_v1_shapshot_hr_fail;
@@ -812,8 +912,8 @@ void mmf2_video_example_v1_snapshot_hr_init(void)
 	} else {
 		rt_printf("filesaver open fail\n\r");
 		goto mmf2_video_exmaple_v1_shapshot_hr_fail;
-	}	
-	
+	}
+
 	siso_video_filesaver_v1 = siso_create();
 	if (siso_video_filesaver_v1) {
 #if defined(configENABLE_TRUSTZONE) && (configENABLE_TRUSTZONE == 1)
@@ -826,40 +926,40 @@ void mmf2_video_example_v1_snapshot_hr_init(void)
 		rt_printf("siso_array_filesaver open fail\n\r");
 		goto mmf2_video_exmaple_v1_shapshot_hr_fail;
 	}
-	
-	if(hr_init_ae_awb(&init_params, 1000) == NOK) {
+
+	if (hr_init_ae_awb(&init_params, 1000) == NOK) {
 		goto mmf2_video_exmaple_v1_shapshot_hr_fail;
 	}
-	
-	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
-		if(hr_raw_capture(&init_params, i) == NOK) {
+
+	for (int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
+		if (hr_raw_capture(&init_params, i) == NOK) {
 			goto mmf2_video_exmaple_v1_shapshot_hr_fail;
 		}
 	}
 
-	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
-		if(hr_raw_to_nv12(&init_params, i) == NOK) {
+	for (int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
+		if (hr_raw_to_nv12(&init_params, i) == NOK) {
 			goto mmf2_video_exmaple_v1_shapshot_hr_fail;
 		}
-		if(hr_nv12_to_jpeg(&init_params, 10000, i) == NOK) {
+		if (hr_nv12_to_jpeg(&init_params, 10000, i) == NOK) {
 			goto mmf2_video_exmaple_v1_shapshot_hr_fail;
 		}
 	}
-	
+
 mmf2_video_exmaple_v1_shapshot_hr_fail:
 
 	printf("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
 	video_voe_release();
 
-	if(ainr_ctx) {
+	if (ainr_ctx) {
 		ainr_deinit(ainr_ctx);
 	}
-	
-	for(int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
+
+	for (int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
 		free_split_raw_item(&(splited_raw_image[i]));
 	}
 
-	if(hr_nv12_image) {
+	if (hr_nv12_image) {
 		free(hr_nv12_image);
 		hr_nv12_image = NULL;
 	}
