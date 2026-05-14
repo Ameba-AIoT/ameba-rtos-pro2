@@ -387,6 +387,8 @@ void tcp_app_task(void *param)
 	wifi_set_ntp_offload(server_name, 1, 60 * 60 * 1000);
 
 	if (set_tcpkaenable) {
+		//select arp target ip
+		wowlan_set_arp_target_ip(ACITVE_ARP_DHCP_MODE);
 		// set keepalive
 		extern int wifi_set_tcp_protocol_keepalive_offload(int socket_fd, uint8_t power_bit);
 		wifi_set_tcp_protocol_keepalive_offload(sock_fd, tcp_ka_power_bit);

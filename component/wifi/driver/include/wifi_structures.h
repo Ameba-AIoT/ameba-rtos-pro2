@@ -526,6 +526,14 @@ struct  wifi_user_conf {
 	unsigned char wifi_debug_enabled;
 
 	/*
+	The active_keepalive_mode is used to select arp request with difference ip
+	0: send arp request with dhcp server ip address
+	1: send arp request with gw server ip address
+	2: send arp request with gw server ip address first, if gw isn't exist, pro2 will send arp request with dhcp server ip
+	*/
+	unsigned char active_keepalive_mode;
+        
+	/*
 	The active_keepalive_enabled is used to enable active keep alive to send keepalive packet.
 	bit 0: (0: disable to send unicast arp request, 1:  enable to send unicast arp request)
 	*/

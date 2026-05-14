@@ -2279,7 +2279,7 @@ uint8_t lwip_set_dhcp_resume_t1(uint16_t t1_time)
   return 0;
 }
 
-uint8_t lwip_set_dhcp_resume_lease_used(uint16_t lease_used)
+uint8_t lwip_set_dhcp_resume_lease_used(uint32_t lease_used)
 {
   if (lease_used == 0) {
     dhcp_resume_lease_used = 1;

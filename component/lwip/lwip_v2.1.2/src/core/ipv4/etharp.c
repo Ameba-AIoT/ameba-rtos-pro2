@@ -206,87 +206,136 @@ etharp_free_entry(int i)
 #include <osdep_service.h>
 #include <device_lock.h>
 int arp_timer_count = 0;
+static ip4_addr_t g_arp_ip;
+static int g_acitve_arp_mode;
+
+ip4_addr_t *get_arp_ip(void)
+{
+    char arp_ip_str[16];
+    ip4addr_ntoa_r(&g_arp_ip, arp_ip_str, sizeof(arp_ip_str));
+
+    //printf("[get_arp_ip] g_arp_ip: %s\n\r", arp_ip_str);
+    if (ip4_addr_isany_val(g_arp_ip)) {
+        return NULL;
+    }
+
+    return &g_arp_ip;
+}
+
+/**
+ * @brief  get current arp mode
+ * @return  ACITVE_ARP_DHCP_MODE or ACITVE_ARP_GW_MODE
+ */
+int get_acitve_arp_mode(void)
+{
+    return g_acitve_arp_mode;
+}
+
 //Realtek add
-void etharp_issue_dhcpserver_arp_thread(void *param){
-  extern struct netif xnetif[NET_IF_NUM];
-  ip4_addr_t *dhcp_dst_ip, *dhcp_dst_ip_ret = NULL;
-  dhcp_dst_ip = (ip4_addr_t *) LwIP_GetDHCPSERVER(0);
-  struct eth_addr *dhcp_dst_eth_ret = NULL;
-  int retry_cnt = 0;
-
-  if (LwIP_etharp_find_addr(0, dhcp_dst_ip, &dhcp_dst_eth_ret, (const ip4_addr_t **)&dhcp_dst_ip_ret) >= 0) {
-	etharp_request_dst(&xnetif[0], netif_ip4_gw(&xnetif[0]), dhcp_dst_eth_ret->addr);	
-	//printf("[etharp_issue_dhcpserver_arp_thread] (1) "MAC_FMT", retry_cnt: %d\n\r",MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);
-  } else {
-	LwIP_etharp_request(0, dhcp_dst_ip);
-
-	vTaskDelay(100);
-	while (LwIP_etharp_find_addr(0, dhcp_dst_ip, &dhcp_dst_eth_ret, (const ip4_addr_t **)&dhcp_dst_ip_ret) < 0) {
-	  LwIP_etharp_request(0, dhcp_dst_ip);
-	  vTaskDelay(100);
-	  retry_cnt++;
-	  if (retry_cnt > 10) {
-		break;
-	  }
-	}
-
-	if (retry_cnt < 10) {
-	  //printf("[etharp_issue_dhcpserver_arp_thread] (2_1) "MAC_FMT", retry_cnt: %d\n\r",MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);	
-	  etharp_request_dst(&xnetif[0], netif_ip4_gw(&xnetif[0]), dhcp_dst_eth_ret->addr);		  
-	}
-	else{
-	  //printf("[etharp_issue_dhcpserver_arp_thread] (2_2) "MAC_FMT", retry_cnt: %d\n\r",MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);		  
-	  etharp_request_dst(&xnetif[0], netif_ip4_gw(&xnetif[0]), &ethbroadcast);		 
-	}
-
-  }
-
+void etharp_issue_arp_thread(void *param){
+  etharp_issue_arp_function();
   vTaskDelete(NULL);
-
 }
 
-void etharp_issue_dhcpserver_arp_task(void) {
-
-	if (xTaskCreate(etharp_issue_dhcpserver_arp_thread, ((const char *)"etharp_issue_dhcpserver_arp_thread"), 1536, NULL, 1, NULL) != pdPASS) {
-		printf("\n\r%s xTaskCreate(etharp_issue_dhcpserver_arp_thread) failed", __FUNCTION__);
+void etharp_issue_arp_task(void) {
+	if (xTaskCreate(etharp_issue_arp_thread, ((const char *)"etharp_issue_arp_thread"), 1536, NULL, 1, NULL) != pdPASS) {
+		printf("\n\r%s xTaskCreate(etharp_issue_arp_thread) failed", __FUNCTION__);
 	}
-
 }
 
-void etharp_issue_dhcpserver_arp_function(void){
+void etharp_issue_arp_function(void){
   extern struct netif xnetif[NET_IF_NUM];
+  int is_exist_gw_ip = 0;
+  ip4_addr_t *gw_dst_ip, *gw_dst_ip_ret = NULL;
+  gw_dst_ip = (ip4_addr_t *) LwIP_GetGW(0);
+  struct eth_addr *gw_dst_eth_ret = NULL;    
   ip4_addr_t *dhcp_dst_ip, *dhcp_dst_ip_ret = NULL;
   dhcp_dst_ip = (ip4_addr_t *) LwIP_GetDHCPSERVER(0);
   struct eth_addr *dhcp_dst_eth_ret = NULL;
   int retry_cnt = 0;
+  
+  
+  if(wifi_user_config.active_keepalive_mode == ACITVE_ARP_GW_MODE || wifi_user_config.active_keepalive_mode == ACITVE_ARP_DHCP_GW_MODE){
+    //Check Gateway IP
+    if (LwIP_etharp_find_addr(0, gw_dst_ip, &gw_dst_eth_ret, (const ip4_addr_t **)&gw_dst_ip_ret) >= 0) {
+          etharp_request_dst(&xnetif[0], gw_dst_ip, gw_dst_eth_ret->addr);	
+          is_exist_gw_ip = 1;
+          ip4_addr_set(&g_arp_ip, gw_dst_ip);
+          g_acitve_arp_mode = ACITVE_ARP_GW_MODE;
+          //printf("[etharp_issue_arp_function] (1) Gw ip: %s, MAC: "MAC_FMT", retry_cnt: %d\n\r",ip4addr_ntoa(gw_dst_ip),MAC_ARG(gw_dst_eth_ret->addr), retry_cnt);          
+    } else {
+          LwIP_etharp_request(0, gw_dst_ip);
 
-  if (LwIP_etharp_find_addr(0, dhcp_dst_ip, &dhcp_dst_eth_ret, (const ip4_addr_t **)&dhcp_dst_ip_ret) >= 0) {
-	etharp_request_dst(&xnetif[0], netif_ip4_gw(&xnetif[0]), dhcp_dst_eth_ret->addr);	
-	//printf("[etharp_issue_dhcpserver_arp_function] (1) "MAC_FMT", retry_cnt: %d\n\r",MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);
-  } else {
-	LwIP_etharp_request(0, dhcp_dst_ip);
+          vTaskDelay(100);
+          while (LwIP_etharp_find_addr(0, gw_dst_ip, &gw_dst_eth_ret, (const ip4_addr_t **)&gw_dst_ip_ret) < 0) {
+            LwIP_etharp_request(0, gw_dst_ip);
+            vTaskDelay(100);
+            retry_cnt++;
+            if (retry_cnt > 10) {
+                  break;
+            }
+          }
 
-	vTaskDelay(10);
-	while (LwIP_etharp_find_addr(0, dhcp_dst_ip, &dhcp_dst_eth_ret, (const ip4_addr_t **)&dhcp_dst_ip_ret) < 0) {
-	  LwIP_etharp_request(0, dhcp_dst_ip);
-	  vTaskDelay(10);
-	  retry_cnt++;
-	  if (retry_cnt > 10) {
-		break;
-	  }
-	}
-
-	if (retry_cnt < 10) {
-	  //printf("[etharp_issue_dhcpserver_arp_function] (2_1) "MAC_FMT", retry_cnt: %d\n\r",MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);	
-	  etharp_request_dst(&xnetif[0], netif_ip4_gw(&xnetif[0]), dhcp_dst_eth_ret->addr);		  
-	}
-	else{
-	  //printf("[etharp_issue_dhcpserver_arp_function] (2_2) "MAC_FMT", retry_cnt: %d\n\r",MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);		  
-	  etharp_request_dst(&xnetif[0], netif_ip4_gw(&xnetif[0]), &ethbroadcast);		 
-	}
-
+          if (retry_cnt < 10) {
+            etharp_request_dst(&xnetif[0], gw_dst_ip, gw_dst_eth_ret->addr);
+            is_exist_gw_ip = 1;
+            ip4_addr_set(&g_arp_ip, gw_dst_ip);
+            g_acitve_arp_mode = ACITVE_ARP_GW_MODE;
+            //printf("[etharp_issue_arp_function] (2) Gw ip: %s,  MAC: "MAC_FMT", retry_cnt: %d\n\r",ip4addr_ntoa(gw_dst_ip),MAC_ARG(gw_dst_eth_ret->addr), retry_cnt);	            
+          }
+          
+          if(wifi_user_config.active_keepalive_mode == ACITVE_ARP_GW_MODE && retry_cnt >= 10){
+              etharp_request_dst(&xnetif[0], gw_dst_ip, &ethbroadcast);
+              g_acitve_arp_mode = ACITVE_ARP_GW_MODE;
+              //printf("[etharp_issue_arp_function] (3) gw ip: %s, MAC: "MAC_FMT", retry_cnt: %d\n\r",ip4addr_ntoa(netif_ip4_gw(&xnetif[0])),MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);           
+          }
+    }
   }
+  
+  if(wifi_user_config.active_keepalive_mode == ACITVE_ARP_DHCP_MODE || wifi_user_config.active_keepalive_mode == ACITVE_ARP_DHCP_GW_MODE){
+    //Check dhcp server ip
+    if(is_exist_gw_ip == 0){
+      retry_cnt = 0;
+      if (LwIP_etharp_find_addr(0, dhcp_dst_ip, &dhcp_dst_eth_ret, (const ip4_addr_t **)&dhcp_dst_ip_ret) >= 0) {
+            etharp_request_dst(&xnetif[0], dhcp_dst_ip, dhcp_dst_eth_ret->addr);
+            ip4_addr_set(&g_arp_ip, dhcp_dst_ip);
+            g_acitve_arp_mode = ACITVE_ARP_DHCP_MODE;
+            //printf("[etharp_issue_arp_function] (4) dhcp ip: %s, MAC: "MAC_FMT", retry_cnt: %d\n\r",ip4addr_ntoa(dhcp_dst_ip),MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);
+      } else {
+            LwIP_etharp_request(0, dhcp_dst_ip);
 
+            vTaskDelay(100);
+            while (LwIP_etharp_find_addr(0, dhcp_dst_ip, &dhcp_dst_eth_ret, (const ip4_addr_t **)&dhcp_dst_ip_ret) < 0) {
+              LwIP_etharp_request(0, dhcp_dst_ip);
+              vTaskDelay(100);
+              retry_cnt++;
+              if (retry_cnt > 10) {
+                    break;
+              }
+            }
+
+            if (retry_cnt < 10) {	
+              etharp_request_dst(&xnetif[0], dhcp_dst_ip, dhcp_dst_eth_ret->addr);
+              ip4_addr_set(&g_arp_ip, dhcp_dst_ip); 
+              g_acitve_arp_mode = ACITVE_ARP_DHCP_MODE;              
+              //printf("[etharp_issue_arp_function] (5) dhcp ip: %s, MAC: "MAC_FMT", retry_cnt: %d\n\r",ip4addr_ntoa(dhcp_dst_ip),MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);              
+            }
+
+            if(wifi_user_config.active_keepalive_mode == ACITVE_ARP_DHCP_MODE && retry_cnt >= 10){
+                etharp_request_dst(&xnetif[0], dhcp_dst_ip, &ethbroadcast);
+                g_acitve_arp_mode = ACITVE_ARP_DHCP_MODE;
+                //printf("[etharp_issue_arp_function] (6) dhcp ip: %s, MAC: "MAC_FMT", retry_cnt: %d\n\r",ip4addr_ntoa(dhcp_dst_ip),MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);           
+            }
+            
+            if(wifi_user_config.active_keepalive_mode == ACITVE_ARP_DHCP_GW_MODE && retry_cnt >= 10){
+                etharp_request_dst(&xnetif[0], gw_dst_ip, &ethbroadcast);
+                g_acitve_arp_mode = ACITVE_ARP_GW_MODE;
+                //printf("[etharp_issue_arp_function] (7) gw ip: %s, MAC: "MAC_FMT", retry_cnt: %d\n\r",ip4addr_ntoa(netif_ip4_gw(&xnetif[0])),MAC_ARG(dhcp_dst_eth_ret->addr), retry_cnt);           
+            }
+            
+      }
+    }
+  }
 }
 
 void
@@ -300,7 +349,7 @@ etharp_tmr(void)
   if (wifi_is_running(WLAN0_IDX) && ((wifi_get_join_status() == RTW_JOINSTATUS_SUCCESS) && (*(u32 *)LwIP_GetIP(0) != IP_ADDR_INVALID))) {  
     if((arp_timer_count >= wifi_user_config.active_keepalive_interval) && (wifi_user_config.active_keepalive_interval) 
        && (wifi_user_config.active_keepalive_enabled)){
-         etharp_issue_dhcpserver_arp_function();
+         etharp_issue_arp_function();
          arp_timer_count = 0;
        }
   }

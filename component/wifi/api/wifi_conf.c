@@ -740,6 +740,8 @@ void wifi_set_user_config(void)
 		wifi_user_config.channel_plan = wifi_country_code_to_channel_plan(wifi_user_config.band_type, wifi_user_config.country_code);
 	}
 
+	wifi_user_config.active_keepalive_mode = ACITVE_ARP_DHCP_MODE;
+
 	wifi_user_config.active_keepalive_enabled = 1;
 
 	wifi_user_config.active_keepalive_interval = 20;

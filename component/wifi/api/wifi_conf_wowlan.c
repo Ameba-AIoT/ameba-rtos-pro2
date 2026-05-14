@@ -152,6 +152,13 @@ void wifi_set_802_11v_bss_pkt_offload(void)
 	rtw_hal_sw_parser_11v_enable(1);
 }
 
+uint8_t set_arp_targetip = 0;
+
+void wowlan_set_arp_target_ip(uint8_t use_type)
+{
+	set_arp_targetip = use_type;
+}
+
 #ifdef CONFIG_WOWLAN_TCP_KEEP_ALIVE
 
 extern void rtw_set_tcp_protocol_keepalive(uint32_t idle_ms, uint32_t interval_ms, uint8_t count, uint8_t power_bit);
@@ -301,8 +308,13 @@ int wifi_set_tcp_protocol_keepalive_offload(int socket_fd, uint8_t power_bit)
 		local_lan = 1;
 	}
 
-	// dhcp addr
-	dhcp_dst_ip = (ip4_addr_t *) LwIP_GetDHCPSERVER(0);
+	if (!set_arp_targetip) {
+		// dhcp addr
+		dhcp_dst_ip = (ip4_addr_t *) LwIP_GetDHCPSERVER(0);
+	} else {
+		//get gateway ip
+		dhcp_dst_ip = (ip4_addr_t *) LwIP_GetGW(0);
+	}
 
 	if (LwIP_etharp_find_addr(0, dhcp_dst_ip, &dhcp_dst_eth_ret, (const ip4_addr_t **)&dhcp_dst_ip_ret) >= 0) {
 		// memcpy(eth_header, dhcp_dst_eth_ret->addr, ETH_ALEN);
@@ -499,8 +511,13 @@ int wifi_set_tcp_keep_alive_offload(int socket_fd, uint8_t *content, size_t len,
 		local_lan = 1;
 	}
 
-	// dhcp addr
-	dhcp_dst_ip = (ip4_addr_t *) LwIP_GetDHCPSERVER(0);
+	if (!set_arp_targetip) {
+		// dhcp addr
+		dhcp_dst_ip = (ip4_addr_t *) LwIP_GetDHCPSERVER(0);
+	} else {
+		//get gateway ip
+		dhcp_dst_ip = (ip4_addr_t *) LwIP_GetGW(0);
+	}
 
 	if (LwIP_etharp_find_addr(0, dhcp_dst_ip, &dhcp_dst_eth_ret, (const ip4_addr_t **)&dhcp_dst_ip_ret) >= 0) {
 		//memcpy(eth_header, dhcp_dst_eth_ret->addr, ETH_ALEN);
@@ -1115,6 +1132,19 @@ int wifi_wowlan_set_arpreq_keepalive(u8  powerbit,
 
 	return ret;
 }
+
+extern void rtw_set_arpreq_option(u8  null0,
+								  u8  wait_response);
+
+int wifi_wowlan_set_arpreq_option(u8  null0,
+								  u8  wait_response)
+{
+	int ret = 0;
+	rtw_set_arpreq_option(null0, wait_response);
+
+	return ret;
+}
+
 #endif
 
 #ifdef CONFIG_WOWLAN_DHCP_RENEW
