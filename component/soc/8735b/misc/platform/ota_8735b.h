@@ -36,7 +36,7 @@
  */
 typedef void (*ota_status_callback_t)(uint8_t device_id, uint8_t progress);
 
-/**
+
 
 /**************************************************************************/
 

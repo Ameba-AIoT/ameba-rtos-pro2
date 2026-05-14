@@ -42,8 +42,8 @@ This scenario is intended for a templete for ai glass scenario
 - line 2160, change out_queue_size from 4096 to 2048 
 - if (hal_video_out_cb(video_output_cb, 2048, (uint32_t)ctx, ch) != OK)
 
-6. \project\realtek_amebapro2_v0_example\GCC-RELEASE\application\rtl8735b_ram_ns.ld
-- line 8, NN_SIZE value change from 16 to 0
+6. \project\realtek_amebapro2_v0_example\GCC-RELEASE\bootloader\rtl8735b_boot_mp.ld
+- line 11, NN_SIZE value change from 16 to 0
 - NN_SIZE = 0;
 
 7. \project\realtek_amebapro2_v0_example\GCC-RELEASE\application\rtl8735b_ram.ld
@@ -170,3 +170,25 @@ Note: this baudrate will have strong influence to the process time but need to s
 3. Disable OSD function
 	component\media\mmfv2\module_video.c
 	#define OSD_ENABLE 0
+
+# AI Snapshot with Object Detection
+
+1. Please enable flag for object detection
+	\project\realtek_amebapro2_v0_example\scenario\ai_glass\src\ai_glass_media.h
+- #define AI_SNAPSHOT_WITH_OD 1
+
+2. Please ensure that burst mode is not enabled
+	\project\realtek_amebapro2_v0_example\scenario\ai_glass\src\ai_glass_media.h
+- line 49, #define BURST_MODE_MAX_COUNT 1
+
+3. NN_SIZE value change from 0 to 12
+	\project\realtek_amebapro2_v0_example\GCC-RELEASE\bootloader\rtl8735b_boot_mp.ld
+- line 11, NN_SIZE = 12;
+
+4. NN_SIZE value change from 0 to 12
+	\project\realtek_amebapro2_v0_example\GCC-RELEASE\application\rtl8735b_ram.ld
+- line 5, NN_SIZE = 12;
+
+5. (Optional) Save jpg to external disk
+	\project\realtek_amebapro2_v0_example\scenario\ai_glass\src\ai_glass_media.h
+- #define AI_SNAPSHOT_SAVE_DETECT_IMAGE 1 

@@ -152,7 +152,7 @@ typedef struct {
 // /const char *file_path;
 static QueueHandle_t snapshot_save_queue;
 EventGroupHandle_t s_lifetime_event = NULL;
-#define BLOCKING_SAVE 0
+#define BLOCKING_SAVE
 #define JPG_WRITE_12M_SIZE      524288
 #endif
 
@@ -868,7 +868,7 @@ static void high_resolution_snapshot_take(char *file_path, uartcmdpacket_t *para
 	get_raw_data = 0;
 	int timeout_count = 0;
 
-#if BLOCKING_SAVE
+#ifdef BLOCKING_SAVE
 	if (raw_taken > 1 || (raw_taken == 1 && dual_take == 1)) {
 		//start save queue time
 		start_saving_in_progress_time = mm_read_mediatime_ms();

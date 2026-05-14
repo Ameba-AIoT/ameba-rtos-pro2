@@ -179,6 +179,14 @@ typedef struct isp_info_sync_s {
 	uint16_t isp_blue_gain;
 } isp_info_sync_t;
 
+// Object detection result structure
+typedef struct {
+    int class_id;
+    float confidence;
+    int x1, y1, x2, y2;  // bounding box coordinates
+    char class_name[32];
+} detected_object_t;
+
 #define MAX_LIFESNAP_WIDTH          sensor_params[USE_SENSOR].sensor_width
 #define MAX_LIFESNAP_HEIGHT         sensor_params[USE_SENSOR].sensor_height
 #define MAX_AISNAP_WIDTH            sensor_params[USE_SENSOR].sensor_width
@@ -280,6 +288,7 @@ void media_update_preinit_isp_awb(void);
 int ai_snapshot_initialize(void);
 int ai_snapshot_take(const char *file_name);
 int ai_snapshot_deinitialize(void);
+int ai_snapshot_obj_detect(const char *file_name, detected_object_t *objects, int max_objects);
 
 // life snapshot
 int lifetime_snapshot_initialize(isp_info_sync_t *isp_info);
@@ -332,5 +341,9 @@ static enum hal_isp_ae_region max_dyn_region_idx = 0; // Data range: 0 ~ 3. 0: u
 #define AUDIO_INTERFACE         1
 
 #define ENABLE_MEDIA_UPDATE_FLASH 0 // Set to 1 to enable media parameter update to flash, set to 0 to disable. When disabled, media parameters will not be saved after power off.
+
+// Trigger AI snapshot with YOLOv4 object detection
+#define AI_SNAPSHOT_WITH_OD 0 // Set to 1 to enable object detection in AI snapshot, set to 0 to disable. When enabled, AI snapshot will run object detection after taking snapshot and print the results in log.
+#define AI_SNAPSHOT_SAVE_DETECT_IMAGE 0 // Set to 1 to save the AI snapshot into external storage 
 
 #endif

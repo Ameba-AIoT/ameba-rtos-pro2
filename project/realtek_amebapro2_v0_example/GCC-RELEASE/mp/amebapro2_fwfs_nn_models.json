@@ -6,7 +6,8 @@
 		"files":[
 			"ainr_mulaw_1024_imx681",
 			"ainr_mulaw_1024_ov13b10",
-			"planar_to_nchw_blc_1024"
+			"planar_to_nchw_blc_1024",
+			"yolov4_tiny"
 		]
 	},
 	"ainr_mulaw_1024_imx681":{

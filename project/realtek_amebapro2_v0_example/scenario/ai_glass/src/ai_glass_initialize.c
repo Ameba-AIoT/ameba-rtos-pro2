@@ -2015,7 +2015,12 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 			int ret = ai_snapshot_initialize();
 			if (ret == 0) {
 				AI_GLASS_MSG("snapshot take time = %lu\r\n", mm_read_mediatime_ms());
+			#if (AI_SNAPSHOT_WITH_OD == 1)
+				detected_object_t objects[100] = {0};
+				if (ai_snapshot_obj_detect("ai_snapshot.jpg", objects, 100) == 0) {
+			#else
 				if (ai_snapshot_take("ai_snapshot.jpg") == 0) {
+			#endif
 					status = AI_GLASS_CMD_COMPLETE;
 				} else {
 					status = AI_GLASS_PROC_FAIL;
@@ -3772,6 +3777,146 @@ static void fCALIGSENSOR(void *arg) {
 	}
 }
 
+// AT Command: AT+AIGLASSAISNAP[=filename,width,height,qlevel,rotation]
+// Usage:
+//   AT+AIGLASSAISNAP                              -> Use all defaults
+//   AT+AIGLASSAISNAP=my.jpg                       -> Custom filename
+//   AT+AIGLASSAISNAP=my.jpg,640,480,8,0           -> Custom filename + snapshot params
+//   AT+AIGLASSAISNAP=,1280,720,8,0                -> Default filename, custom params
+// Parameters:
+//   filename  - Output JPEG filename (default: ai_at_snapshot.jpg)
+//   width     - Snapshot width (default: 640)
+//   height    - Snapshot height (default: 480)
+//   qlevel    - JPEG quality level 1-10 (default: 8)
+//   rotation  - Rotation: 0=none, 1=90CCW, 2=90CW, 3=180 (default: 0)
+void fAIGLASSAISNAP(void *arg)
+{
+	AI_GLASS_INFO("get AT+AIGLASSAISNAP\r\n");
+	
+	int argc = 0;
+	char *argv[MAX_ARGC] = {0};
+	argc = parse_param(arg, argv);
+	
+	// Default values
+	char filename[64] = "ai_at_snapshot.jpg";
+	uint32_t snap_width = DEFAULT_AISNAP_WIDTH;    // 640
+	uint32_t snap_height = DEFAULT_AISNAP_HEIGHT;  // 480
+	uint8_t snap_qlevel = DEFAULT_AISNAP_QLEVEL;   // 8
+	uint8_t snap_rotation = DEFAULT_AISNAP_ROTATION; // 0
+	
+	// Parse parameters
+	if (argc > 1 && argv[1]) {
+		// Filename (may be empty for default)
+		if (strlen(argv[1]) > 0) {
+			strncpy(filename, argv[1], 63);
+			// Ensure .jpg extension
+			if (strrchr(filename, '.') == NULL) {
+				strncat(filename, ".jpg", 63 - strlen(filename));
+			}
+		}
+	}
+	
+	if (argc > 2 && argv[2]) {
+		snap_width = atoi(argv[2]);
+		if (snap_width == 0 || snap_width > MAX_AISNAP_WIDTH) {
+			snap_width = DEFAULT_AISNAP_WIDTH;
+		}
+	}
+	
+	if (argc > 3 && argv[3]) {
+		snap_height = atoi(argv[3]);
+		if (snap_height == 0 || snap_height > MAX_AISNAP_HEIGHT) {
+			snap_height = DEFAULT_AISNAP_HEIGHT;
+		}
+	}
+	
+	if (argc > 4 && argv[4]) {
+		snap_qlevel = atoi(argv[4]);
+		if (snap_qlevel == 0 || snap_qlevel > 10) {
+			snap_qlevel = DEFAULT_AISNAP_QLEVEL;
+		}
+	}
+	
+	if (argc > 5 && argv[5]) {
+		snap_rotation = atoi(argv[5]);
+		if (snap_rotation > 3) {
+			snap_rotation = DEFAULT_AISNAP_ROTATION;
+		}
+	}
+	
+	AI_GLASS_MSG("AI Snapshot params: filename=%s, width=%lu, height=%lu, qlevel=%u, rotation=%u\r\n",
+	             filename, snap_width, snap_height, snap_qlevel, snap_rotation);
+	
+	// Check if video processor is available
+	if (xSemaphoreTake(video_proc_sema, 0) != pdTRUE) {
+		AI_GLASS_WARN("AI glass is busy (snapshot/record/streaming), cannot take AI snapshot\r\n");
+		return;
+	}
+	
+	// Update AI snapshot parameters
+	ai_glass_snapshot_param_t ai_snap_params = {0};
+	media_get_ai_snapshot_params(&ai_snap_params);
+	ai_snap_params.width = snap_width;
+	ai_snap_params.height = snap_height;
+	ai_snap_params.jpeg_qlevel = snap_qlevel;
+	ai_snap_params.rotation = snap_rotation;
+	ai_snap_params.roi.xmin = 0;
+	ai_snap_params.roi.ymin = 0;
+	ai_snap_params.roi.xmax = 0;
+	ai_snap_params.roi.ymax = 0;
+	ai_snap_params.status = 0; // AI snapshot only, not dual AI+Lifetime
+	
+	// Apply updated parameters
+	if (media_update_ai_snapshot_params(&ai_snap_params) != MEDIA_OK) {
+		AI_GLASS_WARN("Invalid snapshot parameters, using defaults\r\n");
+	}
+	
+	// Initialize AI snapshot module
+	AI_GLASS_MSG("AI Snapshot initialize time = %lu\r\n", mm_read_mediatime_ms());
+	int ret = ai_snapshot_initialize();
+	
+	if (ret == 0) {
+		// Allocate objects array for detection results on HEAP (not stack) to avoid hardfault
+		#define MAX_DETECT_OBJ_NUM 100
+		detected_object_t *objects = (detected_object_t *)malloc(sizeof(detected_object_t) * MAX_DETECT_OBJ_NUM);
+		if (objects == NULL) {
+			AI_GLASS_ERR("Failed to allocate memory for detection objects\r\n");
+			ai_snapshot_deinitialize();
+			xSemaphoreGive(video_proc_sema);
+			return;
+		}
+		memset(objects, 0, sizeof(detected_object_t) * MAX_DETECT_OBJ_NUM);
+		
+		AI_GLASS_MSG("AI Snapshot take time = %lu\r\n", mm_read_mediatime_ms());
+		
+		// Take snapshot, save to file, and run object detection
+		if (ai_snapshot_obj_detect(filename, objects, MAX_DETECT_OBJ_NUM) == 0) {
+			AI_GLASS_INFO("AI Snapshot saved and detection completed successfully\r\n");
+		} else {
+			AI_GLASS_ERR("AI Snapshot detect and save failed\r\n");
+		}
+		
+		// Free heap-allocated objects array
+		free(objects);
+		
+		// Deinitialize AI snapshot module
+		AI_GLASS_MSG("Wait for AI snapshot deinit\r\n");
+		while (ai_snapshot_deinitialize()) {
+			vTaskDelay(1);
+		}
+		AI_GLASS_MSG("AI snapshot deinit done = %lu\r\n", mm_read_mediatime_ms());
+	} else if (ret == -2) {
+		AI_GLASS_WARN("AI snapshot is already running\r\n");
+	} else {
+		AI_GLASS_ERR("AI snapshot initialize failed\r\n");
+	}
+	
+	// Release video processor semaphore
+	xSemaphoreGive(video_proc_sema);
+	
+	AI_GLASS_INFO("end of AT+AIGLASSAISNAP\r\n");
+}
+
 log_item_t at_ai_glass_items[ ] = {
 	{"AT+AIGLASSFORMAT",    fDISKFORMAT,            {NULL, NULL}},
 	{"AT+AIGLASSGSENSOR",   fTESTGSENSOR,           {NULL, NULL}},
@@ -3785,6 +3930,7 @@ log_item_t at_ai_glass_items[ ] = {
 	{"AT+AIGLASSSTOPLFRECORD", fSTOPLFRECORD,       {NULL, NULL}},
 	{"AT+AIGLASSGSENSORCFG", fTESTGSENSORCFG,       {NULL, NULL}},
 	{"AT+CALIGSENSOR",   fCALIGSENSOR,           	{NULL, NULL}},
+	{"AT+AIGLASSAISNAP",   fAIGLASSAISNAP,          {NULL, NULL}},
 };
 #endif
 void ai_glass_log_init(void)
