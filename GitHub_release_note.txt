@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 7343927fdd080e02020b33d5b1ea9c11e77d16fb
+* [amebapro2][mmf] avoid task recreate in mmf start
+
 SHA-1: 43d940446da966a145a2ac99f45c9af5e063e606
 * [amebapro2][wlan] wowlan modify dhcp renew unit from min to sec
 
