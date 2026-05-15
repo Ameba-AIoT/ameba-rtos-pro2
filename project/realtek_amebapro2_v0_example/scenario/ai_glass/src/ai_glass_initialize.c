@@ -2984,7 +2984,7 @@ static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_WIFI_PARAMETER\r\n");
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 	uint8_t mode = query_pkt->data_buf[0];
-	
+	AI_GLASS_INFO("Mode: %d\r\n", mode);
 	if (mode == 1) {
 		uint8_t g_camera_cfg_buf[512];
 		size_t length = uart_serialize_camera_config(g_camera_cfg_buf, sizeof(g_camera_cfg_buf), &g_camera_cfg);

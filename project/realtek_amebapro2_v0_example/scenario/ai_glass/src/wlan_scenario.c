@@ -1609,11 +1609,11 @@ static void save_ota_wifi_file_to_heap_from_http_cb(struct httpd_conn *conn)
 		if (strncmp(wifi_version, "wifi_ota_v", strlen("wifi_ota_v")) == 0) {
 			wifi_ota_buffer = (uint8_t *)malloc(5 * 1024 * 1024);  // 5MB
 		} else if (strncmp(wifi_version, "boot_ota_v", strlen("boot_ota_v")) == 0) {
-			wifi_ota_buffer = (uint8_t *)malloc(500 * 1024);  // 500KB
+			wifi_ota_buffer = (uint8_t *)malloc(512 * 1024);  // 512KB
 		} else if (strncmp(wifi_version, "nn_ota_v", strlen("nn_ota_v")) == 0) {
-			wifi_ota_buffer = (uint8_t *)malloc(1000 * 1024);  // 1MB
+			wifi_ota_buffer = (uint8_t *)malloc(6 * 1024 * 1024);  // 6MB
 		} else if (strncmp(wifi_version, "isp_iq_ota_v", strlen("isp_iq_ota_v")) == 0) {
-			wifi_ota_buffer = (uint8_t *)malloc(1000 * 1024);  // 1MB
+			wifi_ota_buffer = (uint8_t *)malloc(1024 * 1024);  // 1MB
 		} else {
 			WLAN_SCEN_ERR("Unknown OTA file: %s\n", wifi_version);
 			goto endofparser;
