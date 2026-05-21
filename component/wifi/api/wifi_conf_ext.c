@@ -521,9 +521,9 @@ int wifi_get_antenna_info(unsigned char *antenna)
 #endif
 }
 
-unsigned int wifi_get_tsf_low(unsigned char port_id)
+int wifi_get_tsf(u64 *tsf)
 {
-	return rltk_wlan_get_tsf(port_id);
+	return rltk_wlan_get_tsf(tsf);
 }
 
 int wifi_get_txbuf_pkt_num(void)
