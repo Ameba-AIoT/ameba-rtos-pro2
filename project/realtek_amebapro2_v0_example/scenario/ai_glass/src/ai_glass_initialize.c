@@ -60,6 +60,9 @@
 // Definition for buffer size
 #define MAX_FILENAME_SIZE           128
 
+//get gsensor state
+bool enable_gsensor = ENABLE_GET_GSENSOR_INFO;
+
 // Parameters for ai glass
 static const char *ai_glass_disk_name = "aiglass";
 static uint8_t send_response_timer_setstop = 0;
@@ -2990,7 +2993,7 @@ static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 		size_t length = uart_serialize_camera_config(g_camera_cfg_buf, sizeof(g_camera_cfg_buf), &g_camera_cfg);
 
 		// Call your existing UART response function
-		int status = uart_resp_get_wifi_parameter(param, g_camera_cfg_buf, length);
+		int status = uart_resp_get_wifi_parameter(param, g_camera_cfg_buf, length,current_sensor_id, enable_gsensor);
 
 		// Debug print
 		print_camera_config(&g_camera_cfg);
@@ -3008,7 +3011,7 @@ static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 		printf("[TEST] (1) "MAC_FMT"",MAC_ARG(pbuf));
 		
 		// Call your existing UART response function
-		int status = uart_resp_get_wifi_parameter(param, pbuf, length);
+		int status = uart_resp_get_wifi_parameter(param, pbuf, length,current_sensor_id, enable_gsensor);
 
 		if (status == 0) {
 			printf("CameraConfig sent successfully (%lu bytes)\n", length);
@@ -3019,7 +3022,7 @@ static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 		uint8_t dummy[1] = {0};
         size_t length = 0; // sensor status will be built inside uart_resp_get_wifi_parameter
 
-        int status = uart_resp_get_wifi_parameter(param, dummy, length);
+        int status = uart_resp_get_wifi_parameter(param, dummy, length,current_sensor_id, enable_gsensor);
 
         if (status == 0) {
             printf("Sensor status sent successfully\n");
