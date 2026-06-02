@@ -406,6 +406,7 @@ typedef struct {
 	const char *make;       // Manufacturer   (ASCII) EX: "Realtek"
 	const char *model;      // Model          (ASCII) EX: "Rtl8735b"
 	const char *datetime;   // Date and Time  (EXIF format: "YYYY:MM:DD HH:MM:SS")
+	char metering[32];      // Random metering magic word stored in EXIF UserComment
 	// Other EXIF fields
 	float exposure_time;    // Exposure time  (example: 1/125 = 0.008 or directly 1.0/125)
 	float fnumber;          // Aperture       (e.g., 2.8)
@@ -578,6 +579,8 @@ int video_insert_jpeg_exif(video_meta_t *m_parm);
 int video_create_exif_tags(uint8_t *buf, uint32_t video_len);
 
 void video_fill_exif_tags_from_struct(const ExifParams *params);
+
+void video_fill_exif_random_metering(ExifParams *params);
 
 int video_get_error_group(int error_id);
 

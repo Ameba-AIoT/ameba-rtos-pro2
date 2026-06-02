@@ -4332,6 +4332,37 @@ int video_insert_jpeg_exif(video_meta_t *m_parm)
 	return 0;
 }
 
+static void video_generate_random_string(char *out, size_t out_len)
+{
+	const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+	size_t i;
+	uint32_t state;
+	static uint32_t seq = 0;
+
+	if (out == NULL || out_len == 0) {
+		return;
+	}
+
+	state = (uint32_t)xTaskGetTickCount();
+	state ^= (uint32_t)(uintptr_t)out;
+	state ^= seq++;
+
+	for (i = 0; i < out_len - 1; ++i) {
+		state = 1664525u * state + 1013904223u;
+		out[i] = charset[(state >> 16) % (sizeof(charset) - 1)];
+	}
+	out[out_len - 1] = '\0';
+}
+
+void video_fill_exif_random_metering(ExifParams *params)
+{
+	if (params == NULL) {
+		return;
+	}
+
+	video_generate_random_string(params->metering, sizeof(params->metering));
+}
+
 void video_fill_exif_tags_from_struct(const ExifParams *params)
 {
 	int m = 0, e = 0, g = 0;
@@ -4418,6 +4449,12 @@ void video_fill_exif_tags_from_struct(const ExifParams *params)
 	if (params->iso > 0)
 		wsp->exif_tags[e++] = (ExifTag) {
 		0x8827, TYPE_SHORT, 1, .data.short_val = (uint16_t)params->iso
+	};
+
+	// If a metering magic word is provided, store it in the EXIF UserComment tag
+	if (params->metering[0])
+		wsp->exif_tags[e++] = (ExifTag) {
+		0x9286, TYPE_ASCII, (uint32_t)strlen(params->metering) + 1, .data.bytes = (const uint8_t *)params->metering
 	};
 
 	// Set the count of EXIF tags filled

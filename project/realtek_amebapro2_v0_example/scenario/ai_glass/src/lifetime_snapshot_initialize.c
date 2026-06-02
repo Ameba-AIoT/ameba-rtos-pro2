@@ -172,7 +172,8 @@ static ExifParams param = {
 	.gps_latitude = 25.0701,                // Latitude (e.g., 25.0701 for 25?X 4' 12" North)
 	.gps_longitude = 121.568,               // Longitude (e.g., 121.568 for 121?X 34' 5" East)
 	.gps_altitude = 43.2,                   // Altitude in meters (e.g., 43.2 meters above sea level)
-	.has_gps = 1                            // GPS information present (1 = true, 0 = false)
+	.has_gps = 1,                           // GPS information present (1 = true, 0 = false)
+	.metering = ""                        // Random metering magic word will be generated for EXIF
 };
 #if SAVE_DBG_IMG
 uint8_t *raw_image = NULL;
@@ -208,6 +209,7 @@ static void video_jpeg_exif(video_meta_t *m_parm)
 	}
 	isp_get_awb_ctrl(&ret);
 	param.white_balance = ret;
+	video_fill_exif_random_metering(&param);
 	video_fill_exif_tags_from_struct(&param);
 	video_insert_jpeg_exif(m_parm);
 }
