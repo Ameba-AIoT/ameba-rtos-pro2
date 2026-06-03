@@ -383,6 +383,7 @@ typedef enum {
 	TYPE_SHORT = 3,
 	TYPE_LONG = 4,
 	TYPE_RATIONAL = 5,
+	TYPE_SRATIONAL = 10,
 } ExifType;
 
 typedef struct {
@@ -399,6 +400,7 @@ typedef struct {
 		uint16_t short_val;
 		uint32_t long_val;
 		const uint32_t *rational_arr;
+		const int32_t *srational_arr;
 	} data;
 } ExifTag;
 
@@ -418,6 +420,17 @@ typedef struct {
 	double gps_longitude;   // Longitude      (positive: East, negative: West)
 	double gps_altitude;    // Altitude       (in meters)
 	int has_gps;            // Whether GPS is included (1/0)
+	// Orientation-related fields
+	double orientation_fx;
+	double orientation_fy;
+	double orientation_cx;
+	double orientation_cy;
+	double orientation_k0;
+	double orientation_k1;
+	double orientation_k2;
+	double orientation_k3;
+	double orientation_output_scale;
+	int has_orientation;
 } ExifParams;
 
 typedef struct {
@@ -429,6 +442,7 @@ typedef struct {
 	uint32_t gps_lon_arr[6];
 	uint32_t gps_alt_arr[2];
 	uint8_t latref_buf[2], lonref_buf[2], altref_buf[1];
+	char orientation_str[256];
 } ExifWorkspace;
 
 

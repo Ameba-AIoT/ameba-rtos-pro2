@@ -4095,6 +4095,23 @@ static void video_exif_double2rational(double v, uint32_t *num, uint32_t *den)
 	*den = 10000;
 	*num = (uint32_t)(fabs(v) * (*den) + 0.5);
 }
+static void video_exif_float2str(double v, char *buf)
+{
+	double dv = v;
+	int i_part = (int)dv;
+	double f_part = fabs(dv - (double)i_part);
+	int frac = (int)(f_part * 100000000.0 + 0.5);
+	if (frac >= 100000000) {
+		frac -= 100000000;
+		if (dv >= 0) i_part++;
+		else i_part--;
+	}
+	if (v < 0 && i_part == 0) {
+		snprintf(buf, 32, "-0.%08d", frac);
+	} else {
+		snprintf(buf, 32, "%d.%08d", i_part, frac);
+	}
+}
 
 static void video_exif_write_u16(uint8_t *b, uint16_t v)
 {
@@ -4155,17 +4172,28 @@ static void video_exif_write_entry(uint8_t *entry, ExifTag *tag, uint32_t value_
 		}
 	} else if (tag->type == TYPE_LONG) {
 		video_exif_write_u32(entry + 8, tag->data.long_val);
-	} else if (tag->type == TYPE_RATIONAL) {
+	} else if (tag->type == TYPE_RATIONAL || tag->type == TYPE_SRATIONAL) {
 		if (tag->count == 1) {
 			video_exif_write_u32(entry + 8, (uint32_t)(*data_offset - tiff_header_off));
-			video_exif_write_u32(data_area + *data_offset, tag->data.rational.num);
-			video_exif_write_u32(data_area + *data_offset + 4, tag->data.rational.den);
+			if (tag->type == TYPE_RATIONAL) {
+				video_exif_write_u32(data_area + *data_offset, tag->data.rational.num);
+				video_exif_write_u32(data_area + *data_offset + 4, tag->data.rational.den);
+			} else {
+				video_exif_write_u32(data_area + *data_offset, (uint32_t)tag->data.srational_arr[0]);
+				video_exif_write_u32(data_area + *data_offset + 4, (uint32_t)tag->data.srational_arr[1]);
+			}
 			*data_offset += 8;
 		} else {
 			video_exif_write_u32(entry + 8, (uint32_t)(*data_offset - tiff_header_off));
 			for (uint32_t i = 0; i < tag->count; ++i) {
-				uint32_t num = tag->data.rational_arr[i * 2];
-				uint32_t den = tag->data.rational_arr[i * 2 + 1];
+				uint32_t num, den;
+				if (tag->type == TYPE_RATIONAL) {
+					num = tag->data.rational_arr[i * 2];
+					den = tag->data.rational_arr[i * 2 + 1];
+				} else {
+					num = (uint32_t)tag->data.srational_arr[i * 2];
+					den = (uint32_t)tag->data.srational_arr[i * 2 + 1];
+				}
 				video_exif_write_u32(data_area + *data_offset, num);
 				video_exif_write_u32(data_area + *data_offset + 4, den);
 				*data_offset += 8;
@@ -4204,7 +4232,7 @@ int video_create_exif_tags(uint8_t *buf, uint32_t video_len)
 		ExifTag *tag = &main_ifd_tags[i];
 		if (tag->type == TYPE_ASCII) {
 			extra += tag->count;
-		} else if (tag->type == TYPE_RATIONAL) {
+		} else if (tag->type == TYPE_RATIONAL || tag->type == TYPE_SRATIONAL) {
 			extra += tag->count * 8;
 		} else if (tag->type == TYPE_BYTE && tag->count > 4) {
 			extra += tag->count;
@@ -4216,7 +4244,7 @@ int video_create_exif_tags(uint8_t *buf, uint32_t video_len)
 		ExifTag *tag = &exif_ifd_tags[i];
 		if (tag->type == TYPE_ASCII) {
 			extra += tag->count;
-		} else if (tag->type == TYPE_RATIONAL) {
+		} else if (tag->type == TYPE_RATIONAL || tag->type == TYPE_SRATIONAL) {
 			extra += tag->count * 8;
 		} else if (tag->type == TYPE_BYTE && tag->count > 4) {
 			extra += tag->count;
@@ -4228,7 +4256,7 @@ int video_create_exif_tags(uint8_t *buf, uint32_t video_len)
 		ExifTag *tag = &gps_ifd_tags[i];
 		if (tag->type == TYPE_ASCII) {
 			extra += tag->count;
-		} else if (tag->type == TYPE_RATIONAL) {
+		} else if (tag->type == TYPE_RATIONAL || tag->type == TYPE_SRATIONAL) {
 			extra += tag->count * 8;
 		} else if (tag->type == TYPE_BYTE && tag->count > 4) {
 			extra += tag->count;
@@ -4369,6 +4397,28 @@ void video_fill_exif_tags_from_struct(const ExifParams *params)
 	memset(&jpeg_exif_wsp, 0x00, sizeof(ExifWorkspace));
 	ExifWorkspace *wsp = &jpeg_exif_wsp;
 	// ==== Main IFD (Image File Directory) ====
+	// If orientation data is present, store as ImageDescription (0x010E - must come before Make 0x010F)
+	if (params->has_orientation) {
+		char b0[32], b1[32], b2[32], b3[32], b4[32], b5[32], b6[32], b7[32], b8[32];
+		video_exif_float2str(params->orientation_fx, b0);
+		video_exif_float2str(params->orientation_fy, b1);
+		video_exif_float2str(params->orientation_cx, b2);
+		video_exif_float2str(params->orientation_cy, b3);
+		video_exif_float2str(params->orientation_k0, b4);
+		video_exif_float2str(params->orientation_k1, b5);
+		video_exif_float2str(params->orientation_k2, b6);
+		video_exif_float2str(params->orientation_k3, b7);
+		video_exif_float2str(params->orientation_output_scale, b8);
+
+		snprintf(wsp->orientation_str, sizeof(wsp->orientation_str), 
+			"fx=%s, fy=%s, cx=%s, cy=%s, k0=%s, k1=%s, k2=%s, k3=%s, scale=%s",
+			b0, b1, b2, b3, b4, b5, b6, b7, b8);
+
+		wsp->main_tags[m++] = (ExifTag) {
+			0x010E, TYPE_ASCII, (uint32_t)strlen(wsp->orientation_str) + 1, .data.bytes = (const uint8_t *)wsp->orientation_str
+		};
+	}
+
 	// Check if the manufacturer is available and fill the main tags
 	if (params->make)
 		wsp->main_tags[m++] = (ExifTag) {
