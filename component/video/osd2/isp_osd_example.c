@@ -35,8 +35,6 @@ static char string_buf[6][OSD_TEXT_STR_MAX] = {0};
 static char teststring[] = "RTK-AmebaPro2";
 static char teststring_empty[] = " ";
 
-static int s_buf_overflow_warned = 0;
-
 void iq_update_info(void *arg)
 {
 	while (1) {
@@ -46,11 +44,6 @@ void iq_update_info(void *arg)
 
 		sprintf(string_buf[0], "IQ Version: %04d/%02d/%02d %02d:%02d:%02d", *(unsigned short *)(iq_addr + 12), iq_addr[14], iq_addr[15], iq_addr[16],
 				iq_addr[17], *(unsigned short *)(iq_addr + 18));
-		if (!s_buf_overflow_warned && strlen(string_buf[0]) >= OSD_TEXT_STR_MAX) {
-			printf("[OSD WARN] string_buf[0] length (%zu) >= OSD_TEXT_STR_MAX (%d), text will NOT be displayed!\r\n",
-				   strlen(string_buf[0]), OSD_TEXT_STR_MAX);
-			s_buf_overflow_warned = 1;
-		}
 
 		dvalue = -1;
 		isp_get_exposure_time(&dvalue);
@@ -60,11 +53,6 @@ void iq_update_info(void *arg)
 		gain = dvalue2;
 		//sprintf(string_buf[1], "[AE]Exposure: %.3f AE-Gain: %.3f ET-Gain: %.3f", ((float)dvalue)/1000.0f, ((float)dvalue)/256.0f, ((float)(exp*gain))/25600.0f);
 		sprintf(string_buf[1], "ET:%6d AEG:%4d", dvalue, dvalue2);
-		if (!s_buf_overflow_warned && strlen(string_buf[1]) >= OSD_TEXT_STR_MAX) {
-			printf("[OSD WARN] string_buf[1] length (%zu) >= OSD_TEXT_STR_MAX (%d), text will NOT be displayed!\r\n",
-				   strlen(string_buf[1]), OSD_TEXT_STR_MAX);
-			s_buf_overflow_warned = 1;
-		}
 
 		dvalue = -1;
 		isp_get_red_balance(&dvalue);
@@ -73,20 +61,10 @@ void iq_update_info(void *arg)
 		dvalue3 = -1;
 		isp_get_wb_temperature(&dvalue3);
 		sprintf(string_buf[2], "R-Gain:%d B-Gain:%d CT:%d", dvalue, dvalue2, dvalue3);
-		if (!s_buf_overflow_warned && strlen(string_buf[2]) >= OSD_TEXT_STR_MAX) {
-			printf("[OSD WARN] string_buf[2] length (%zu) >= OSD_TEXT_STR_MAX (%d), text will NOT be displayed!\r\n",
-				   strlen(string_buf[2]), OSD_TEXT_STR_MAX);
-			s_buf_overflow_warned = 1;
-		}
 
 		dvalue = -1;
 		isp_get_day_night(&dvalue);
 		sprintf(string_buf[3], "Mode:%d ETGain:%.2f", dvalue, ((float)(exp * gain)) / 25600.0f);
-		if (!s_buf_overflow_warned && strlen(string_buf[3]) >= OSD_TEXT_STR_MAX) {
-			printf("[OSD WARN] string_buf[3] length (%zu) >= OSD_TEXT_STR_MAX (%d), text will NOT be displayed!\r\n",
-				   strlen(string_buf[3]), OSD_TEXT_STR_MAX);
-			s_buf_overflow_warned = 1;
-		}
 
 		for (int i = 0; i < 4; i++) {
 			s_txt_info_iq_string[i].str = string_buf[i];
@@ -212,12 +190,6 @@ void example_isp_osd(int idx, int ch_id, int txt_w, int txt_h)
 {
 	int ch = ch_id;
 	printf("Text/Logo OSD Test\r\n");
-
-	// Check if teststring exceeds OSD_TEXT_STR_MAX and warn if so
-	if (strlen(teststring) >= OSD_TEXT_STR_MAX) {
-		printf("[OSD WARN] teststring length (%zu) >= OSD_TEXT_STR_MAX (%d), text will NOT be displayed!\r\n",
-			   strlen(teststring), OSD_TEXT_STR_MAX);
-	}
 
 	font.osd_char_w		= txt_w;
 	font.osd_char_h		= txt_h;
