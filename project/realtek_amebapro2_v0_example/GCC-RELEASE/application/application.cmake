@@ -537,6 +537,19 @@ list(
 	${sdk_root}/component/network/rtsp/sdp.c
 )
 
+#RTP CODEC
+list(
+	APPEND app_sources	
+	${sdk_root}/component/media/rtp_codec/avcodec.c
+	${sdk_root}/component/media/rtp_codec/h264/h264.c
+	${sdk_root}/component/media/rtp_codec/aac/aac.c
+	${sdk_root}/component/media/rtp_codec/g711/g711.c
+	${sdk_root}/component/media/rtp_codec/mjpeg/mjpeg.c
+	${sdk_root}/component/media/rtp_codec/h265/h265.c
+	${sdk_root}/component/media/rtp_codec/opus/opus.c
+	#${sdk_root}/component/media/rtp_codec/mjpeg/mjpeg2jpeg.c
+)
+
 #VIDEO
 list(
 	APPEND app_sources		
@@ -653,13 +666,13 @@ if(DEFINED SCENARIO AND SCENARIO AND NOT "${SCENARIO}" STREQUAL "standard")
         if(EXISTS ${prj_root}/scenario/${SCENARIO}/scenario.cmake)
             message(STATUS "Found SCENARIO ${SCENARIO} and start to build up ${SCENARIO} project")
             include(${prj_root}/scenario/${SCENARIO}/scenario.cmake)
-    endif()
+        endif()
     else()
         message(ERROR SCENARIO "${SCENARIO} Not Found")
-        endif()
-	if(NOT DEBUG)
+    endif()
+    if(NOT DEBUG)
         set(SCENARIO OFF CACHE STRING INTERNAL FORCE)
-	endif()
+    endif()
 else()
 #If users do not choose the scenario, the SDK will use the standard scenario, which means using sdk original src folder
 #Todo: maybe some libraries and source files for applcaition also not need to include in every scenario
@@ -761,7 +774,7 @@ list(
 	${sdk_root}/component/os/freertos/${freertos}/Source/portable/GCC/ARM_CM33/secure
 	${sdk_root}/component/soc/8735b/fwlib/rtl8735b/lib/source/ram/video/voe_bin
 	${sdk_root}/component/video/driver/RTL8735B
-	
+
     ${scn_inc_path}
 	
 	${sdk_root}/component/soc/8735b/fwlib/rtl8735b/lib/source/ram/nn
@@ -849,7 +862,7 @@ list(
 	${sdk_root}/component/usb/host_new/core
 	${sdk_root}/component/usb/device_new/core
 	${sdk_root}/component/usb/
-
+	
 	${sdk_root}/component/wifi/wpa_supplicant/src/
 	${sdk_root}/component/wifi/wpa_supplicant/src/crypto
 	
@@ -911,7 +924,7 @@ list(
 	eap	
 	faultlog
 	websocket_viewer
-	${soclib}
+	${soclib}	
 )
 
 list(
@@ -934,7 +947,6 @@ target_link_libraries(
 	c
 	gcc
 )
-
 
 
 if(NOT PICOLIBC)
