@@ -14,6 +14,7 @@
 #include "video_api.h"
 #include "isp_ctrl_api.h"
 #include "logo_osd.h"
+#include "canvas.h"
 
 #define CHANGE_FONT 0
 #define USE_CUSTOM_1BPP 0
@@ -30,6 +31,10 @@
 static osd_text_info_st s_txt_info_time;
 static osd_text_info_st s_txt_info_date;
 static osd_text_info_st s_txt_info_string;
+#if CHANGE_FONT && !USE_CUSTOM_1BPP
+static osd_text_info_st s_txt_info_string_2;		// example block to demonstrate color change using colorkey method
+static char teststring2[] = "RTK-Ameba-8735B";
+#endif
 static osd_text_info_st s_txt_info_iq_string[6];
 static char string_buf[6][OSD_TEXT_STR_MAX] = {0};
 static char teststring[] = "RTK-AmebaPro2";
@@ -115,7 +120,22 @@ static rt_font_st font = {
 	.v_gap			= OSD_TEXT_FONT_V_GAP,
 	.date_fmt		= osd_date_fmt_9,
 	.time_fmt		= osd_time_fmt_12_4,
+	.stroke_color	= COLOR_BLACK,	// Black stroke (outline)
 };
+
+#if CHANGE_FONT && !USE_CUSTOM_1BPP
+static rt_font_st font_yellow = {
+	.bg_enable		= OSD_TEXT_FONT_BG_ENABLE,
+	.bg_color		= OSD_TEXT_FONT_BG_COLOR,
+	// .ch_color		= OSD_TEXT_FONT_CH_COLOR, // colorkey method demo: channel color is commented out/set to 0
+	.block_alpha	= OSD_TEXT_FONT_BLOCK_ALPHA,
+	.h_gap			= OSD_TEXT_FONT_H_GAP,
+	.v_gap			= OSD_TEXT_FONT_V_GAP,
+	.colorkey_src	= COLOR_WHITE,	// Replace White font pixels
+	.colorkey_dst	= COLOR_YELLOW,	//   with Yellow
+	// .stroke_color 	= COLOR_BLACK,	// Black stroke (outline)
+};
+#endif
 
 extern void rts_osd_task(void *arg);
 static osd_pict_st posd2_pic_0, posd2_pic_1, posd2_pic_2;
@@ -238,10 +258,16 @@ void example_isp_osd(int idx, int ch_id, int txt_w, int txt_h)
 		if (ch == 0) {
 #if CHANGE_FONT
 			rts_set_font_char_size(ch_id, txt_w, txt_h, eng_bin_custom_32x64, NULL);
+			// Multi-color OSD blocks (each with unique blk_idx and different colorkey_dst):
+			// colorkey replaces specific source pixel colors (e.g., white) with a target
+			// color while keeping non-matching pixels as-is for multi-color font data.
+#if !USE_CUSTOM_1BPP
+			init_osd_txt(&s_txt_info_string_2, ch, 6, font_yellow, OSD_TEXT_ROTATE, 800, 10, teststring2);
+#endif
 #endif
 			init_osd_txt(&s_txt_info_time, ch, 0, font, OSD_TEXT_ROTATE, 10 + 320 + 50, 10, 0);
 			init_osd_txt(&s_txt_info_date, ch, 1, font, OSD_TEXT_ROTATE, 10, 10, 0);
-			init_osd_txt(&s_txt_info_string, ch, 5, font, RT_ROTATE_90R, 10, 10 + 100, teststring);
+			init_osd_txt(&s_txt_info_string, ch, 5, font, OSD_TEXT_ROTATE, 10, 10 + 100, teststring);
 
 			init_osd_bitmap_pos(&posd2_pic_0, ch, 150, 200, resize0_w, resize0_h);
 			init_osd_bitmap_pos(&posd2_pic_1, ch, 150 + resize0_w + 50, 200, resize1_w, resize1_h);
@@ -276,6 +302,9 @@ void example_isp_osd(int idx, int ch_id, int txt_w, int txt_h)
 		rts_osd_set_info(rts_osd2_type_pict, &posd2_pic_1);
 		rts_osd_set_info(rts_osd2_type_pict, &posd2_pic_2);
 		rts_osd_set_info(rts_osd2_type_text, &s_txt_info_string);
+#if CHANGE_FONT && !USE_CUSTOM_1BPP
+		rts_osd_set_info(rts_osd2_type_text, &s_txt_info_string_2);
+#endif
 
 		printf("[osd] Heap available:%d\r\n", xPortGetFreeHeapSize());
 
