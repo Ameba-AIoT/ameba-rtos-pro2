@@ -36,6 +36,7 @@
 #include "ai_glass_version.h"
 #include "wifi_conf.h"
 #include "gyrosensor_api.h"
+#include "spi/spi_init.h"
 
 // Configure for ai glass
 #define ENABLE_TEST_CMD             1   // For the tester to test some hardware
@@ -3232,14 +3233,6 @@ void ai_glass_service_thread(void *param)
 	uart_service_start(1);
 	AI_GLASS_MSG("uart service send data time %lu\r\n", mm_read_mediatime_ms());
 
-	// ai_glass_init_external_disk();
-	// AI_GLASS_MSG("Format disk to FAT32\r\n");
-	// int ret = vfs_user_format(ai_glass_disk_name, VFS_FATFS, EXTDISK_PLATFORM);
-	// if (ret == FR_OK) {
-	// 	AI_GLASS_MSG("format successfully\r\n");
-	// } else {
-	// 	AI_GLASS_ERR("format failed %d\r\n", ret);
-	// }
 exit:
 	vTaskDelete(NULL);
 }
@@ -3920,6 +3913,12 @@ void fAIGLASSAISNAP(void *arg)
 	AI_GLASS_INFO("end of AT+AIGLASSAISNAP\r\n");
 }
 
+static void fAIGLASSSPISLAVE(void *arg)
+{
+	AI_GLASS_MSG("Starting SPI slave test...\r\n");
+	spi_slave_start();
+}
+
 log_item_t at_ai_glass_items[ ] = {
 	{"AT+AIGLASSFORMAT",    fDISKFORMAT,            {NULL, NULL}},
 	{"AT+AIGLASSGSENSOR",   fTESTGSENSOR,           {NULL, NULL}},
@@ -3934,6 +3933,7 @@ log_item_t at_ai_glass_items[ ] = {
 	{"AT+AIGLASSGSENSORCFG", fTESTGSENSORCFG,       {NULL, NULL}},
 	{"AT+CALIGSENSOR",   fCALIGSENSOR,           	{NULL, NULL}},
 	{"AT+AIGLASSAISNAP",   fAIGLASSAISNAP,          {NULL, NULL}},
+	{"AT+AIGLASSSPISLAVE",   fAIGLASSSPISLAVE,          {NULL, NULL}},
 };
 #endif
 void ai_glass_log_init(void)

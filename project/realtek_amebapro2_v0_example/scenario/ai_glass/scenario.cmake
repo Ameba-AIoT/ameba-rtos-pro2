@@ -80,6 +80,12 @@ list(
     ${CMAKE_CURRENT_LIST_DIR}/src/gyrosensor/icm42670p/src/icm42670p_hal.c
 )
 
+#SPI
+list(
+    APPEND scn_sources
+    ${CMAKE_CURRENT_LIST_DIR}/src/spi/spi_init.c
+)
+
 #USER
 list(
     APPEND scn_sources
@@ -112,6 +118,7 @@ list(
     ${CMAKE_CURRENT_LIST_DIR}/src/gyrosensor/mpu6050/example
     ${CMAKE_CURRENT_LIST_DIR}/src/gyrosensor/icm42670p/src
     ${CMAKE_CURRENT_LIST_DIR}/src/common_basics/include
+    ${CMAKE_CURRENT_LIST_DIR}/src/spi
 )
 
 list(
