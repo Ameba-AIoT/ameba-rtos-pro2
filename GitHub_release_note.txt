@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: ffa515e67fb2bfdc5bdb6abeee02c47e92c07019
+* [amebapro2][video] update libmmf and application source
+
 SHA-1: 7343927fdd080e02020b33d5b1ea9c11e77d16fb
 * [amebapro2][mmf] avoid task recreate in mmf start
 
