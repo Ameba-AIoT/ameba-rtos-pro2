@@ -35,6 +35,7 @@
 #include "avcodec.h"
 #include "isp_ctrl_api.h"
 static isp_info_t isp_info;
+static int isp_info_init = 0;
 static voe_info_t voe_info = {0};
 static int voe_info_init = 0;
 static int g_enc_buff_size[5] = {0, 0, 0, 0, 0};
@@ -97,7 +98,6 @@ int video_isp_memcpy(void *dst, const void *src, u32 size);
 int video_voe_memcpy(void *dst, const void *src, u32 size);
 int video_load(int sensor_index);
 void *video_fw_deinit(void);
-void video_set_isp_info(isp_info_t *info);
 int video_reset_fw(int ch, int id);
 const unsigned int crc32_result[10] = {0xd202ef8d, 0xa505df1b, 0x3c0c8ea1, 0x4b0bbe37, 0xd56f2b94, 0xa2681b02, 0x3b614ab8, 0x4c667a2e, 0xdcd967bf, 0xabde5729};
 #define FCS_ID  0x04
@@ -1089,6 +1089,27 @@ void video_set_isp_info(isp_info_t *info)
 	isp_info.osd_enable = info->osd_enable;
 	isp_info.md_enable = info->md_enable;
 	isp_info.hdr_enable = info->hdr_enable;
+	isp_info_init = 1;
+}
+
+int video_get_isp_info_status(void)
+{
+	return isp_info_init;
+}
+
+void video_get_isp_info(isp_info_t *info)
+{
+	info->sensor_width = isp_info.sensor_width;
+	info->sensor_height = isp_info.sensor_height;
+	info->sensor_fps = isp_info.sensor_fps;
+	info->osd_enable = isp_info.osd_enable;
+	info->md_enable = isp_info.md_enable;
+	info->hdr_enable = isp_info.hdr_enable;
+}
+
+void video_reset_isp_info_status(void)
+{
+	isp_info_init = 0;
 }
 
 void video_set_sensor_fps(int max_fps, int min_fps)

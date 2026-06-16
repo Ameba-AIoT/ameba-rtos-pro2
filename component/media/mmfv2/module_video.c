@@ -970,42 +970,49 @@ int video_voe_presetting(int v1_enable, int v1_w, int v1_h, int v1_bps, int v1_s
 		return isp_fcs_info->voe_heap_size;
 	}
 
+	if (!video_get_isp_info_status()) {
 #if MULTI_SENSOR
-	info.sensor_fps    = 0;
-	info.sensor_width  = 0;
-	info.sensor_height = 0;
-	for (int i = 0; i < SENSOR_MAX; i++) {
-		struct sensor_params_t cur_snr = sensor_params[sen_id[i]];
-		if (cur_snr.sensor_width * cur_snr.sensor_height > info.sensor_width * info.sensor_height) {
-			info.sensor_width  = cur_snr.sensor_width;
-			info.sensor_height = cur_snr.sensor_height;
+		info.sensor_fps    = 0;
+		info.sensor_width  = 0;
+		info.sensor_height = 0;
+		for (int i = 0; i < SENSOR_MAX; i++) {
+			struct sensor_params_t cur_snr = sensor_params[sen_id[i]];
+			if (cur_snr.sensor_width * cur_snr.sensor_height > info.sensor_width * info.sensor_height) {
+				info.sensor_width  = cur_snr.sensor_width;
+				info.sensor_height = cur_snr.sensor_height;
+			}
+			if (cur_snr.sensor_fps < info.sensor_fps) {
+				info.sensor_fps  = cur_snr.sensor_fps;
+			}
 		}
-		if (cur_snr.sensor_fps < info.sensor_fps) {
-			info.sensor_fps  = cur_snr.sensor_fps;
-		}
-	}
 #else
-	if (sensor_id_value > 0 && sensor_id_value < SENSOR_MAX) {
-		info.sensor_fps    = sensor_params[sen_id[sensor_id_value]].sensor_fps;
-		info.sensor_width  = sensor_params[sen_id[sensor_id_value]].sensor_width;
-		info.sensor_height = sensor_params[sen_id[sensor_id_value]].sensor_height;
-	} else {
-		info.sensor_fps    = sensor_params[USE_SENSOR].sensor_fps;
-		info.sensor_width  = sensor_params[USE_SENSOR].sensor_width;
-		info.sensor_height = sensor_params[USE_SENSOR].sensor_height;
-	}
+		if (sensor_id_value > 0 && sensor_id_value < SENSOR_MAX) {
+			info.sensor_fps    = sensor_params[sen_id[sensor_id_value]].sensor_fps;
+			info.sensor_width  = sensor_params[sen_id[sensor_id_value]].sensor_width;
+			info.sensor_height = sensor_params[sen_id[sensor_id_value]].sensor_height;
+		} else {
+			info.sensor_fps    = sensor_params[USE_SENSOR].sensor_fps;
+			info.sensor_width  = sensor_params[USE_SENSOR].sensor_width;
+			info.sensor_height = sensor_params[USE_SENSOR].sensor_height;
+		}
 #endif
-	printf("[%s] fps:%d  w:%d  h:%d   \r\n", __FUNCTION__, info.sensor_fps, info.sensor_width, info.sensor_height);
 
+		video_set_isp_info(&info);
+		
 #if OSD_ENABLE
-	info.osd_enable = 1;
+		info.osd_enable = 1;
 #endif
 
 #if HDR_ENABLE
-	info.hdr_enable = 1;
+		info.hdr_enable = 1;
 #endif
 
-	video_set_isp_info(&info);
+	} else {
+		video_get_isp_info(&info);
+	}
+	
+	printf("[%s] fps:%d  w:%d  h:%d   \r\n", __FUNCTION__, info.sensor_fps, info.sensor_width, info.sensor_height);
+
 
 	//do 16 alignment
 	v1_w = (v1_w + 15) & ~15;
@@ -1036,42 +1043,47 @@ int video_voe_presetting_by_params(const void *v1_params, int v1_jpg_only_shapsh
 		return isp_fcs_info->voe_heap_size;
 	}
 
+	if (!video_get_isp_info_status()) {
 #if MULTI_SENSOR
-	info.sensor_fps    = 0;
-	info.sensor_width  = 0;
-	info.sensor_height = 0;
-	for (int i = 0; i < SENSOR_MAX; i++) {
-		struct sensor_params_t cur_snr = sensor_params[sen_id[i]];
-		if (cur_snr.sensor_width * cur_snr.sensor_height > info.sensor_width * info.sensor_height) {
-			info.sensor_width  = cur_snr.sensor_width;
-			info.sensor_height = cur_snr.sensor_height;
+		info.sensor_fps    = 0;
+		info.sensor_width  = 0;
+		info.sensor_height = 0;
+		for (int i = 0; i < SENSOR_MAX; i++) {
+			struct sensor_params_t cur_snr = sensor_params[sen_id[i]];
+			if (cur_snr.sensor_width * cur_snr.sensor_height > info.sensor_width * info.sensor_height) {
+				info.sensor_width  = cur_snr.sensor_width;
+				info.sensor_height = cur_snr.sensor_height;
+			}
+			if (cur_snr.sensor_fps < info.sensor_fps) {
+				info.sensor_fps  = cur_snr.sensor_fps;
+			}
 		}
-		if (cur_snr.sensor_fps < info.sensor_fps) {
-			info.sensor_fps  = cur_snr.sensor_fps;
-		}
-	}
 #else
-	if (sensor_id_value > 0 && sensor_id_value < SENSOR_MAX) {
-		info.sensor_fps    = sensor_params[sen_id[sensor_id_value]].sensor_fps;
-		info.sensor_width  = sensor_params[sen_id[sensor_id_value]].sensor_width;
-		info.sensor_height = sensor_params[sen_id[sensor_id_value]].sensor_height;
-	} else {
-		info.sensor_fps    = sensor_params[USE_SENSOR].sensor_fps;
-		info.sensor_width  = sensor_params[USE_SENSOR].sensor_width;
-		info.sensor_height = sensor_params[USE_SENSOR].sensor_height;
-	}
+		if (sensor_id_value > 0 && sensor_id_value < SENSOR_MAX) {
+			info.sensor_fps    = sensor_params[sen_id[sensor_id_value]].sensor_fps;
+			info.sensor_width  = sensor_params[sen_id[sensor_id_value]].sensor_width;
+			info.sensor_height = sensor_params[sen_id[sensor_id_value]].sensor_height;
+		} else {
+			info.sensor_fps    = sensor_params[USE_SENSOR].sensor_fps;
+			info.sensor_width  = sensor_params[USE_SENSOR].sensor_width;
+			info.sensor_height = sensor_params[USE_SENSOR].sensor_height;
+		}
 #endif
-	printf("[%s] fps:%d  w:%d  h:%d   \r\n", __FUNCTION__, info.sensor_fps, info.sensor_width, info.sensor_height);
 
 #if OSD_ENABLE
-	info.osd_enable = 1;
+		info.osd_enable = 1;
 #endif
 
 #if HDR_ENABLE
-	info.hdr_enable = 1;
+		info.hdr_enable = 1;
 #endif
 
-	video_set_isp_info(&info);
+		video_set_isp_info(&info);
+	} else {
+		video_get_isp_info(&info);
+	}
+	
+	printf("[%s] fps:%d  w:%d  h:%d   \r\n", __FUNCTION__, info.sensor_fps, info.sensor_width, info.sensor_height);
 
 	int v1_enable = (v1_params == NULL ? 0 : 1);
 	int v2_enable = (v2_params == NULL ? 0 : 1);

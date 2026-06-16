@@ -292,7 +292,9 @@ static void param_change_test(int idx, char *argv[MAX_ARGC])
 	case ISP_INIT_TEST:
 		printf("isp init test\n\r");
 		siso_pause(siso_video_rtsp_v1);
+		mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_STREAMMING, OFF);
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, V1_CHANNEL);
+
 		video_pre_init_params_t init_params;
 		memset(&init_params, 0x00, sizeof(video_pre_init_params_t));
 		//enable drop frame
@@ -318,10 +320,39 @@ static void param_change_test(int idx, char *argv[MAX_ARGC])
 		init_params.isp_awb_enable = 1;
 		init_params.isp_awb_init_rgain = 256;
 		init_params.isp_awb_init_bgain = 867;
+		
+		// if require to lower sensor fps for hdr mode
+		if(init_params.init_isp_items.init_hdr_mode) {
+			int hdr_mode_fps = 15;
+			printf("change sensor fps change to %d\r\n", hdr_mode_fps);
+
+			isp_info_t isp_info;
+			video_get_isp_info(&isp_info);
+			isp_info.sensor_fps = hdr_mode_fps;
+			isp_info.hdr_enable = 1;
+			video_set_isp_info(&isp_info);
+			
+			//update video and rtsp parameters
+			video_v1_params.fps  = hdr_mode_fps;
+			video_v1_params.gop  = hdr_mode_fps;
+			rtsp2_v1_params.u.v.fps = hdr_mode_fps;
+			mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_PARAMS, (int)&video_v1_params);
+			mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_PARAMS, (int)&rtsp2_v1_params);
+			mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SELECT_STREAM, 0);
+			mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_APPLY, 0);
+			
+#if 0 // Avoid frequently reconfiguring VOE heap to prevent memory fragmentation.
+			video_voe_release();
+			int voe_heap_size = video_voe_presetting_by_params(&video_v1_params, 0, NULL, 0, NULL, 0, NULL);
+			printf("\r\n voe heap size = %d\r\n", voe_heap_size);
+#endif
+		}
 
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&init_params);
-		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, V1_CHANNEL);	// start channel 0
+		//restart video
+		mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_STREAMMING, ON);
 		siso_resume(siso_video_rtsp_v1);
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, V1_CHANNEL);
 		break;
 	case SENSOR_DRIVER_CHANGE_TEST:
 	{
