@@ -72,27 +72,28 @@ struct sensor_params_t {
 #define SENSOR_SC3336         0x31  //  |   v    |   -    |   v    |   -    |
 #define SENSOR_K06A           0x32  //  |   v    |   -    |   -    |   -    |
 #define SENSOR_K306P          0x33  //  |   v    |   -    |   -    |   -    |
-#define SENSOR_OV9734_SD      0x34  //  |   v    |   -    |   v    |   -    |
-#define SENSOR_IMX471         0x35  //  |   v    |   v    |   v    |   -    |
-#define SENSOR_IMX471_12M     0x36  //  |   v    |   -    |   v    |   -    |
-#define SENSOR_IMX471_12M_SEQ 0x37  //  |   v    |   -    |   v    |   -    |
-#define SENSOR_IMX681         0x38  //  |   v    |   v    |   v    |   -    |
-#define SENSOR_IMX681_5M      0x39  //  |   v    |   v    |   v    |   -    |
-#define SENSOR_IMX681_12M     0x3A  //  |   v    |   -    |   v    |   -    |
-#define SENSOR_IMX681_12M_SEQ 0x3B  //  |   v    |   -    |   v    |   -    |
-#define SENSOR_FIXP_5M        0x3C  //  |   v    |   -    |   -    |   -    |
-#define SENSOR_FIXP_2K        0x3D  //  |   v    |   -    |   -    |   -    |
-#define SENSOR_SC5356_2M      0x3E  //  |   v    |   v    |   v    |   -    |
-#define SENSOR_OS02H10        0x3F  //  |   v    |   v    |   -    |   -    |
-#define SENSOR_OV13B10        0x40  //  |   v    |   v    |   -    |   -    |
-#define SENSOR_OV13B10_12M    0x41  //  |   v    |   -    |   -    |   -    |
-#define SENSOR_OV13B10_12M_SEQ 0x42  //  |   v    |   -    |   -    |   -    |
-#define SENSOR_OV12890         0x43  //  |   v    |   v    |   -    |   -    |
-#define SENSOR_OV12890_12M     0x44  //  |   v    |   -    |   -    |   -    |
-#define SENSOR_OV12890_12M_SEQ 0x45  //  |   v    |   -    |   -    |   -    |
-#define SENSOR_F57				0x46  //  |   v    |   -    |   -    |   -    |
-#define SENSOR_SC450AI			0x47  //  |   v    |   -    |   -    |   -    |
-#define SENSOR_OV5647		  	0x48  //  |   v    |   -    |   -    |   -    |
+#define SENSOR_K306P_HD       0x34  //  |   v    |   -    |   -    |   -    |
+#define SENSOR_OV9734_SD      0x35  //  |   v    |   -    |   v    |   -    |
+#define SENSOR_IMX471         0x36  //  |   v    |   v    |   v    |   -    |
+#define SENSOR_IMX471_12M     0x37  //  |   v    |   -    |   v    |   -    |
+#define SENSOR_IMX471_12M_SEQ 0x38  //  |   v    |   -    |   v    |   -    |
+#define SENSOR_IMX681         0x39  //  |   v    |   v    |   v    |   -    |
+#define SENSOR_IMX681_5M      0x3A  //  |   v    |   v    |   v    |   -    |
+#define SENSOR_IMX681_12M     0x3B  //  |   v    |   -    |   v    |   -    |
+#define SENSOR_IMX681_12M_SEQ 0x3C  //  |   v    |   -    |   v    |   -    |
+#define SENSOR_FIXP_5M        0x3D  //  |   v    |   -    |   -    |   -    |
+#define SENSOR_FIXP_2K        0x3E  //  |   v    |   -    |   -    |   -    |
+#define SENSOR_SC5356_2M      0x3F  //  |   v    |   v    |   v    |   -    |
+#define SENSOR_OS02H10        0x40  //  |   v    |   v    |   -    |   -    |
+#define SENSOR_OV13B10        0x41  //  |   v    |   v    |   -    |   -    |
+#define SENSOR_OV13B10_12M    0x42  //  |   v    |   -    |   -    |   -    |
+#define SENSOR_OV13B10_12M_SEQ 0x43  //  |   v    |   -    |   -    |   -    |
+#define SENSOR_OV12890         0x44  //  |   v    |   v    |   -    |   -    |
+#define SENSOR_OV12890_12M     0x45  //  |   v    |   -    |   -    |   -    |
+#define SENSOR_OV12890_12M_SEQ 0x46  //  |   v    |   -    |   -    |   -    |
+#define SENSOR_F57             0x47  //  |   v    |   -    |   -    |   -    |
+#define SENSOR_SC450AI         0x48  //  |   v    |   -    |   -    |   -    |
+#define SENSOR_OV5647          0x49  //  |   v    |   -    |   -    |   -    |
 
 static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_DUMMY]        = {1920, 1080, 30},
@@ -146,7 +147,8 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_OV5693]       = {2592, 1944, 15},
 	[SENSOR_SC3336]       = {2304, 1296, 30},
 	[SENSOR_K06A]         = {2560, 1440, 24},
-	[SENSOR_K306P]        = {2560, 1440, 24},
+	[SENSOR_K306P]        = {2560, 1440, 20},
+	[SENSOR_K306P_HD]     = {1284, 724, 20},
 	[SENSOR_OV9734_SD]    = { 640,  360, 60},
 	[SENSOR_IMX471]       = {2304, 1728, 24},
 	[SENSOR_IMX471_12M]       = {4032, 3024, 5},
