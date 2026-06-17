@@ -136,6 +136,8 @@ int wifi_wowlan_set_arp_rsp_keep_alive(int enable)
 void wifi_set_802_11v_bss_pkt_offload(void)
 {
 	wowlan_pattern_t bss_pattern;
+	u8 pmf_en = 0;
+
 	memset(&bss_pattern, 0, sizeof(wowlan_pattern_t));
 
 	uint8_t identify_80211v[6] = {0x08, 0x00, 0x02, 0x01, 0x01, 0x76};
@@ -147,9 +149,13 @@ void wifi_set_802_11v_bss_pkt_offload(void)
 
 	wifi_wowlan_set_pattern(bss_pattern);
 
-	//for wpa3
-	extern void rtw_hal_sw_parser_11v_enable(u8 enable);
-	rtw_hal_sw_parser_11v_enable(1);
+	//for wpa3/pmf
+	extern int rltk_get_connection_pmf_enable(u8 * enable);
+	rltk_get_connection_pmf_enable(&pmf_en);
+	if (pmf_en == 1) {
+		extern void rtw_hal_sw_parser_11v_enable(u8 enable);
+		rtw_hal_sw_parser_11v_enable(1);
+	}
 }
 
 uint8_t set_arp_targetip = 0;
