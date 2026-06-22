@@ -438,6 +438,7 @@ int ai_snapshot_initialize(void)
 		rtw_mutex_init(&ai_snap_ctx->snapshot_mutex);
 		ai_snap_ctx->snapshot_write = aisnapshot_write_picture;
 		
+#if (AI_SNAPSHOT_WITH_OD == 1)
 		// Initialize VIPNN for object detection
 		ai_snap_ctx->vipnn_ctx = mm_module_open(&vipnn_module);
 		if (ai_snap_ctx->vipnn_ctx) {
@@ -481,7 +482,7 @@ int ai_snapshot_initialize(void)
 		} else {
 			AI_GLASS_WARN("VIPNN module open failed, object detection disabled\n\r");
 		}
-		
+#endif		
 		if (ai_snap_ctx->video_snapshot_ctx) {
 			media_get_preinit_isp_data(&ai_glass_pre_init_params);
 			ai_glass_pre_init_params.video_drop_enable = 1;
