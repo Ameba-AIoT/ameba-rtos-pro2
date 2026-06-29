@@ -997,7 +997,6 @@ int video_voe_presetting(int v1_enable, int v1_w, int v1_h, int v1_bps, int v1_s
 		}
 #endif
 
-		video_set_isp_info(&info);
 		
 #if OSD_ENABLE
 		info.osd_enable = 1;
@@ -1006,6 +1005,7 @@ int video_voe_presetting(int v1_enable, int v1_w, int v1_h, int v1_bps, int v1_s
 #if HDR_ENABLE
 		info.hdr_enable = 1;
 #endif
+		video_set_isp_info(&info);
 
 	} else {
 		video_get_isp_info(&info);
