@@ -727,8 +727,13 @@ int NetworkConnect(Network *n, char *addr, int port)
 
 
 		mbedtls_ssl_set_bio(n->ssl, &n->my_socket, mbedtls_net_send, mbedtls_net_recv, NULL);
+
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000)
+		mbedtls_ssl_conf_max_tls_version(n->conf, MBEDTLS_SSL_VERSION_TLS1_2); // TLS 1.2
+#else
 		mbedtls_ssl_conf_rng(n->conf, my_random, NULL);
 		mbedtls_ssl_conf_max_version(n->conf, MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_3); // TLS 1.2
+#endif
 
 #if defined(MBEDTLS_SSL_MAX_CONTENT_LEN) && MBEDTLS_SSL_MAX_CONTENT_LEN == 4096
 		if (mbedtls_ssl_conf_max_frag_len(n->conf, MBEDTLS_SSL_MAX_FRAG_LEN_4096) < 0) {
@@ -783,7 +788,7 @@ int NetworkConnect(Network *n, char *addr, int port)
 				goto err;
 			}
 
-#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x03000000)
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x03000000) && (MBEDTLS_VERSION_NUMBER < 0x04000000)
 			if (mbedtls_pk_parse_key(client_rsa, (const unsigned char *)n->private_key, strlen(n->private_key) + 1, NULL, 0, NULL, NULL) != 0) {
 #else
 			if (mbedtls_pk_parse_key(client_rsa, (const unsigned char *)n->private_key, strlen(n->private_key) + 1, NULL, 0) != 0) {

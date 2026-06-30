@@ -194,9 +194,10 @@ void example_ssl_server(void)
 #include "mbedtls/platform.h"
 #include "mbedtls/net_sockets.h"
 #include "mbedtls/ssl.h"
-#include "mbedtls/certs.h"
-#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(MBEDTLS_SSL_PROTO_TLS1_3)
-#include "psa/crypto.h"
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000)
+#include <test/certs.h>
+#else
+#include <mbedtls/certs.h>
 #endif
 
 #define SERVER_PORT   "443"
@@ -266,9 +267,6 @@ static void example_ssl_server_thread(void *param)
 	printf("\nExample: SSL server\n");
 
 	mbedtls_platform_set_calloc_free(my_calloc, vPortFree);
-#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(MBEDTLS_SSL_PROTO_TLS1_3)
-	psa_crypto_init();
-#endif
 
 	/*
 	 * 1. Prepare the certificate and key
@@ -287,7 +285,7 @@ static void example_ssl_server_thread(void *param)
 		printf(" failed\n  ! mbedtls_x509_crt_parse returned %d\n\n", ret);
 		goto exit;
 	}
-#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x03000000)
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x03000000) && (MBEDTLS_VERSION_NUMBER < 0x04000000)
 	if ((ret = mbedtls_pk_parse_key(&server_pk, (const unsigned char *) mbedtls_test_srv_key, mbedtls_test_srv_key_len, NULL, 0, NULL, NULL)) != 0) {
 #else
 	if ((ret = mbedtls_pk_parse_key(&server_pk, (const unsigned char *) mbedtls_test_srv_key, mbedtls_test_srv_key_len, NULL, 0)) != 0) {
@@ -338,8 +336,10 @@ static void example_ssl_server_thread(void *param)
 
 		mbedtls_ssl_conf_ca_chain(&conf, server_x509.next, NULL);
 		mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE);
-		mbedtls_ssl_conf_rng(&conf, my_random, NULL);
 
+#if !(defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000))
+		mbedtls_ssl_conf_rng(&conf, my_random, NULL);
+#endif
 		if ((ret = mbedtls_ssl_conf_own_cert(&conf, &server_x509, &server_pk)) != 0) {
 			printf(" failed\n  ! mbedtls_ssl_conf_own_cert returned %d\n\n", ret);
 			goto close_client;

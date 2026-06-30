@@ -260,15 +260,13 @@ void cmd_ssl_client(int argc, char **argv)
 #include "mbedtls/error.h"
 #include "mbedtls/debug.h"
 #include "mbedtls/version.h"
-#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(MBEDTLS_SSL_PROTO_TLS1_3)
-#include "psa/crypto.h"
-#endif
 #if defined(configENABLE_TRUSTZONE) && (configENABLE_TRUSTZONE == 1) && defined(CONFIG_SSL_CLIENT_PRIVATE_IN_TZ) && (CONFIG_SSL_CLIENT_PRIVATE_IN_TZ == 1)
 #include "device_lock.h"
 #endif
 
 #define SERVER_PORT   "443"
 #define SERVER_HOST   "192.168.13.15"
+#define SERVER_NAME   ""	// server CN
 #define GET_REQUEST   "GET / HTTP/1.0\r\n\r\n"
 #define DEBUG_LEVEL   0
 #define READ_TIMEOUT_MS		10000	// ssl read timeout value in ms
@@ -351,9 +349,6 @@ static void ssl_client(void *param)
 #if defined(MBEDTLS_DEBUG_C)
 	mbedtls_debug_set_threshold(DEBUG_LEVEL);
 #endif
-#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(MBEDTLS_SSL_PROTO_TLS1_3)
-	psa_crypto_init();
-#endif
 
 	/*
 	 * 1. Start the connection
@@ -397,8 +392,11 @@ static void ssl_client(void *param)
 	}
 
 	mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE);
-	mbedtls_ssl_conf_rng(&conf, my_random, NULL);
 	mbedtls_ssl_conf_dbg(&conf, my_debug, NULL);
+
+#if !(defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000))
+	mbedtls_ssl_conf_rng(&conf, my_random, NULL);
+#endif
 
 #if defined(MBEDTLS_SSL_MAX_CONTENT_LEN) && MBEDTLS_SSL_MAX_CONTENT_LEN == 4096
 	ret = mbedtls_ssl_conf_max_frag_len(&conf, MBEDTLS_SSL_MAX_FRAG_LEN_4096);
@@ -413,6 +411,11 @@ static void ssl_client(void *param)
 		printf(" failed\n\r  ! ssl_client_ext_setup returned %d\n", ret);
 		goto exit;
 	}
+
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000)
+	/* set hostname is required for certificate verification */
+	mbedtls_ssl_set_hostname(&ssl, SERVER_NAME);
+#endif
 #endif
 
 	if ((ret = mbedtls_ssl_setup(&ssl, &conf)) != 0) {
@@ -468,6 +471,12 @@ static void ssl_client(void *param)
 		memset(buf, 0, sizeof(buf));
 		ret = mbedtls_ssl_read(&ssl, buf, len);
 
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000) && defined(MBEDTLS_SSL_PROTO_TLS1_3)
+		if (ret == MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET) {
+			printf(" got TLS 1.3 new session ticket\n");
+			continue;
+		}
+#endif
 		if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
 			continue;
 		}

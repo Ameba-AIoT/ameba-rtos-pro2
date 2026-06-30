@@ -10,7 +10,12 @@
 #if (HTTPD_USE_TLS == HTTPD_TLS_POLARSSL)
 #include <polarssl/certs.h>
 #elif (HTTPD_USE_TLS == HTTPD_TLS_MBEDTLS)
+#include <mbedtls/version.h>
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000)
+#include <test/certs.h>
+#else
 #include <mbedtls/certs.h>
+#endif
 #endif
 #endif
 

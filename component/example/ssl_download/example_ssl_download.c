@@ -146,6 +146,7 @@ extern void ssl_client_ext_free(void);
 #endif
 
 #define SERVER_HOST    "176.34.62.248"
+#define SERVER_NAME    ""	// server CN
 #define SERVER_PORT    "443"
 #define RESOURCE       "/repository/IOT/Project_Cloud_A.bin"
 #define BUFFER_SIZE    2048
@@ -221,14 +222,24 @@ static void example_ssl_download_thread(void *param)
 	}
 
 	mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE);
+
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000)
+	mbedtls_ssl_conf_max_tls_version(&conf, MBEDTLS_SSL_VERSION_TLS1_2); // TLS 1.2
+#else
 	mbedtls_ssl_conf_rng(&conf, my_random, NULL);
 	mbedtls_ssl_conf_max_version(&conf, MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_3); // TLS 1.2
+#endif
 
 #ifdef SSL_CLIENT_EXT
 	if ((ret = ssl_client_ext_setup(&conf)) != 0) {
 		printf(" failed\n\r  ! ssl_client_ext_setup returned %d\n", ret);
 		goto exit;
 	}
+
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000)
+	/* set hostname is required for certificate verification */
+	mbedtls_ssl_set_hostname(&ssl, SERVER_NAME);
+#endif
 #endif
 
 #if defined(MBEDTLS_SSL_MAX_CONTENT_LEN) && MBEDTLS_SSL_MAX_CONTENT_LEN == 4096

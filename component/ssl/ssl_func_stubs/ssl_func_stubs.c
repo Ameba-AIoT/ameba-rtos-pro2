@@ -1,3 +1,25 @@
+#include "mbedtls/version.h"
+#if defined(MBEDTLS_PSA_CRYPTO_C)
+#include "psa/crypto.h"
+#endif
+
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000)
+
+#if defined(CONFIG_PLATFORM_8735B)
+#include <stdlib.h>
+__attribute__((constructor))
+static void init_mbedtls_platform(void)
+{
+	crypto_init();
+
+#if defined(MBEDTLS_PSA_CRYPTO_C)
+	psa_crypto_init();
+#endif
+}
+#endif
+
+#else /* defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000) */
+
 #if defined(CONFIG_PLATFORM_8735B)
 #include <stdlib.h>
 __attribute__((constructor))
@@ -5,6 +27,10 @@ static void init_mbedtls_platform(void)
 {
 	crypto_init();
 	platform_set_malloc_free(calloc, free);
+
+#if defined(MBEDTLS_PSA_CRYPTO_C) && defined(MBEDTLS_SSL_PROTO_TLS1_3)
+	psa_crypto_init();
+#endif
 }
 #endif
 
@@ -14,8 +40,6 @@ static void init_mbedtls_platform(void)
 #else
 #include "hal_crypto.h"
 #endif
-
-#include "mbedtls/version.h"
 
 extern const ssl_func_stubs_t __rom_stubs_ssl;
 
@@ -297,7 +321,6 @@ int mbedtls_mpi_gen_prime(mbedtls_mpi *X, size_t nbits, int dh_flag, int (*f_rng
 {
 	return __rom_stubs_ssl.mbedtls_mpi_gen_prime(X, nbits, dh_flag, f_rng, p_rng);
 }
-
 
 #if !(defined(CONFIG_PLATFORM_8735B) && (MBEDTLS_VERSION_NUMBER>=0x03000000 || MBEDTLS_VERSION_NUMBER==0x02100600 || MBEDTLS_VERSION_NUMBER==0x021C0100))
 
@@ -1759,3 +1782,5 @@ int mbedtls_pk_write_key_pem(mbedtls_pk_context *key, unsigned char *buf, size_t
 #endif /* !((defined(CONFIG_PLATFORM_8710C) || defined(CONFIG_PLATFORM_8735B)) && defined(CONFIG_BUILD_SECURE) && (CONFIG_BUILD_SECURE == 1)) */
 
 #endif /* !(defined(CONFIG_PLATFORM_8735B) && (MBEDTLS_VERSION_NUMBER>=0x03000000 || MBEDTLS_VERSION_NUMBER==0x02100600 || MBEDTLS_VERSION_NUMBER==0x021C0100)) */
+
+#endif /* defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000) */

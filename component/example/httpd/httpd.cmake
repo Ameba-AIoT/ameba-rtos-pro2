@@ -19,4 +19,16 @@ list(
 	app_example.c
 	example_httpd.c
 )
+
+if("${mbedtls}" MATCHES "^mbedtls-4")
+list(
+	APPEND app_example_sources
+	../../ssl/${mbedtls}/tests/src/certs.c
+)
+list (
+	APPEND inc_path_re
+	${sdk_root}/component/ssl/${mbedtls}/tests/include
+)
+endif()
+
 list(TRANSFORM app_example_sources PREPEND ${CMAKE_CURRENT_LIST_DIR}/)

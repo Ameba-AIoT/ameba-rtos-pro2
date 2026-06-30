@@ -147,7 +147,7 @@ exit:
 		ret = -1;
 		goto exit;
 	}
-#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x03000000)
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x03000000) && (MBEDTLS_VERSION_NUMBER < 0x04000000)
 	if ((ret = mbedtls_pk_parse_key(&httpd_key, (const unsigned char *) server_key, strlen(server_key) + 1, NULL, 0, NULL, NULL)) != 0) {
 #else
 	if ((ret = mbedtls_pk_parse_key(&httpd_key, (const unsigned char *) server_key, strlen(server_key) + 1, NULL, 0)) != 0) {
@@ -260,10 +260,14 @@ exit:
 		}
 
 		mbedtls_ssl_conf_authmode(conf, MBEDTLS_SSL_VERIFY_NONE);
-		mbedtls_ssl_conf_rng(conf, _random_func, NULL);
-		mbedtls_ssl_conf_max_version(conf, MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_3); // TLS 1.2
 		mbedtls_ssl_conf_ca_chain(conf, httpd_certs.next, NULL);
 
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000)
+		mbedtls_ssl_conf_max_tls_version(conf, MBEDTLS_SSL_VERSION_TLS1_2); // TLS 1.2
+#else
+		mbedtls_ssl_conf_rng(conf, _random_func, NULL);
+		mbedtls_ssl_conf_max_version(conf, MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_3); // TLS 1.2
+#endif
 		if (secure == HTTPD_SECURE_TLS_VERIFY) {
 			mbedtls_ssl_conf_authmode(conf, MBEDTLS_SSL_VERIFY_REQUIRED);
 			mbedtls_ssl_conf_verify(conf, _verify_func, NULL);

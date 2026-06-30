@@ -814,7 +814,10 @@ struct tls_connection *tls_connection_init(void *tls_ctx)
 	}
 
 	mbedtls_ssl_conf_authmode(tls_context->conf, MBEDTLS_SSL_VERIFY_NONE);
+
+#if !(defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000))
 	mbedtls_ssl_conf_rng(tls_context->conf, my_random, NULL);
+#endif
 
 	if ((ret = mbedtls_ssl_setup(tls_context->ssl, tls_context->conf)) != 0) {
 		wpa_printf(MSG_INFO, "TLS: mbedtls_ssl_setup() failed");

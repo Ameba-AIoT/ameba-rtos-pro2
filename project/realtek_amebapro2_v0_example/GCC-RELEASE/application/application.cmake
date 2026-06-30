@@ -474,6 +474,22 @@ list(
 )
 endif()
 
+if("${mbedtls}" MATCHES "^mbedtls-4")
+file(GLOB MBEDTLS_PSA_CORE_SRC CONFIGURE_DEPENDS ${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/core/*.c)
+file(GLOB MBEDTLS_PSA_DRIVERS_SRC CONFIGURE_DEPENDS ${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/drivers/builtin/src/*.c)
+file(GLOB MBEDTLS_PSA_EXTRAS_SRC CONFIGURE_DEPENDS ${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/extras/*.c)
+file(GLOB MBEDTLS_PSA_PLATFORM_SRC CONFIGURE_DEPENDS ${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/platform/*.c)
+file(GLOB MBEDTLS_PSA_UTILITIES_SRC CONFIGURE_DEPENDS ${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/utilities/*.c)
+list(
+	APPEND out_sources
+	${MBEDTLS_PSA_CORE_SRC}
+	${MBEDTLS_PSA_DRIVERS_SRC}
+	${MBEDTLS_PSA_EXTRAS_SRC}
+	${MBEDTLS_PSA_PLATFORM_SRC}
+	${MBEDTLS_PSA_UTILITIES_SRC}
+)
+endif()
+
 #FATFS
 list(
 	APPEND out_sources

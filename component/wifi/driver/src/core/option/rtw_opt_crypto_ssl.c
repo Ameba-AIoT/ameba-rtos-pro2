@@ -63,6 +63,7 @@ int rtw_crypto_ecc_init(sae_ecc_crypto *ecc, unsigned char group_id)
 		mbedtls_mpi_set_bit(&ecc->A, 0, 0);
 		mbedtls_mpi_set_bit(&ecc->A, 1, 0);
 		break;
+#if !(defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000))
 	case 25:
 		mbedtls_ecp_group_load(ecc, MBEDTLS_ECP_DP_SECP192R1);
 		mbedtls_mpi_init(&ecc->A);
@@ -75,6 +76,7 @@ int rtw_crypto_ecc_init(sae_ecc_crypto *ecc, unsigned char group_id)
 		mbedtls_mpi_init(&ecc->A);
 		mbedtls_mpi_read_binary(&ecc->A, secp224r1_a, 28);
 		break;
+#endif
 	default:
 		printf("\r\nmbedtls_ecc_init: no available ecc type: %d \n", group_id);
 		ret = -1;

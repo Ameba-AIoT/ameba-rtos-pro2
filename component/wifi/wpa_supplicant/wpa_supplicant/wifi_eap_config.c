@@ -678,7 +678,7 @@ int eap_cert_setup(struct eap_tls *tls_context)
 		}
 
 		if (eap_client_key_pwd) {
-#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x03000000)
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x03000000) && (MBEDTLS_VERSION_NUMBER < 0x04000000)
 			if (mbedtls_pk_parse_key(_clikey_rsa, eap_client_key, eap_client_key_len, (const unsigned char *)eap_client_key_pwd, strlen((char *)eap_client_key_pwd) + 1,
 									 rtw_get_random_bytes_f_rng, (void *)1) != 0)
 #else
@@ -689,7 +689,7 @@ int eap_cert_setup(struct eap_tls *tls_context)
 				return -1;
 			}
 		} else {
-#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x03000000)
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x03000000) && (MBEDTLS_VERSION_NUMBER < 0x04000000)
 			if (mbedtls_pk_parse_key(_clikey_rsa, eap_client_key, eap_client_key_len, (const unsigned char *)eap_client_key_pwd, 0, rtw_get_random_bytes_f_rng,
 									 (void *)1) != 0)
 #else

@@ -125,6 +125,21 @@ list (
 	   
 )
 
+if("${mbedtls}" MATCHES "^mbedtls-4")
+list (
+	APPEND inc_path_re
+	"${sdk_root}/component/ssl/${mbedtls}/library"
+	"${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/core"
+	"${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/dispatch"
+	"${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/drivers/builtin/include"
+	"${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/drivers/builtin/src"
+	"${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/extras"
+	"${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/include"
+	"${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/platform"
+	"${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/utilities"
+)
+endif()
+
 get_filename_component(inc_path "${inc_path_re}" ABSOLUTE)
 
 #[[
