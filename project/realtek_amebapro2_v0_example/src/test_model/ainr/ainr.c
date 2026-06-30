@@ -269,7 +269,8 @@ int planar_to_nchw_ppu(ainr_ctx_t *ctx, const uint8_t *src_msb_plane, const uint
 	return 0;
 }
 
-static void ainr_patch_to_nchw(ainr_ctx_t *ctx, uint8_t *dst_nchw_patch, int patch_h, int patch_w, const uint8_t *src_msb_plane, const uint8_t *src_lsb_plane, int src_full_h, int src_full_w, int y_nchw, int x_nchw, int blc)
+static void ainr_patch_to_nchw(ainr_ctx_t *ctx, uint8_t *dst_nchw_patch, int patch_h, int patch_w, const uint8_t *src_msb_plane, const uint8_t *src_lsb_plane,
+							   int src_full_h, int src_full_w, int y_nchw, int x_nchw, int blc)
 {
 
 	const int temp_patch_h = patch_h * 2;
@@ -354,7 +355,8 @@ static void ainr_patch_to_nchw(ainr_ctx_t *ctx, uint8_t *dst_nchw_patch, int pat
 	free(temp_planar_buffer);
 }
 
-static void ainr_nchw_to_packed_bayer(uint16_t *dst_packed_bayer, int dst_h, int dst_w, const uint16_t *src_nchw_patch, int patch_h, int patch_w, int y_nchw, int x_nchw, int blc)
+static void ainr_nchw_to_packed_bayer(uint16_t *dst_packed_bayer, int dst_h, int dst_w, const uint16_t *src_nchw_patch, int patch_h, int patch_w, int y_nchw,
+									  int x_nchw, int blc)
 {
 	int core_h = patch_h - 2 * OVERLAP_H;
 	int core_w = patch_w - 2 * OVERLAP_W;
@@ -446,7 +448,7 @@ static int denoise_tiled(ainr_ctx_t *ctx, uint16_t *denoised_packed_bayer_output
 			update_time_stats(&(ctx->time_stats.nn_inference), xTaskGetTickCount());
 
 			ctx->time_stats.mixup_decode.start_time = xTaskGetTickCount();
-#if MIXUP_FACTOR == MIXUP_FACTOR_00625
+#if MIXUP_FACTOR == MIXUP_FACTOR_025
 			ainr_mixup_and_decode_fast(patch_denoised_u8, patch_input_encoded_u8, patch_denoised_decoded, patch_elements);
 #else
 #error "[ainr] invalid mix factor"

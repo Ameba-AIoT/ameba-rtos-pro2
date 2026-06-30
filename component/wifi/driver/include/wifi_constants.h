@@ -976,6 +976,15 @@ typedef enum  {
 } rtw_wowlan_fw_version;
 
 /**
+  * @brief The enumeration ARP mode
+  */
+typedef enum {
+	ACITVE_ARP_DHCP_MODE = 0, /**< send arp request with dhcp server ip address */
+	ACITVE_ARP_GW_MODE,  /**< send arp request with gw server ip address */
+	ACITVE_ARP_DHCP_GW_MODE /** < send arp request with gw server ip address first, if gw isn't exist, pro2 will send arp request with dhcp server ip */
+} Active_ARP_mode;
+
+/**
   * @brief The enumeration lists the deatil join status.
   */
 typedef enum {

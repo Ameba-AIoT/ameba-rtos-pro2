@@ -2988,13 +2988,14 @@ static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_WIFI_PARAMETER\r\n");
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 	uint8_t mode = query_pkt->data_buf[0];
+	uint8_t sensor_flag = 0;
 	AI_GLASS_INFO("Mode: %d\r\n", mode);
 	if (mode == 1) {
 		uint8_t g_camera_cfg_buf[512];
 		size_t length = uart_serialize_camera_config(g_camera_cfg_buf, sizeof(g_camera_cfg_buf), &g_camera_cfg);
 
 		// Call your existing UART response function
-		int status = uart_resp_get_wifi_parameter(param, g_camera_cfg_buf, length,current_sensor_id, enable_gsensor);
+		int status = uart_resp_get_wifi_parameter(param, g_camera_cfg_buf, length, sensor_flag, enable_gsensor);
 
 		// Debug print
 		print_camera_config(&g_camera_cfg);
@@ -3012,7 +3013,7 @@ static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 		printf("[TEST] (1) "MAC_FMT"",MAC_ARG(pbuf));
 		
 		// Call your existing UART response function
-		int status = uart_resp_get_wifi_parameter(param, pbuf, length,current_sensor_id, enable_gsensor);
+		int status = uart_resp_get_wifi_parameter(param, pbuf, length, sensor_flag, enable_gsensor);
 
 		if (status == 0) {
 			printf("CameraConfig sent successfully (%lu bytes)\n", length);
@@ -3022,8 +3023,12 @@ static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 	} else if (mode == 3) {
 		uint8_t dummy[1] = {0};
         size_t length = 0; // sensor status will be built inside uart_resp_get_wifi_parameter
-
-        int status = uart_resp_get_wifi_parameter(param, dummy, length,current_sensor_id, enable_gsensor);
+		if (current_sensor_id == SENSOR_IMX681) {
+			sensor_flag = 1;
+		} else if (current_sensor_id == SENSOR_OV13B10) {
+			sensor_flag = 2;
+		}
+        int status = uart_resp_get_wifi_parameter(param, dummy, length, sensor_flag, enable_gsensor);
 
         if (status == 0) {
             printf("Sensor status sent successfully\n");

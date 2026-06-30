@@ -414,8 +414,8 @@ uint8_t LwIP_DHCP(uint8_t idx, uint8_t dhcp_state)
 				printf("\n\rInterface %d IP address : %d.%d.%d.%d\n", idx, iptab[3], iptab[2], iptab[1], iptab[0]);
 
 				/* Get dhcp server mac address */
-				extern void etharp_issue_dhcpserver_arp_task(void);
-				etharp_issue_dhcpserver_arp_task();
+				extern void etharp_issue_arp_task(void);
+				etharp_issue_arp_task();
 
 #if defined(CONFIG_FAST_DHCP) && CONFIG_FAST_DHCP
 #if LWIP_VERSION_MAJOR >= 2

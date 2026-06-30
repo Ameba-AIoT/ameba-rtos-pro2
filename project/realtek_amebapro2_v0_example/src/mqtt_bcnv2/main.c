@@ -429,6 +429,7 @@ int keepalive_offload_test(void)
 //step 3: set keep alive packet offload
 	// ssl offload: must after mbedtls_platform_set_calloc_free() and wifi_set_ssl_offload()
 	uint8_t *ssl_record = NULL;
+	wowlan_set_arp_target_ip(ACITVE_ARP_DHCP_MODE);
 	if (network.use_ssl == 1) {
 		uint8_t ssl_record_header[] = {/*type*/ 0x17 /*type*/, /*version*/ 0x03, 0x03 /*version*/, /*length*/ 0x00, 0x00 /*length*/};
 

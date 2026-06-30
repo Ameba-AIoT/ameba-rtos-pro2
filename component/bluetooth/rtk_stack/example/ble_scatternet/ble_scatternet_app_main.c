@@ -319,6 +319,7 @@ void ble_scatternet_app_le_gap_init(void)
 	le_set_gap_param(GAP_PARAM_DEFAULT_RX_PHYS_PREFER, sizeof(rx_phys_prefer), &rx_phys_prefer);
 #endif
 #if APP_PRIVACY_EN
+    printf("Privacy is enabled\r\n");
     privacy_init(ble_scatternet_app_privacy_callback, true);
 #endif
 }

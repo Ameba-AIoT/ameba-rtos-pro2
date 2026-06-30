@@ -136,6 +136,8 @@ int wifi_wowlan_set_arp_rsp_keep_alive(int enable)
 void wifi_set_802_11v_bss_pkt_offload(void)
 {
 	wowlan_pattern_t bss_pattern;
+	u8 pmf_en = 0;
+
 	memset(&bss_pattern, 0, sizeof(wowlan_pattern_t));
 
 	uint8_t identify_80211v[6] = {0x08, 0x00, 0x02, 0x01, 0x01, 0x76};
@@ -147,9 +149,20 @@ void wifi_set_802_11v_bss_pkt_offload(void)
 
 	wifi_wowlan_set_pattern(bss_pattern);
 
-	//for wpa3
-	extern void rtw_hal_sw_parser_11v_enable(u8 enable);
-	rtw_hal_sw_parser_11v_enable(1);
+	//for wpa3/pmf
+	extern int rltk_get_connection_pmf_enable(u8 * enable);
+	rltk_get_connection_pmf_enable(&pmf_en);
+	if (pmf_en == 1) {
+		extern void rtw_hal_sw_parser_11v_enable(u8 enable);
+		rtw_hal_sw_parser_11v_enable(1);
+	}
+}
+
+uint8_t set_arp_targetip = 0;
+
+void wowlan_set_arp_target_ip(uint8_t use_type)
+{
+	set_arp_targetip = use_type;
 }
 
 #ifdef CONFIG_WOWLAN_TCP_KEEP_ALIVE
@@ -301,8 +314,13 @@ int wifi_set_tcp_protocol_keepalive_offload(int socket_fd, uint8_t power_bit)
 		local_lan = 1;
 	}
 
-	// dhcp addr
-	dhcp_dst_ip = (ip4_addr_t *) LwIP_GetDHCPSERVER(0);
+	if (!set_arp_targetip) {
+		// dhcp addr
+		dhcp_dst_ip = (ip4_addr_t *) LwIP_GetDHCPSERVER(0);
+	} else {
+		//get gateway ip
+		dhcp_dst_ip = (ip4_addr_t *) LwIP_GetGW(0);
+	}
 
 	if (LwIP_etharp_find_addr(0, dhcp_dst_ip, &dhcp_dst_eth_ret, (const ip4_addr_t **)&dhcp_dst_ip_ret) >= 0) {
 		// memcpy(eth_header, dhcp_dst_eth_ret->addr, ETH_ALEN);
@@ -499,8 +517,13 @@ int wifi_set_tcp_keep_alive_offload(int socket_fd, uint8_t *content, size_t len,
 		local_lan = 1;
 	}
 
-	// dhcp addr
-	dhcp_dst_ip = (ip4_addr_t *) LwIP_GetDHCPSERVER(0);
+	if (!set_arp_targetip) {
+		// dhcp addr
+		dhcp_dst_ip = (ip4_addr_t *) LwIP_GetDHCPSERVER(0);
+	} else {
+		//get gateway ip
+		dhcp_dst_ip = (ip4_addr_t *) LwIP_GetGW(0);
+	}
 
 	if (LwIP_etharp_find_addr(0, dhcp_dst_ip, &dhcp_dst_eth_ret, (const ip4_addr_t **)&dhcp_dst_ip_ret) >= 0) {
 		//memcpy(eth_header, dhcp_dst_eth_ret->addr, ETH_ALEN);
@@ -1115,6 +1138,19 @@ int wifi_wowlan_set_arpreq_keepalive(u8  powerbit,
 
 	return ret;
 }
+
+extern void rtw_set_arpreq_option(u8  null0,
+								  u8  wait_response);
+
+int wifi_wowlan_set_arpreq_option(u8  null0,
+								  u8  wait_response)
+{
+	int ret = 0;
+	rtw_set_arpreq_option(null0, wait_response);
+
+	return ret;
+}
+
 #endif
 
 #ifdef CONFIG_WOWLAN_DHCP_RENEW

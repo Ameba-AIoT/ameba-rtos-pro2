@@ -537,6 +537,19 @@ list(
 	${sdk_root}/component/network/rtsp/sdp.c
 )
 
+#RTP CODEC
+list(
+	APPEND app_sources	
+	${sdk_root}/component/media/rtp_codec/avcodec.c
+	${sdk_root}/component/media/rtp_codec/h264/h264.c
+	${sdk_root}/component/media/rtp_codec/aac/aac.c
+	${sdk_root}/component/media/rtp_codec/g711/g711.c
+	${sdk_root}/component/media/rtp_codec/mjpeg/mjpeg.c
+	${sdk_root}/component/media/rtp_codec/h265/h265.c
+	${sdk_root}/component/media/rtp_codec/opus/opus.c
+	#${sdk_root}/component/media/rtp_codec/mjpeg/mjpeg2jpeg.c
+)
+
 #VIDEO
 list(
 	APPEND app_sources		

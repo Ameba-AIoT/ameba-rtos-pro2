@@ -36,6 +36,7 @@
 #include "isp_ctrl_api.h"
 static isp_info_t isp_info;
 static voe_info_t voe_info = {0};
+static int isp_info_init = 0;
 static int voe_info_init = 0;
 static int g_enc_buff_size[5] = {0, 0, 0, 0, 0};
 
@@ -97,7 +98,7 @@ int video_isp_memcpy(void *dst, const void *src, u32 size);
 int video_voe_memcpy(void *dst, const void *src, u32 size);
 int video_load(int sensor_index);
 void *video_fw_deinit(void);
-void video_set_isp_info(isp_info_t *info);
+// void video_set_isp_info(isp_info_t *info);
 int video_reset_fw(int ch, int id);
 const unsigned int crc32_result[10] = {0xd202ef8d, 0xa505df1b, 0x3c0c8ea1, 0x4b0bbe37, 0xd56f2b94, 0xa2681b02, 0x3b614ab8, 0x4c667a2e, 0xdcd967bf, 0xabde5729};
 #define FCS_ID  0x04
@@ -1089,8 +1090,28 @@ void video_set_isp_info(isp_info_t *info)
 	isp_info.osd_enable = info->osd_enable;
 	isp_info.md_enable = info->md_enable;
 	isp_info.hdr_enable = info->hdr_enable;
+	isp_info_init = 1;
 }
 
+int video_get_isp_info_status(void)
+{
+	return isp_info_init;
+}
+
+void video_get_isp_info(isp_info_t *info)
+{
+	info->sensor_width = isp_info.sensor_width;
+	info->sensor_height = isp_info.sensor_height;
+	info->sensor_fps = isp_info.sensor_fps;
+	info->osd_enable = isp_info.osd_enable;
+	info->md_enable = isp_info.md_enable;
+	info->hdr_enable = isp_info.hdr_enable;
+}
+
+void video_reset_isp_info_status(void)
+{
+	isp_info_init = 0;
+}
 void video_set_sensor_fps(int max_fps, int min_fps)
 {
 	if(min_fps > max_fps) {
@@ -2634,18 +2655,16 @@ EXIT:
 }
 
 #define SLICE_SIZE (128 * 1024)
-__attribute__((weak)) volatile uint8_t uart_rx_active = 0;
+__attribute__((weak)) void video_cache_clean_pause(void)
+{
+}
 
 static void video_clean_invalidate_heap(uint32_t *heap_addr, uint32_t heap_size)
 {
-	//dcache_clean_invalidate_by_addr((uint32_t *)heap_addr, heap_size);
 	uint32_t remain_heap_size = heap_size;
 
-	//clean the slice the heap buffer for clean and invalidate to prevent a long blocking of irq
-	while (remain_heap_size > 0) {
-		while (uart_rx_active) {
-			vTaskDelay(5);
-		}
+	while (1) {
+		video_cache_clean_pause();
 		
 		uint32_t cleaned_size = (heap_size - remain_heap_size) / sizeof(uint32_t);
 		if (remain_heap_size <= SLICE_SIZE) {

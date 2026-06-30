@@ -31,7 +31,7 @@ static osd_text_info_st s_txt_info_time;
 static osd_text_info_st s_txt_info_date;
 static osd_text_info_st s_txt_info_string;
 static osd_text_info_st s_txt_info_iq_string[6];
-static char string_buf[6][64] = {0};
+static char string_buf[6][OSD_TEXT_STR_MAX] = {0};
 static char teststring[] = "RTK-AmebaPro2";
 static char teststring_empty[] = " ";
 

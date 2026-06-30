@@ -128,6 +128,6 @@ int uart_resp_live_start(uartcmdpacket_t *param, uint8_t resp_stat);
 // For UART_RX_OPC_CMD_LIVE_STOP
 int uart_resp_live_stop(uartcmdpacket_t *param, uint8_t resp_stat);
 // UART_RX_OPC_CMD_GET_WIFI_PARAMETER
-int uart_resp_get_wifi_parameter(uartcmdpacket_t *param, uint8_t *buf, size_t length, unsigned char current_sensor_id, bool enable_gsensor);
+int uart_resp_get_wifi_parameter(uartcmdpacket_t *param, uint8_t *buf, size_t length, unsigned char sensor_flag, bool enable_gsensor);
 
 #endif //#ifndef __UART_CMD_H__
