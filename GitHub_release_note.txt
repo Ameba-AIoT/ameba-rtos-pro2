@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 394aa1d71362551de75dab4caf2ae1ee34c4aa3f
+* [amebapro2][video] update sensor driver & setting file
+
 SHA-1: ffa515e67fb2bfdc5bdb6abeee02c47e92c07019
 * [amebapro2][video] update libmmf and application source
 
