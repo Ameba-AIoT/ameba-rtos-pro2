@@ -15,7 +15,7 @@
  ******************************************************************************/
 #ifndef __WLAN_INTF_H__
 #define __WLAN_INTF_H__
-
+//
 #ifdef	__cplusplus
 extern "C" {
 #endif

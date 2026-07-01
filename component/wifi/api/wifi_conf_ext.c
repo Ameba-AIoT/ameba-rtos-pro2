@@ -12,7 +12,7 @@
 #include <wifi_ind.h>
 #include <osdep_service.h>
 #include <device_lock.h>
-//
+
 #if (defined(CONFIG_EXAMPLE_UART_ATCMD) && CONFIG_EXAMPLE_UART_ATCMD) || (defined(CONFIG_EXAMPLE_SPI_ATCMD) && CONFIG_EXAMPLE_SPI_ATCMD)
 #include "at_cmd/atcmd_wifi.h"
 #endif

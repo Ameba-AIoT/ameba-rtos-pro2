@@ -25,7 +25,7 @@
   */
 #ifndef __WIFI_CONF_H
 #define __WIFI_CONF_H
-
+//
 /** @defgroup WIFI
  *  @brief      WIFI module
  *  @{
