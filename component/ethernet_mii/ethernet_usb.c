@@ -388,6 +388,8 @@ u8 rltk_mii_recv_data(u8 *buf, u32 total_len, u32 *frame_length)
 
 	if (0 == ip_total_len) { //first packet
 		pbuf = RX_BUFFER;
+		if (total_len > 1536)
+			return 0;
 		rtw_memcpy((void *)pbuf, buf, total_len);
 		if (total_len != 512) { //should finish
 			*frame_length = total_len;
@@ -405,6 +407,8 @@ u8 rltk_mii_recv_data(u8 *buf, u32 total_len, u32 *frame_length)
 			}
 		}
 	} else {
+		if (rx_buffer_saved_data + total_len > 1536)
+			return 0;
 		pbuf = RX_BUFFER + rx_buffer_saved_data;
 		rtw_memcpy((void *)pbuf, buf, total_len);
 		rx_buffer_saved_data += total_len;
