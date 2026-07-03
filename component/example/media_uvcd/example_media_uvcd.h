@@ -12,6 +12,7 @@ void example_media_uvcd(void);
 
 #define MAX_W sensor_params[USE_SENSOR].sensor_width
 #define MAX_H sensor_params[USE_SENSOR].sensor_height
+#define SENSOR_FPS sensor_params[USE_SENSOR].sensor_fps
 
 // Configure for supported format of uvcd
 // If user only want to support one configuration, user can only enable one of them

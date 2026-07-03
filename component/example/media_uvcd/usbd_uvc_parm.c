@@ -122,9 +122,10 @@ struct uvc_format_framebased uvc_format_h265 = {
 	.bVariableSize          = 1,
 };
 
-#define FRAME_INTV_0 416666
-#define FRAME_INTV_1 666666
-#define FRAME_INTV_2 1000000
+// Note: FRAME_INTV_0/1/2 must be distinct values
+#define FRAME_INTV_0 VALUE_FPS(SENSOR_FPS)
+#define FRAME_INTV_1 (FRAME_INTV_0 * 2)
+#define FRAME_INTV_2 (FRAME_INTV_0 * 3)
 
 struct UVC_FRAME_UNCOMPRESSED(3) uvc_frame_yuv_480p = {
 	.bLength		= UVC_DT_FRAME_UNCOMPRESSED_SIZE(3),

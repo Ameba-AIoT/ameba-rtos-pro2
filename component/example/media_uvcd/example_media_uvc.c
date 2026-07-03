@@ -43,8 +43,8 @@ static int uvc_cmd_status = 0;
 
 #define V1_CHANNEL 0
 #define V1_RESOLUTION VIDEO_FHD//VIDEO_HD//VIDEO_FHD 
-#define V1_FPS 20
-#define V1_GOP 80
+#define V1_FPS SENSOR_FPS
+#define V1_GOP V1_FPS*4
 #define V1_BPS 1024*1024
 #define V1_RCMODE 1 // 1: CBR, 2: VBR
 
