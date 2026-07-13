@@ -322,6 +322,27 @@ int user_disable_fcs(void)
 	return 0;//1:disable fcs, 0:Don't care
 }
 
+// Override this function to switch sensor mode in bootloader.
+// Return an index into sen_id[] for the target mode; return 0 to use the FCS-detected
+// sensor as-is (no override).
+//
+// When non-zero:
+//   - The framework will re-init the sensor over I2C after FCS-OK.
+//   - The corresponding sensor driver (e.g. sensor_k306p_hd.c) MUST be added to the
+//     bootloader build (bootloader/CMakeLists.txt) and implement:
+//       video_boot_init_sensor_config()
+//   - Stream parameters (width/height/fps) are updated automatically from sensor_params[].
+//
+// Example (sensor.h):
+//   sen_id[] = { SENSOR_DUMMY, SENSOR_K306P, SENSOR_K306P_HD }
+//     return 0  -> no override (FCS default)
+//     return 1  -> K306P 2K
+//     return 2  -> K306P HD (1284x724)
+int video_boot_manual_sensor_id(void)
+{
+	return 0; // change to target sen_id[] index to override sensor mode
+}
+
 void user_boot_config_init(void *parm)
 {
 	//Insert your code into here
@@ -536,4 +557,15 @@ void user_boot_config_init(void *parm)
 	video_boot_stream.init_isp_items.init_wdr_mode = 1;       //Default:0
 	video_boot_stream.init_isp_items.init_mipi_mode = 0;	  //Default:0
 #endif
+
+	int manual_sensor_id = video_boot_manual_sensor_id();
+	if (manual_sensor_id) {
+		video_boot_stream.isp_info.sensor_width  = sensor_params[sen_id[manual_sensor_id]].sensor_width;
+		video_boot_stream.isp_info.sensor_height = sensor_params[sen_id[manual_sensor_id]].sensor_height;
+		video_boot_stream.isp_info.sensor_fps    = sensor_params[sen_id[manual_sensor_id]].sensor_fps;
+		video_boot_stream.video_params[STREAM_V1].width  = sensor_params[sen_id[manual_sensor_id]].sensor_width;
+		video_boot_stream.video_params[STREAM_V1].height = sensor_params[sen_id[manual_sensor_id]].sensor_height;
+		video_boot_stream.video_params[STREAM_V1].fps    = sensor_params[sen_id[manual_sensor_id]].sensor_fps;
+		video_boot_stream.video_params[STREAM_V1].gop    = sensor_params[sen_id[manual_sensor_id]].sensor_fps << 1;
+	}
 }

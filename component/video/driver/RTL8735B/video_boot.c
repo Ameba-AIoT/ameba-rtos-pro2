@@ -31,29 +31,23 @@ _WEAK int user_load_sensor_boot(void)
 	return 0;//default not to use
 }
 
+_WEAK int video_boot_manual_sensor_id(void)
+{
+	return 0;
+}
+
 extern hal_status_t hal_voe_i2c_init_btldr(u8 idx);
 extern void hal_voe_set_kmfw_base_addr(u32 val);
 extern void hal_voe_set_kmfw_len(u32 val);
-int video_btldr_init_sensor_process(void)
+int video_boot_btldr_sensor_reinit(void)
 {
 	int ret = 0;
-	hal_i2c_adapter_t  i2c_master_btldr;
-	u8 i2c_idx = 0xff;
-	ret = user_load_sensor_boot();
-	if (ret <= 0) {
-		dbg_printf("It don't do the sensor initial process\r\n");
-		return -1;
-	} else {
-		//dbg_printf("Do the sensor initial process\r\n");
-	}
+	hal_i2c_adapter_t i2c_master_btldr;
+	u8 i2c_idx = 3;
 
 	i2c_master_btldr.pltf_dat.scl_pin = PIN_D12;
 	i2c_master_btldr.pltf_dat.sda_pin = PIN_D10;
 	i2c_master_btldr.init_dat.index = 3;
-	//i2c_slave_addr = 0x30;
-	i2c_idx = 3;
-	//i2c_addr_len = 2;
-	//i2c_data_len = 1;
 
 	hal_i2c_pin_unregister_simple(&i2c_master_btldr);
 	hal_i2c_pin_register_simple(&i2c_master_btldr);
@@ -75,6 +69,27 @@ int video_btldr_init_sensor_process(void)
 		hal_voe_set_kmfw_len(0); //clear fcs error_code
 	}
 	return ret;
+}
+
+int video_btldr_init_sensor_process(void)
+{
+	int ret = user_load_sensor_boot();
+	if (ret <= 0) {
+		dbg_printf("It don't do the sensor initial process\r\n");
+		return -1;
+	} else {
+		//dbg_printf("Do the sensor initial process\r\n");
+	}
+	ret = video_boot_btldr_sensor_reinit();
+	return ret;
+}
+
+int video_btldr_i2c_process(void)
+{
+	if (video_boot_manual_sensor_id()) {
+		return video_boot_btldr_sensor_reinit();
+	}
+	return 0;
 }
 
 void video_boot_setup_slot_num(int stream_id, int slot_number)
@@ -682,6 +697,10 @@ int video_btldr_process(voe_fcs_load_ctrl_t *pvoe_fcs_ld_ctrl, int *code_start)
 		p_fcs_ld_info = pvoe_fcs_ld_ctrl->p_fcs_ld_info;
 	}
 
+	int manual_sensor_id = video_boot_manual_sensor_id();
+	if (manual_sensor_id) {
+		pvoe_fcs_ld_ctrl->p_fcs_ld_info->fcs_id = manual_sensor_id;
+	}
 	fcs_id = p_fcs_ld_info->fcs_id;
 	p_fcs_data    = (uint8_t *)((p_fcs_ld_info->fcs_hdr_start) + (p_fcs_ld_info->sensor_set[fcs_id].fcs_data_offset));
 	p_iq_data     = (uint8_t *)(p_fcs_data + (p_fcs_ld_info->sensor_set[fcs_id].iq_start_addr));

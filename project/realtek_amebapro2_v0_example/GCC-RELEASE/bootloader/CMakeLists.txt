@@ -22,6 +22,13 @@ endif()
 ADD_LIBRARY (hal_pmc_lib STATIC IMPORTED )
 SET_PROPERTY ( TARGET hal_pmc_lib PROPERTY IMPORTED_LOCATION ${sdk_root}/component/soc/8735b/fwlib/rtl8735b/lib/lib/hal_pmc.a )
 
+if(DEFINED K306P_HD)
+list(
+    APPEND bootloader_sources
+	${sdk_root}/component/video/driver/RTL8735B/sensor_k306p_hd.c
+)
+endif()
+
 if(DEFINED PS5270)
 list(
     APPEND bootloader_sources
