@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 0408895d6b2127dbeed013af57046fab9fd8d4f0
+* [amebapro2][bt:controller] update BT normal patch
+
 SHA-1: 394aa1d71362551de75dab4caf2ae1ee34c4aa3f
 * [amebapro2][video] update sensor driver & setting file
 
