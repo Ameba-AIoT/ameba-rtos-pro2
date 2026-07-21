@@ -1112,6 +1112,8 @@ void main(void)
 	uint8_t ssl_resume_out_ctr[8];
 	uint8_t ssl_resume_in_ctr[8];
 
+	extern uint8_t Hal_Support_Wowlan(void);
+	printf("\r\nHal_Support_Wowlan = %d\r\n", Hal_Support_Wowlan());
 	hal_xtal_divider_enable(1);
 	hal_32k_s1_sel(2);
 	HAL_WRITE32(0x40009000, 0x18, 0x1 | HAL_READ32(0x40009000, 0x18)); //SWR 1.35V
