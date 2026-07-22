@@ -1,0 +1,58 @@
+/*
+ * board_info.json5 — test-bench config: which SoC is on which serial port.
+ *
+ * Each entry under "boards" uses an alias as the unique key. MCP tools
+ * (flash, serial_*) take the alias as their only mandatory argument and
+ * read the rest from this file.
+ *
+ * Pro2 note: AmebaPro2 (RTL8735B) connects via local USB only.
+ * AmebaRemoteService is not supported — all boards use transport "local".
+ *
+ * Naming convention (suggested, not enforced): <SOC>_<PORT>
+ * e.g. RTL8735B_COM5, RTL8735B_ttyUSB0
+ *
+ * Defaults below apply to every board unless overridden per entry.
+ * See tools/ameba/ameba_dev_mcp/docs/board_info.md for full schema.
+ */
+{
+  "schema_version": 1.1,
+
+  "defaults": {
+    /* Both flash and serial monitor default to 115200 bps. */
+    "baudrate": 115200,
+    "monitor_baudrate": 115200,
+    /* Flash type: "nor" / "nand". Bound to the board, not the project. */
+    "memory_type": "nor"
+  },
+
+  /* Add board entries here. Minimal example (soc + port is all you need):
+   *
+   *   "RTL8735B_COM5": {
+   *     "soc": "RTL8735B",
+   *     "port": "COM5"
+   *   },
+   *
+   *   "RTL8735B_ttyUSB0": {
+   *     "soc": "RTL8735B",
+   *     "port": "/dev/ttyUSB0",
+   *     "memory_type": "nand"
+   *   }
+   *
+   * Optional per-board serial-log capture (full stream, timestamped, AAG-decoded;
+   * survives drain_first). When enabled, opening the serial port starts logging
+   * and closing it stops. See docs/board_info.md section 3.1 for the naming /
+   * daily-rotation rules.
+   *
+   *   "RTL8735B_COM5": {
+   *     "soc": "RTL8735B",
+   *     "port": "COM5",
+   *     "serial_log_record": {
+   *       "enable": true
+   *       // log_dir omitted -> PROJECT_ROOT/mcp_serial_log
+   *       //   file_name omitted -> auto <alias>_<YYYYMMDD>_<HHMMSS>.log, rotated daily 
+   *     }
+   *   }
+   */
+  "boards": {
+  }
+}
