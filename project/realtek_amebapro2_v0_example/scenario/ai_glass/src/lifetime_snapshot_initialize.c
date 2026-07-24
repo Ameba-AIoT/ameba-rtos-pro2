@@ -36,7 +36,7 @@
 #define LIFE_SNAP_PRIORITY      7
 #define MAXIMUM_FILE_TAG_SIZE   32
 #define MAXIMUM_FILE_SIZE       (MAXIMUM_FILE_TAG_SIZE + 32)
-#define SNAPSHOT_12M_ROTATION   DEFAULT_LIFESNAP_ROTATION 
+#define SNAPSHOT_12M_ROTATION   DEFAULT_LIFESNAP_ROTATION
 
 #define SNAPSHOT_12M_QLEVEL     9 // can be 0~10, higher means higher quality
 #define ENABLE_AINR 		   0 // enable AINR for high res snapshot
@@ -219,6 +219,8 @@ static void video_jpeg_exif(video_meta_t *m_parm)
 	}
 	isp_get_awb_ctrl(&ret);
 	param.white_balance = ret;
+	param.rotation = ls_video_params.params.rotation;
+	param.ainr_enabled = (init_params.isp_ae_init_gain > (256 * 12)) ? 1 : 0;
 	video_fill_exif_random_metering(&param);
 	video_fill_exif_tags_from_struct(&param);
 	video_insert_jpeg_exif(m_parm);

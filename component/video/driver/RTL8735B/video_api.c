@@ -4429,9 +4429,9 @@ void video_fill_exif_tags_from_struct(const ExifParams *params)
 		video_exif_float2str(params->orientation_k3, b7);
 		video_exif_float2str(params->orientation_output_scale, b8);
 
-		snprintf(wsp->orientation_str, sizeof(wsp->orientation_str), 
-			"fx=%s, fy=%s, cx=%s, cy=%s, k0=%s, k1=%s, k2=%s, k3=%s, scale=%s",
-			b0, b1, b2, b3, b4, b5, b6, b7, b8);
+		snprintf(wsp->orientation_str, sizeof(wsp->orientation_str),
+			"fx=%s, fy=%s, cx=%s, cy=%s, k0=%s, k1=%s, k2=%s, k3=%s, scale=%s, orientation=%d, AINR=%d",
+			b0, b1, b2, b3, b4, b5, b6, b7, b8, params->rotation, params->ainr_enabled);
 
 		wsp->main_tags[m++] = (ExifTag) {
 			0x010E, TYPE_ASCII, (uint32_t)strlen(wsp->orientation_str) + 1, .data.bytes = (const uint8_t *)wsp->orientation_str

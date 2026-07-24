@@ -431,6 +431,8 @@ typedef struct {
 	double orientation_k3;
 	double orientation_output_scale;
 	int has_orientation;
+	int rotation;       // Rotation angle used for the snapshot (0, 90, 180, 270) — written as orientation=<N> in ImageDescription
+	int ainr_enabled;   // Whether AINR was applied (1 if exposure gain > 256*12, else 0)
 } ExifParams;
 
 typedef struct {
