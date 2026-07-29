@@ -164,6 +164,7 @@ SECTIONS
 		*lib_a*printf.*(.text*)
 		*mbed*_api.*(.text*)
 		*mbedtls*/library/*(.text*)
+		*mbedtls*/tf-psa-crypto/*(.text*)
 		*ssl_func_stubs.*(.text*)
 		__eram_text_end__ = .;
 	} > DDR
@@ -174,6 +175,7 @@ SECTIONS
 		__eram_data_start__ = .;
 		*mbedtls*/library/*(.data*)
 		*mbedtls*/library_s/*(.data*)
+		*mbedtls*/tf-psa-crypto/*(.data*)
 		__eram_data_end__ = .;
 	} > DDR
 

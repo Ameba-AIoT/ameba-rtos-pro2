@@ -2679,6 +2679,11 @@ find_parent:
 #endif
 #endif
 
+#if defined(CONFIG_BUILD_SECURE) && (CONFIG_BUILD_SECURE == 1)
+/* inet_pton() is not supported, fallback to software version */
+#define MBEDTLS_TEST_SW_INET_PTON
+#endif
+
 /* Use whether or not AF_INET6 is defined to indicate whether or not to use
  * the platform inet_pton() or a local implementation (below).  The local
  * implementation may be used even in cases where the platform provides

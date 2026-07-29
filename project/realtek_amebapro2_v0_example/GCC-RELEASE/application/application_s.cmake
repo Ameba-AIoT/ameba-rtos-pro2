@@ -75,7 +75,7 @@ list(
 )
 
 #ssl
-if(${mbedtls} STREQUAL "mbedtls-3.4.0" OR ${mbedtls} STREQUAL "mbedtls-3.6.0")
+if(${mbedtls} STREQUAL "mbedtls-3.6.5" OR ${mbedtls} STREQUAL "mbedtls-4.1.0")
 file(GLOB MBEDTLS_SRC CONFIGURE_DEPENDS ${sdk_root}/component/ssl/${mbedtls}/library/*.c)
 list(
 	APPEND out_s_sources
@@ -90,6 +90,21 @@ list(
 list(
 	REMOVE_ITEM out_s_sources
 	${sdk_root}/component/ssl/${mbedtls}/library/net_sockets.c
+)
+endif()
+if(${mbedtls} STREQUAL "mbedtls-4.1.0")
+file(GLOB MBEDTLS_PSA_CORE_SRC CONFIGURE_DEPENDS ${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/core/*.c)
+file(GLOB MBEDTLS_PSA_DRIVERS_SRC CONFIGURE_DEPENDS ${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/drivers/builtin/src/*.c)
+file(GLOB MBEDTLS_PSA_EXTRAS_SRC CONFIGURE_DEPENDS ${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/extras/*.c)
+file(GLOB MBEDTLS_PSA_PLATFORM_SRC CONFIGURE_DEPENDS ${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/platform/*.c)
+file(GLOB MBEDTLS_PSA_UTILITIES_SRC CONFIGURE_DEPENDS ${sdk_root}/component/ssl/${mbedtls}/tf-psa-crypto/utilities/*.c)
+list(
+	APPEND out_s_sources
+	${MBEDTLS_PSA_CORE_SRC}
+	${MBEDTLS_PSA_DRIVERS_SRC}
+	${MBEDTLS_PSA_EXTRAS_SRC}
+	${MBEDTLS_PSA_PLATFORM_SRC}
+	${MBEDTLS_PSA_UTILITIES_SRC}
 )
 endif()
 

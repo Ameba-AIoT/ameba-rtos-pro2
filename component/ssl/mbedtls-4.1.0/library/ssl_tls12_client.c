@@ -43,6 +43,23 @@ static int local_err_translation(psa_status_t status)
 #include "mbedtls/platform_util.h"
 #endif
 
+#if defined(CONFIG_BUILD_NONSECURE) && (CONFIG_BUILD_NONSECURE == 1) && defined(CONFIG_SSL_CLIENT_PRIVATE_IN_TZ) && (CONFIG_SSL_CLIENT_PRIVATE_IN_TZ == 1)
+#include <cmsis.h>
+
+struct secure_mbedtls_pk_sign_param {
+    mbedtls_pk_context *ctx;
+    mbedtls_md_type_t md_alg;
+    unsigned char *hash;
+    size_t hash_len;
+    unsigned char *sig;
+    size_t sig_size;
+    size_t *sig_len;
+};
+
+extern unsigned char NS_ENTRY secure_mbedtls_ssl_sig_from_pk(mbedtls_pk_context *pk);
+extern int NS_ENTRY secure_mbedtls_pk_sign(struct secure_mbedtls_pk_sign_param *param);
+#endif
+
 #if defined(MBEDTLS_SSL_RENEGOTIATION)
 MBEDTLS_CHECK_RETURN_CRITICAL
 static int ssl_write_renegotiation_ext(mbedtls_ssl_context *ssl,
@@ -2724,12 +2741,30 @@ sign:
         md_alg = MBEDTLS_MD_SHA256;
         ssl->out_msg[4] = MBEDTLS_SSL_HASH_SHA256;
     }
+
+#if defined(CONFIG_BUILD_NONSECURE) && (CONFIG_BUILD_NONSECURE == 1) && defined(CONFIG_SSL_CLIENT_PRIVATE_IN_TZ) && (CONFIG_SSL_CLIENT_PRIVATE_IN_TZ == 1)
+    ssl->out_msg[5] = secure_mbedtls_ssl_sig_from_pk(mbedtls_ssl_own_key(ssl));
+#else
     ssl->out_msg[5] = mbedtls_ssl_sig_from_pk(mbedtls_ssl_own_key(ssl));
+#endif
 
     /* Info from md_alg will be used instead */
     hashlen = 0;
     offset = 2;
 
+#if defined(CONFIG_BUILD_NONSECURE) && (CONFIG_BUILD_NONSECURE == 1) && defined(CONFIG_SSL_CLIENT_PRIVATE_IN_TZ) && (CONFIG_SSL_CLIENT_PRIVATE_IN_TZ == 1)
+    struct secure_mbedtls_pk_sign_param param = {
+        mbedtls_ssl_own_key(ssl),
+        md_alg,
+        hash_start,
+        hashlen,
+        ssl->out_msg + 6 + offset,
+        out_buf_len - 6 - offset,
+        &n,
+    };
+
+    if ((ret = secure_mbedtls_pk_sign(&param)) != 0) {
+#else
 #if defined(MBEDTLS_SSL_ECP_RESTARTABLE_ENABLED)
     if (ssl->handshake->ecrs_enabled) {
         rs_ctx = &ssl->handshake->ecrs_ctx.pk;
@@ -2742,6 +2777,7 @@ sign:
                                            out_buf_len - 6 - offset,
                                            &n,
                                            rs_ctx)) != 0) {
+#endif
         MBEDTLS_SSL_DEBUG_RET(1, "mbedtls_pk_sign_restartable", ret);
 #if defined(MBEDTLS_SSL_ECP_RESTARTABLE_ENABLED)
         if (ret == MBEDTLS_ERR_ECP_IN_PROGRESS) {

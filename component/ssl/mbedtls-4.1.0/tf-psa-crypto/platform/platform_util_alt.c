@@ -30,8 +30,12 @@ mbedtls_ms_time_t mbedtls_ms_time(void)
 #endif /* MBEDTLS_HAVE_TIME && MBEDTLS_PLATFORM_MS_TIME_ALT */
 
 #if defined(MBEDTLS_PSA_DRIVER_GET_ENTROPY)
+#if defined(CONFIG_BUILD_NONSECURE) && (CONFIG_BUILD_NONSECURE == 1)
 #include "osdep_service.h"
-
+#else
+#include "hal_trng_sec.h"
+#endif
+#include "diag.h"
 int mbedtls_platform_get_entropy(psa_driver_get_entropy_flags_t flags,
                                  size_t *estimate_bits,
                                  unsigned char *output, size_t output_size)
@@ -41,7 +45,24 @@ int mbedtls_platform_get_entropy(psa_driver_get_entropy_flags_t flags,
         return PSA_ERROR_NOT_SUPPORTED;
     }
 
+#if defined(CONFIG_BUILD_NONSECURE) && (CONFIG_BUILD_NONSECURE == 1)
     rtw_get_random_bytes(output, output_size);
+#else
+    uint32_t r;
+    uint32_t r_count = output_size / sizeof(uint32_t);
+
+    hal_trng_sec_init();
+
+    for (int i = 0; i < r_count; i ++) {
+        r = hal_trng_sec_get_rand();
+        memcpy(output + i * sizeof(uint32_t), &r, sizeof(uint32_t));
+    }
+
+    if (output_size > (r_count * sizeof(uint32_t))) {
+        r = hal_trng_sec_get_rand();
+        memcpy(output + r_count * sizeof(uint32_t), &r, output_size - r_count * sizeof(uint32_t));
+    }
+#endif
 
     *estimate_bits = 8 * output_size;
 

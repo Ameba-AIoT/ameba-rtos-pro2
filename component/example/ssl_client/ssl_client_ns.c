@@ -12,9 +12,11 @@
 #include "mbedtls/ssl.h"
 #include "mbedtls/error.h"
 #include "mbedtls/debug.h"
+#include "mbedtls/version.h"
 
 #define SERVER_PORT   "443"
 #define SERVER_HOST   "192.168.13.15"
+#define SERVER_NAME   ""	// server CN
 #define GET_REQUEST   "GET / HTTP/1.0\r\n\r\n"
 #define DEBUG_LEVEL   0
 
@@ -45,6 +47,11 @@ extern int NS_ENTRY secure_mbedtls_ssl_read(mbedtls_ssl_context *ssl, unsigned c
 extern int NS_ENTRY secure_mbedtls_ssl_write(mbedtls_ssl_context *ssl, const unsigned char *buf, size_t len);
 extern int NS_ENTRY secure_mbedtls_ssl_close_notify(mbedtls_ssl_context *ssl);
 extern void NS_ENTRY secure_set_ns_device_lock(void (*device_mutex_lock_func)(uint32_t), void (*device_mutex_unlock_func)(uint32_t));
+
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000)
+extern psa_status_t NS_ENTRY secure_psa_crypto_init(void);
+extern int NS_ENTRY secure_mbedtls_ssl_set_hostname(mbedtls_ssl_context *ssl, const char *hostname);
+#endif
 
 static void *my_calloc(size_t nelements, size_t elementSize)
 {
@@ -83,6 +90,13 @@ static void ssl_client(void *param)
 	secure_mbedtls_platform_set_ns_calloc_free(my_calloc, my_free);
 	secure_set_ns_device_lock(device_mutex_lock, device_mutex_unlock);
 
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000)
+	if ((ret = secure_psa_crypto_init()) != 0) {
+		printf("secure_psa_crypto_init returned %d\n", ret);
+		goto exit1;
+	}
+#endif
+
 	/*
 	 * 1. Start the connection
 	 */
@@ -117,14 +131,22 @@ static void ssl_client(void *param)
 	}
 
 	mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE);
-	secure_mbedtls_ssl_conf_rng(&conf, NULL);
 	secure_mbedtls_ssl_conf_dbg(&conf, NULL);
+
+#if !(defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000))
+	secure_mbedtls_ssl_conf_rng(&conf, NULL);
+#endif
 
 #ifdef SSL_CLIENT_EXT
 	if ((ret = ssl_client_ext_setup(&conf)) != 0) {
 		printf(" failed\n\r  ! ssl_client_ext_setup returned %d\n", ret);
 		goto exit;
 	}
+
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000)
+	/* set hostname is required for certificate verification */
+	secure_mbedtls_ssl_set_hostname(&ssl, SERVER_NAME);
+#endif
 #endif
 
 	if ((ret = secure_mbedtls_ssl_setup(&ssl, &conf)) != 0) {

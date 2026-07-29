@@ -341,6 +341,14 @@ static void ssl_client(void *param)
 	secure_mbedtls_platform_set_calloc_free();
 	extern void NS_ENTRY secure_set_ns_device_lock(void (*device_mutex_lock_func)(uint32_t), void (*device_mutex_unlock_func)(uint32_t));
 	secure_set_ns_device_lock(device_mutex_lock, device_mutex_unlock);
+
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000)
+	extern psa_status_t NS_ENTRY secure_psa_crypto_init(void);
+	if ((ret = secure_psa_crypto_init()) != 0) {
+		printf("secure_psa_crypto_init returned %d\n", ret);
+		goto exit1;
+	}
+#endif
 #endif
 #if MBEDTLS_VERSION_NUMBER==0x02100300 //if is mbedtls 2.16.4
 	mbedtls_platform_setup(NULL);
