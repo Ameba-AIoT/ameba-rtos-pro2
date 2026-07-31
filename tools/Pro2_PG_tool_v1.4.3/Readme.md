@@ -31,7 +31,7 @@
 > ./uartfwburn.exe -p COM5 -f flash_ntz.nn.bin -b 2000000 -U -x 32 -r
 
 
-### Nand flash
+# Nand flash
 
 ## update flash bin
 > ./uartfwburn.exe -p COM5 -f flash_ntz.bin -b 2000000 -n pro2
