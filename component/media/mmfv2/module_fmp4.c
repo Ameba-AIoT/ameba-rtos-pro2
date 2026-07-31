@@ -201,6 +201,22 @@ int fmp4_control(void *p, int cmd, int arg)
 		ctx->add_audio_track_done = 0;
 		ctx->add_video_track_done = 0;
 		break;
+	case CMD_FMP4_FILE_FLUSH:
+		if (ctx->fmp4) {
+			int ret = fmp4_writer_save_segment(ctx->fmp4);
+			if (ret != 0) {
+				printf("FMP4 save segment failed: %d\r\n", ret);
+				return ret;
+			}
+		}
+		if (ctx->wfp) {
+			if (fflush(ctx->wfp) != 0) {
+				printf("FMP4 flush to disk failed\r\n");
+				return -1;
+			}
+		}
+		printf("FMP4 flush done\r\n");
+		break;
 	case CMD_FMP4_APPLY:
 
 		break;
