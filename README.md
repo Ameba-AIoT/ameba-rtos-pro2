@@ -17,7 +17,7 @@ PLease refer to this document for the compile environment of the SDK.
 
 - [amebe-rtos-pro2 toolchain 10.3.0](https://github.com/Ameba-AIoT/ameba-toolchain/releases/tag/V10.3.0-amebe-rtos-pro2) Ameba SDK nesseaery toolchain.
 
-- [Image tools - Pro2_PG_tool _v1.4.3](https://github.com/Ameba-AIoT/ameba-rtos-pro2/tree/main/tools/Pro2_PG_tool_v1.4.3) Binory/flash/firmware file download tools.
+- [Image tools - Pro2_PG_tool_v1.4.3](https://github.com/Ameba-AIoT/ameba-rtos-pro2/tree/main/tools/Pro2_PG_tool_v1.4.3) Binory/flash/firmware file download tools.
 
 ## License
 

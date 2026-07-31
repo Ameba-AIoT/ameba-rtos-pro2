@@ -4,10 +4,9 @@
 - NN_address_PT_NN_MDL --- 0x530000
 
 ## erase flash
+> ./uartfwburn.exe -p serial_port -b 2000000 -e chip -U -x 32
 
->  ./uartfwburn.exe -p serial_port -b 2000000 -e chip -U -x 32
-
->  ./uartfwburn.exe -p serial_port -b 2000000 -e chip -U -x 32 -r
+> ./uartfwburn.exe -p serial_port -b 2000000 -e chip -U -x 32 -r
 
 ## system file bin, partial flash
 > ./uartfwburn.exe -p serial_port -f system_files.bin -b 2000000 -x 32
@@ -33,4 +32,6 @@
 
 
 ### Nand flash
-TBD
+
+## update flash bin
+> ./uartfwburn.exe -p COM5 -f flash_ntz.bin -b 2000000 -n pro2
