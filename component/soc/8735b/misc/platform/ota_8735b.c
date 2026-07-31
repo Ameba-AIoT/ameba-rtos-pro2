@@ -2114,10 +2114,10 @@ int heap_update_ota(uint8_t *buffer, uint32_t length)
 			ota_invoke_status_callback((uint8_t) 1, (uint8_t) progress);
 			printf("[HEAP OTA Progress] Sent progress update: %u%% \n", progress);
 		}
-        printf("[Firmware updating] ============================== updating: %d / %lu Bytes (%d%%)\n",
+        printf("[Firmware updating] ============================== updating: %u / %u Bytes (%u%%)\n",
                idx, (length - 4), progress);
 #else
-        printf("[Firmware updating] ============================== updating: %d / %lu Bytes\n",
+        printf("[Firmware updating] ============================== updating: %u / %u Bytes\n",
                idx, (length - 4));
 #endif
 
