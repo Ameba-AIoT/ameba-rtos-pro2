@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: bf20a960f92ae1cf0c35d1a42487eefec28fe63d
+* [amebapro2][AI tool] add sdk development mcp: ameba_dev_mcp for pro2
+
 SHA-1: 0408895d6b2127dbeed013af57046fab9fd8d4f0
 * [amebapro2][bt:controller] update BT normal patch
 
