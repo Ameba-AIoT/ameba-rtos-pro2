@@ -40,7 +40,7 @@ struct sensor_params_t {
 /* SMARTSENS */
 #define SENSOR_SC2333           0x10  //  |   v    |   v    |   v    |   -    |    v   |
 #define SENSOR_SC2336           0x11  //  |   v    |   v    |   v    |   -    |    v   |
-#define SENSOR_SC231H           0x12  //  |   v    |   -    |   v    |   -    |    v   |
+#define SENSOR_SC231H           0x12  //  |   v    |   -    |   v    |   v    |    v   |
 #define SENSOR_SC2310           0x13  //  |   v    |   -    |   v    |   v    |    v   |
 #define SENSOR_SC301            0x14  //  |   v    |   v    |   v    |   v    |    v   |
 #define SENSOR_SC3336           0x15  //  |   v    |   -    |   v    |   -    |    v   |
@@ -61,7 +61,7 @@ struct sensor_params_t {
 #define SENSOR_GC4663           0x28  //  |   v    |   v    |   v    |   v    |    v   |
 #define SENSOR_GC4693           0x29  //  |   v    |   v    |   -    |   -    |    v   |
 #define SENSOR_GC5035           0x2A  //  |   v    |   v    |   v    |   -    |    -   |
-#define SENSOR_GC05A2           0x2B  //  |   v    |   v    |   v    |   -    |    -   |
+#define SENSOR_GC05A2           0x2B  //  |   v    |   -    |   v    |   -    |    -   |
 /* SONY */
 #define SENSOR_IMX307           0x30  //  |   v    |   -    |   v    |   v    |    -   |
 #define SENSOR_IMX327           0x31  //  |   v    |   -    |   v    |   v    |    -   |
@@ -73,6 +73,7 @@ struct sensor_params_t {
 #define SENSOR_IMX681_5M        0x37  //  |   v    |   v    |   v    |   -    |    -   |
 #define SENSOR_IMX681_12M       0x38  //  |   v    |   -    |   v    |   -    |    -   |
 #define SENSOR_IMX681_12M_SEQ   0x39  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_IMX775           0x3A  //  |   v    |   -    |   v    |   -    |    -   |
 /* SOI */
 #define SENSOR_F35              0x40  //  |   v    |   -    |   -    |   -    |    v   |
 #define SENSOR_F37              0x41  //  |   v    |   v    |   v    |   -    |    v   |
@@ -104,8 +105,8 @@ struct sensor_params_t {
 #define SENSOR_OV50A40_50M      0x5E  //  |   v    |   -    |   v    |   -    |    -   |
 /* PRIMESENSOR */
 #define SENSOR_PS5258           0x60  //  |   v    |   -    |   v    |   -    |    -   |
-#define SENSOR_PS5262           0x61  //  |   v    |   v    |   v    |   -    |    -   |
-#define SENSOR_PS5268           0x62  //  |   v    |   v    |   v    |   -    |    -   |
+#define SENSOR_PS5262           0x61  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_PS5268           0x62  //  |   v    |   -    |   v    |   -    |    -   |
 #define SENSOR_PS5270           0x63  //  |   v    |   v    |   v    |   -    |    -   |
 #define SENSOR_PS5270_HDR       0x64  //  |   v    |   v    |   v    |   -    |    -   |
 #define SENSOR_PS5420           0x65  //  |   v    |   v    |   v    |   -    |    -   |
@@ -168,6 +169,7 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_IMX681_5M]        = {2592, 1944,  4},
 	[SENSOR_IMX681_12M]       = {4016, 3012,  4},
 	[SENSOR_IMX681_12M_SEQ]   = {2128, 1604,  4}, //width = 2008 + 120(overlap) //height = 1506 + 98(overlap)
+	[SENSOR_IMX775]           = {2592, 1944, 15},
 	/* SOI */
 	[SENSOR_F35]              = {1920, 1080, 30},
 	[SENSOR_F37]              = {1920, 1080, 30},
