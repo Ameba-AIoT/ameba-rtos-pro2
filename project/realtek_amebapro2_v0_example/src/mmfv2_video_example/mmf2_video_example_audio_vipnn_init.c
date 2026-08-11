@@ -31,6 +31,13 @@
 #define AUDIO_SIM	0
 #define YAMNET_S	1
 
+/* User can load model binary from external filesystem */
+#define USER_LOAD_MODEL     1
+
+#if USER_LOAD_MODEL
+#include "vfs.h"
+#endif
+
 static void atcmd_userctrl_init(void);
 #if AUDIO_SIM
 static mm_context_t *array_ctx				= NULL;
@@ -93,6 +100,7 @@ void audio_process(void *p)
 	}
 }
 
+
 void mmf2_video_example_audio_vipnn_init(void)
 {
 #if AUDIO_SIM
@@ -131,11 +139,22 @@ void mmf2_video_example_audio_vipnn_init(void)
 	// YAMNET
 	vipnn_ctx = mm_module_open(&vipnn_module);
 	if (vipnn_ctx) {
+#if USER_LOAD_MODEL
+		vfs_init(NULL);  // init filesystem
+		vfs_user_register("sd", VFS_FATFS, VFS_INF_SD);
+#if YAMNET_S
+		mm_module_ctrl(vipnn_ctx, CMD_VIPNN_SET_MODEL, (int)&yamnet_s_from_sd);
+#else
+		mm_module_ctrl(vipnn_ctx, CMD_VIPNN_SET_MODEL, (int)&yamnet_from_sd);
+		mm_module_ctrl(vipnn_ctx, CMD_VIPNN_SET_DISPPOST, (int)audio_process);
+#endif
+#else
 #if YAMNET_S
 		mm_module_ctrl(vipnn_ctx, CMD_VIPNN_SET_MODEL, (int)&yamnet_s);
 #else
 		mm_module_ctrl(vipnn_ctx, CMD_VIPNN_SET_MODEL, (int)&yamnet);
 		mm_module_ctrl(vipnn_ctx, CMD_VIPNN_SET_DISPPOST, (int)audio_process);
+#endif
 #endif
 		mm_module_ctrl(vipnn_ctx, CMD_VIPNN_SET_IN_PARAMS, (int)&aud_info);
 		mm_module_ctrl(vipnn_ctx, CMD_VIPNN_SET_RES_SIZE, sizeof(yamnet_res_t));  // result size

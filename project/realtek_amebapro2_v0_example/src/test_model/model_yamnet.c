@@ -144,3 +144,16 @@ nnmodel_t yamnet = {
 
 	.name = "YAMNET"
 };
+
+static void *yamnet_get_network_filename_sd(void)
+{
+	return (void *)"sd:/NN_MDL/yamnet_fp16.nb";
+}
+
+nnmodel_t yamnet_from_sd = {
+	.nb 			= yamnet_get_network_filename_sd,
+	.preprocess 	= yamnet_preprocess,
+	.postprocess 	= yamnet_postprocess,
+	.model_src 		= MODEL_SRC_FILE,
+	.name = "YAMNET_SD"
+};

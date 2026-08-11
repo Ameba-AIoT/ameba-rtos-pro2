@@ -632,3 +632,16 @@ nnmodel_t yamnet_s = {
 
 	.name = "YAMNET_S"
 };
+
+static void *yamnet_s_get_network_filename_sd(void)
+{
+	return (void *)"sd:/NN_MDL/yamnet_s_hybrid.nb";
+}
+
+nnmodel_t yamnet_s_from_sd = {
+	.nb 			= yamnet_s_get_network_filename_sd,
+	.preprocess 	= yamnet_s_preprocess,
+	.postprocess 	= yamnet_s_postprocess,
+	.model_src 		= MODEL_SRC_FILE,
+	.name = "YAMNET_S_SD"
+};
