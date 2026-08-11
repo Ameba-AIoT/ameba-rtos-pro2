@@ -183,6 +183,8 @@ def _shorten_win_path(path: str) -> str:
 
     norm_sdk = os.path.normcase(os.path.realpath(SDK_ROOT))
     norm_path = os.path.normcase(os.path.realpath(path))
+    real_sdk  = os.path.realpath(SDK_ROOT)
+    real_path = os.path.realpath(path)
 
     for junction in _win_junction_candidates():
         if not os.path.isdir(junction):
@@ -194,7 +196,8 @@ def _shorten_win_path(path: str) -> str:
         # path must be inside SDK_ROOT
         if not norm_path.startswith(norm_sdk):
             continue
-        rel = os.path.relpath(path, SDK_ROOT)
+        # Use case-preserved realpath for relpath to avoid lowercasing the result
+        rel = os.path.relpath(real_path, real_sdk)
         shortened = os.path.join(junction, rel)
         logger.debug("Shortened path: %s -> %s", path, shortened)
         return shortened

@@ -13,7 +13,7 @@ from mcp.server.fastmcp import FastMCP
 
 from ameba_dev_mcp._paths import TOOLS_ROOT
 
-PG_TOOL_DIR = os.path.join(TOOLS_ROOT, "Pro2_PG_tool _v1.4.3")
+PG_TOOL_DIR = os.path.join(TOOLS_ROOT, "Pro2_PG_tool_v1.4.3")
 
 _PRO2_DEVICE_INFO = {
     "device_name": "RTL8735B",

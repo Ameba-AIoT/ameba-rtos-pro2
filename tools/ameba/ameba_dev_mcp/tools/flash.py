@@ -50,7 +50,7 @@ from ameba_dev_mcp.models.schemas import ConfigError
 logger = logging.getLogger(__name__)
 
 # Path to Pro2_PG_tool directory (inside the Pro2 SDK)
-PG_TOOL_DIR = os.path.join(TOOLS_ROOT, "Pro2_PG_tool _v1.4.3")
+PG_TOOL_DIR = os.path.join(TOOLS_ROOT, "Pro2_PG_tool_v1.4.3")
 
 DEBUG_LOG_DIR = os.path.join(PROJECT_ROOT, "mcp_flash_log")
 DEBUG_LOG_FILE = os.path.join(DEBUG_LOG_DIR, "flash.log")
@@ -321,11 +321,11 @@ def flash_firmware(alias: Optional[str] = None) -> Dict[str, Any]:
             [
                 ConfigError(
                     code="UARTFWBURN_NOT_FOUND",
-                    field_path="tools/Pro2_PG_tool _v1.4.3",
+                    field_path="tools/Pro2_PG_tool_v1.4.3",
                     message=f"uartfwburn not found under {PG_TOOL_DIR}",
                     hint=(
                         "Ensure the Pro2_PG_tool directory exists in the SDK at "
-                        "tools/Pro2_PG_tool _v1.4.3/ with uartfwburn.exe (Windows) "
+                        "tools/Pro2_PG_tool_v1.4.3/ with uartfwburn.exe (Windows) "
                         "or uartfwburn.linux (Linux)."
                     ),
                 )
@@ -572,7 +572,7 @@ def register_flash_tools(mcp: FastMCP) -> None:
             On failure: {success: false, alias, errors: [{code, message, hint}, ...]}
 
         Error codes specific to Pro2:
-          UARTFWBURN_NOT_FOUND   — check tools/Pro2_PG_tool _v1.4.3/ in SDK
+          UARTFWBURN_NOT_FOUND   — check tools/Pro2_PG_tool_v1.4.3/ in SDK
           FLASH_HW_ERROR         — uartfwburn failed; check J27 jumper + RESET
           IMAGE_FILE_NOT_FOUND   — run build_firmware first
           PROJECT_NOT_CONFIGURED — run build_firmware first

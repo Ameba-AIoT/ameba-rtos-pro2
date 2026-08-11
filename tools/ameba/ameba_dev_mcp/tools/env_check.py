@@ -51,7 +51,7 @@ from ameba_dev_mcp.models.schemas import (
 logger = logging.getLogger(__name__)
 
 # Path to Pro2 PG tool
-PG_TOOL_DIR = os.path.join(TOOLS_ROOT, "Pro2_PG_tool _v1.4.3")
+PG_TOOL_DIR = os.path.join(TOOLS_ROOT, "Pro2_PG_tool_v1.4.3")
 
 _UARTFWBURN_CANDIDATES = [
     "uartfwburn.exe",
@@ -441,7 +441,7 @@ def env_pre_check(
         )
     if "UARTFWBURN_NOT_FOUND" in summary["blocking_codes"]:
         next_steps.append(
-            "uartfwburn not found — ensure tools/Pro2_PG_tool _v1.4.3/ "
+            "uartfwburn not found — ensure tools/Pro2_PG_tool_v1.4.3/ "
             "is present in the SDK root."
         )
     if "CMAKE_NOT_FOUND" in summary["blocking_codes"]:
@@ -697,7 +697,7 @@ def register_env_check_tools(mcp: FastMCP) -> None:
         Pro2-specific notes:
           - NO reset smoke test (Pro2 has no auto-download circuit).
             J27 jumper + RESET is always manual.
-          - Checks uartfwburn presence in tools/Pro2_PG_tool _v1.4.3/
+          - Checks uartfwburn presence in tools/Pro2_PG_tool_v1.4.3/
           - Checks cmake presence on PATH (required for build_firmware)
 
         Args:
