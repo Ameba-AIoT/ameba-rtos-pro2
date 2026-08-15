@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 498c245480d1e9f12f72d46de7072856250f18c6
+* [amebapro2][video] update sensor driver & setting file
+
 SHA-1: bf20a960f92ae1cf0c35d1a42487eefec28fe63d
 * [amebapro2][AI tool] add sdk development mcp: ameba_dev_mcp for pro2
 
