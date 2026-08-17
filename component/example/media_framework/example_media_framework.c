@@ -77,6 +77,9 @@ void example_mmf2_audio_only(void)
 	// i2s -> audio , audio loopback
 	// mmf2_example_i2s_audio_init();
 
+	// sport -> audio , 4-channel TDM audio from BT SoC 8773
+	mmf2_example_sport_audio_init();
+
 	// audio -> G711E -> G711D -> audio
 	// mmf2_example_g711loop_init();
 
@@ -218,10 +221,10 @@ void example_mmf2_signal_stream_main(void *param)
 	//int ret;
 #if !defined(CONFIG_PLATFORM_8735B)
 #if ISP_BOOT_MODE_ENABLE == 0
-	common_init();
+	// common_init();
 #endif
 #else
-	common_init();
+	// common_init();
 #endif
 
 	example_mmf2_audio_only();

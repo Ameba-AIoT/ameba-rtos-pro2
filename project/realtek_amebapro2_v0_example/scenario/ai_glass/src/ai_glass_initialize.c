@@ -1828,7 +1828,7 @@ static void parser_life_snapshot_param(ai_glass_snapshot_param_t *snap_buf, uint
 		snap_buf->roi.xmax = raw_buf[18] | (raw_buf[19] << 8) | (raw_buf[20] << 16) | (raw_buf[21] << 24);
 		snap_buf->roi.ymax = raw_buf[22] | (raw_buf[23] << 8) | (raw_buf[24] << 16) | (raw_buf[25] << 24);
 		snap_buf->minQp = raw_buf[26] | (raw_buf[27] << 8);
-		snap_buf->minQp = raw_buf[28] | (raw_buf[29] << 8);
+		snap_buf->maxQp = raw_buf[28] | (raw_buf[29] << 8);
 		snap_buf->rotation = raw_buf[30];
 	}
 }
@@ -2126,7 +2126,7 @@ lifetimesnapshot:
 lifetimesnapshottake:
 				if (lifetime_snapshot_take((const char *)lifetime_snap_name, param) == 0) {
 					status = AI_GLASS_DEVICE_WORKING_IN_PROG;
-					if ((current_sensor_id == SENSOR_IMX681) || (current_sensor_id == SENSOR_IMX471) || (current_sensor_id == SENSOR_OV13B10)) {
+					if ((current_sensor_id == SENSOR_IMX681 && ENABLE_12M == 1) || (current_sensor_id == SENSOR_IMX471) || (current_sensor_id == SENSOR_OV13B10)) {
 						//do nothing
 					}
 					else {
@@ -3044,6 +3044,120 @@ static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 	AI_GLASS_INFO("UART_RX_OPC_CMD_GET_WIFI_PARAMETER END\r\n");
 }
 
+static void dummy_rtsp_live_start(void)
+{
+    ai_glass_stream_param_t temp_stream_param = {0};
+
+    temp_stream_param.type       = 1;
+    temp_stream_param.resolution = 5;
+    temp_stream_param.width      = 1280;
+    temp_stream_param.height     = 1080;
+    temp_stream_param.fps        = 30;
+    temp_stream_param.bps        = 4931584;
+    temp_stream_param.minQp      = 0;
+    temp_stream_param.maxQp      = 41;
+    temp_stream_param.rotation   = 0;
+    temp_stream_param.rc_mode    = 2;
+    temp_stream_param.audio_type = 0;
+
+    // defaults for fields not carried in AT
+    temp_stream_param.roi.xmin   = 0;
+    temp_stream_param.roi.ymin   = 0;
+    temp_stream_param.roi.xmax   = 1;
+    temp_stream_param.roi.ymax   = 1;
+    temp_stream_param.gop        = temp_stream_param.fps;
+    temp_stream_param.h264_level   = DEFAULT_STREAM_H264_LEVEL;
+    temp_stream_param.h264_profile = DEFAULT_STREAM_H264_PROFILE;
+    temp_stream_param.h265_level   = DEFAULT_STREAM_H265_LEVEL;
+    temp_stream_param.h265_profile = DEFAULT_STREAM_H265_PROFILE;
+    temp_stream_param.cavlc        = DEFAULT_STREAM_CAVLC;
+
+    AI_GLASS_INFO("Get Stream Data\r\n");
+    print_stream_data(&temp_stream_param);
+
+    if (media_update_stream_params(&temp_stream_param) != MEDIA_OK) {
+        AI_GLASS_ERR("UPDATE STREAM PARAMS ERROR\r\n");
+        return;
+    }
+
+    wifi_streaming_initialize();
+    AI_GLASS_INFO("RTSP live stream started via AT command\r\n");
+}
+#include "power_mode_api.h"
+#include "gpio_api.h"
+#include "gpio_ex_api.h"
+#include "gpio_irq_api.h"
+#include "gpio_irq_ex_api.h"
+#define WAKEUP_SOURCE 1
+#define CLOCK 0
+//SLEEP_DURATION, 5s
+#define SLEEP_DURATION (0 * 1000 * 1000)
+#if (WAKEUP_SOURCE == 1)
+#define WAKUPE_GPIO_PIN PA_2
+static gpio_irq_t my_GPIO_IRQ;
+#endif
+
+static void lfsnap(void)
+{
+	uint8_t status = AI_GLASS_CMD_COMPLETE;
+	isp_info_sync_t isp_info = {0};
+	if (xSemaphoreTake(video_proc_sema, 0) != pdTRUE) {
+		AI_GLASS_WARN("AI glass is snapshot or record, current snapshot busy fail\r\n");
+		goto endofsnapshot;
+	}
+	AI_GLASS_MSG("snapshot aiglass_mass_storage_deinit time = %lu\r\n", mm_read_mediatime_ms());
+	ai_glass_init_external_disk();
+	AI_GLASS_MSG("Process LIFETIME SNAPSHOT\r\n");
+
+	int ret = lifetime_snapshot_initialize(&isp_info);
+	if (ret == 0) {
+		char temp_record_filename_buffer[160] = {0};
+		uint8_t lifetime_snap_name[160] = {0};
+
+		char *cur_time_str = (char *)media_filesystem_get_current_time_string();
+		if (cur_time_str) {
+			extdisk_generate_unique_filename("PICTURE_0_0_", cur_time_str, ".jpg", (char *)temp_record_filename_buffer, 160);
+			snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s", (const char *)temp_record_filename_buffer);
+			free(cur_time_str);
+		} else {
+			AI_GLASS_WARN("no memory for lifetime snapshot file name\r\n");
+			extdisk_generate_unique_filename("PICTURE_0_0_", "19800101", ".jpg", (char *)temp_record_filename_buffer, 160);
+		}
+		uartcmdpacket_t *param = NULL;
+		if (lifetime_snapshot_take((const char *)lifetime_snap_name, param) == 0) {
+			status = AI_GLASS_DEVICE_WORKING_IN_PROG;
+			if (lifetime_highres_save((const char *)lifetime_snap_name, param) != 0) {
+				AI_GLASS_WARN("lifetime snapshot high res save failed\r\n");
+				status = AI_GLASS_PROC_FAIL;
+			}
+		} else {
+			status = AI_GLASS_PROC_FAIL;
+		}
+		// Save filelist to EMMC
+		extdisk_save_file_cntlist();
+		AI_GLASS_MSG("Extdisk save file countlist done = %lu\r\n", mm_read_mediatime_ms());
+		status = AI_GLASS_CMD_COMPLETE;
+		AI_GLASS_MSG("wait for lifetime snapshot deinit\r\n");
+		while (lifetime_snapshot_deinitialize()) {
+			vTaskDelay(1);
+		}
+		AI_GLASS_MSG("lifetime snapshot deinit done = %lu\r\n", mm_read_mediatime_ms());
+	} else if (ret == -2) {
+		status = AI_GLASS_BUSY;
+	} else {
+		status = AI_GLASS_PROC_FAIL;
+	}
+	xSemaphoreGive(video_proc_sema);
+endofsnapshot:
+	AI_GLASS_INFO("end of UART_RX_OPC_CMD_SNAPSHOT = %lu\r\n", mm_read_mediatime_ms());
+	gpio_t my_GPIO2;
+	gpio_init(&my_GPIO2, PA_3);
+	gpio_pull_ctrl(&my_GPIO2, PullDown);
+	gpio_irq_init(&my_GPIO_IRQ, WAKUPE_GPIO_PIN, NULL, (uint32_t)&my_GPIO_IRQ);
+	gpio_irq_pull_ctrl(&my_GPIO_IRQ, PullDown);
+	gpio_irq_set(&my_GPIO_IRQ, IRQ_RISE, 1);
+	DeepSleep(DS_AON_GPIO, SLEEP_DURATION, CLOCK);
+}
 // {opcode, {is_critical, is_no_ack, callback}, {NULL, NULL})
 static rxopc_item_t rx_opcode_basic_items[ ] = {
 	{UART_RX_OPC_CMD_QUERY_INFO,        {true,  false, ai_glass_get_query_info},        {NULL, NULL}},
@@ -3238,6 +3352,7 @@ void ai_glass_service_thread(void *param)
 	uart_service_start(1);
 	AI_GLASS_MSG("uart service send data time %lu\r\n", mm_read_mediatime_ms());
 
+	
 exit:
 	vTaskDelete(NULL);
 }
@@ -3661,6 +3776,72 @@ void fLFRECORD(void *arg)
     AI_GLASS_INFO("end of UART_RX_OPC_CMD_RECORD_START\r\n");
 }
 
+void fLFARECORD(void *arg)
+{
+    AI_GLASS_INFO("AUDIO_RECORD_START = %lu\r\n", mm_read_mediatime_ms());
+    int argc = 0;
+    char *argv[MAX_ARGC] = {0};
+
+    argc = parse_param(arg, argv);
+
+    uint16_t record_length = 0;
+    if (argc > 1) {
+        record_length = atoi(argv[1]);   // duration in seconds
+    }
+    media_update_record_time(record_length);
+
+    uint8_t record_filename_length = 0;
+    uint8_t *record_filename = NULL;
+    char filename_buf[160] = {0};
+    const char *filename_str = NULL;
+
+    if (record_filename && record_filename_length < sizeof(filename_buf)) {
+        memcpy(filename_buf, record_filename, record_filename_length);
+        filename_buf[record_filename_length] = '\0';
+        filename_str = filename_buf;
+    } else {
+        record_filename_length = 0;
+    }
+
+    ai_glass_init_external_disk();
+
+    if (xSemaphoreTake(video_proc_sema, 0) == pdTRUE) {
+        if (current_state == STATE_RECORDING || current_state == STATE_END_RECORDING) {
+            AI_GLASS_MSG("Audio recording already running\r\n");
+            xSemaphoreGive(video_proc_sema);
+        } else if (current_state == STATE_IDLE) {
+            int ret = lifetime_audio_initialize(record_filename_length, filename_str);
+            if (send_audio_response_timer != NULL && ret == 0) {
+                extdisk_save_file_cntlist();
+                if (xSemaphoreTake(send_audio_response_timermutex, portMAX_DELAY) == pdTRUE) {
+                    if (xTimerStart(send_audio_response_timer, 0) != pdPASS) {
+                        AI_GLASS_ERR("Audio record start timer failed\r\n");
+                        lifetime_audio_deinitialize();
+                        xSemaphoreGive(video_proc_sema);
+                    } else {
+                        send_response_timer_setstop = 0;
+                    }
+                    xSemaphoreGive(send_audio_response_timermutex);
+                } else {
+                    AI_GLASS_ERR("Audio record start timer mutex failed\r\n");
+                    lifetime_audio_deinitialize();
+                    xSemaphoreGive(video_proc_sema);
+                }
+            } else {
+                AI_GLASS_ERR("Failed to create audio response timer\r\n");
+                xSemaphoreGive(video_proc_sema);
+            }
+        } else {
+            AI_GLASS_ERR("Audio record start failed due to state\r\n");
+            xSemaphoreGive(video_proc_sema);
+        }
+    } else {
+        AI_GLASS_WARN("System busy, cannot start audio record\r\n");
+    }
+
+    AI_GLASS_INFO("end of AT+AIGLASSLFARECORD\r\n");
+}
+
 void fSTOPLFRECORD(void *arg)
 {
     AI_GLASS_MSG("get UART_RX_OPC_CMD_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
@@ -3683,6 +3864,30 @@ void fSTOPLFRECORD(void *arg)
 		}
 	}
 	AI_GLASS_MSG("end of UART_RX_OPC_CMD_RECORD_STOP %lu\r\n", mm_read_mediatime_ms());
+}
+
+void fSTOPLFARECORD(void *arg)
+{
+    AI_GLASS_MSG("get AT+AIGLASSSTOPLFARECORD %lu\r\n", mm_read_mediatime_ms());
+	if (current_state == STATE_RECORDING) {
+		if (xSemaphoreTake(send_response_timermutex, portMAX_DELAY) == pdTRUE) {
+			if (send_response_timer_setstop == 0) {
+				if (send_response_timer != NULL) {
+					if (xTimerIsTimerActive(send_response_timer) == pdTRUE) {
+						xTimerStop(send_response_timer, 0);
+					}
+				}
+				lifetime_audio_deinitialize();
+				xSemaphoreGive(video_proc_sema);
+				send_response_timer_setstop = 1;
+				xSemaphoreGive(send_response_timermutex);
+			} else {
+				AI_GLASS_MSG("The recording timer has stop\r\n");
+				xSemaphoreGive(send_response_timermutex);
+			}
+		}
+	}
+	AI_GLASS_MSG("end of AT+AIGLASSSTOPLFARECORD %lu\r\n", mm_read_mediatime_ms());
 }
 
 static void fTESTGSENSORCFG(void *arg) {
@@ -3924,6 +4129,51 @@ static void fAIGLASSSPISLAVE(void *arg)
 	spi_slave_start();
 }
 
+static void fAIRTSPLIVESTART(void *arg)
+{
+    char *argv[MAX_ARGC] = {0};
+    int argc = parse_param(arg, argv);
+
+    ai_glass_stream_param_t temp_stream_param = {0};
+
+    if (argc > 11) {
+        temp_stream_param.type       = atoi(argv[1]);
+        temp_stream_param.resolution = atoi(argv[2]);
+        temp_stream_param.width      = atoi(argv[3]);
+        temp_stream_param.height     = atoi(argv[4]);
+        temp_stream_param.fps        = atoi(argv[5]);
+        temp_stream_param.bps        = atoi(argv[6]);
+        temp_stream_param.minQp      = atoi(argv[7]);
+        temp_stream_param.maxQp      = atoi(argv[8]);
+        temp_stream_param.rotation   = atoi(argv[9]);
+        temp_stream_param.rc_mode    = atoi(argv[10]);
+        temp_stream_param.audio_type = atoi(argv[11]);
+
+        // defaults for fields not carried in AT
+        temp_stream_param.roi.xmin   = 0;
+        temp_stream_param.roi.ymin   = 0;
+        temp_stream_param.roi.xmax   = 1;
+        temp_stream_param.roi.ymax   = 1;
+        temp_stream_param.gop        = temp_stream_param.fps;
+        temp_stream_param.h264_level   = DEFAULT_STREAM_H264_LEVEL;
+        temp_stream_param.h264_profile = DEFAULT_STREAM_H264_PROFILE;
+        temp_stream_param.h265_level   = DEFAULT_STREAM_H265_LEVEL;
+        temp_stream_param.h265_profile = DEFAULT_STREAM_H265_PROFILE;
+        temp_stream_param.cavlc        = DEFAULT_STREAM_CAVLC;
+    }
+
+    AI_GLASS_INFO("Get Stream Data\r\n");
+    print_stream_data(&temp_stream_param);
+
+    if (media_update_stream_params(&temp_stream_param) != MEDIA_OK) {
+        AI_GLASS_ERR("UPDATE STREAM PARAMS ERROR\r\n");
+        return;
+    }
+
+    wifi_streaming_initialize();
+    AI_GLASS_INFO("RTSP live stream started via AT command\r\n");
+}
+
 log_item_t at_ai_glass_items[ ] = {
 	{"AT+AIGLASSFORMAT",    fDISKFORMAT,            {NULL, NULL}},
 	{"AT+AIGLASSGSENSOR",   fTESTGSENSOR,           {NULL, NULL}},
@@ -3939,6 +4189,9 @@ log_item_t at_ai_glass_items[ ] = {
 	{"AT+CALIGSENSOR",   fCALIGSENSOR,           	{NULL, NULL}},
 	{"AT+AIGLASSAISNAP",   fAIGLASSAISNAP,          {NULL, NULL}},
 	{"AT+AIGLASSSPISLAVE",   fAIGLASSSPISLAVE,          {NULL, NULL}},
+	{"AT+AIGLASSLFARECORD",   fLFARECORD,          {NULL, NULL}},
+	{"AT+AIGLASSSTOPLFARECORD",   fSTOPLFARECORD,          {NULL, NULL}},
+	{"AT+AIGLASSSLIVESTART",   fAIRTSPLIVESTART,          {NULL, NULL}},
 };
 #endif
 void ai_glass_log_init(void)

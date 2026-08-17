@@ -169,6 +169,7 @@ extern int rtp_o_h265_handler(struct stream_context *stream_ctx, struct rtp_obje
 extern int rtp_o_g711_handler(struct stream_context *stream_ctx, struct rtp_object *payload);
 extern int rtp_o_aac_handler(struct stream_context *stream_ctx, struct rtp_object *payload);
 extern int rtp_o_opus_handler(struct stream_context *stream_ctx, struct rtp_object *payload);
+extern int rtp_o_sport_handler(struct stream_context *stream_ctx, struct rtp_object *payload);
 
 #ifndef ENABLE_SIP_MMFV2
 void rtp_load_o_handler_by_codec_id(struct rtp_object *payload, int id)
@@ -195,6 +196,9 @@ void rtp_load_o_handler_by_codec_id(struct rtp_object *payload, int id)
 		return;
 	case (AV_CODEC_ID_OPUS):
 		payload->rtp_object_handler = rtp_o_opus_handler;
+		return;
+	case (AV_CODEC_ID_PCM_RAW):
+		payload->rtp_object_handler = rtp_o_sport_handler;
 		return;
 	default:
 		return;
@@ -237,7 +241,9 @@ void rtp_report(struct stream_context *stream_ctx)
 		type = 'A';    // AAC
 	} else if (stream_ctx->codec->codec_id == AV_CODEC_ID_OPUS) {
 		type = 'O';    // OPUS
-	}
+	} else if (stream_ctx->codec->codec_id == AV_CODEC_ID_PCM_RAW) {
+        type = 'P';    // PCM_RAW (SPORT)
+    }
 
 	u32 report_timer_diff = (stream_ctx->periodic_report.timer2 - stream_ctx->periodic_report.timer1) / 1000;
 	u32 report_Kbps = stream_ctx->periodic_report.bytes / report_timer_diff * 8 / 1024;

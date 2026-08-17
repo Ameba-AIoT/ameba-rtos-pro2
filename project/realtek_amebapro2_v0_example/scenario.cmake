@@ -14,6 +14,7 @@ list(
     ${sdk_root}/component/media/mmfv2/module_g711.c
     ${sdk_root}/component/media/mmfv2/module_httpfs.c
     ${sdk_root}/component/media/mmfv2/module_i2s.c
+	${sdk_root}/component/media/mmfv2/module_sport.c
     ${sdk_root}/component/media/mmfv2/module_mp4.c
     ${sdk_root}/component/media/mmfv2/module_rtp.c
     ${sdk_root}/component/media/mmfv2/module_opusc.c

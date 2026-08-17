@@ -9,6 +9,7 @@
 #include "module_i2s.h"
 #include "module_opusc.h"
 #include "module_aac.h"
+#include "module_sport.h"
 #include "log_service.h"
 #include "sensor.h"
 #include "ai_glass_dbg.h"
@@ -16,9 +17,15 @@
 
 
 //Configuration for RTSP streaming
-#define AUDIO_SAMPLE_RATE       16000 // 48000
-#define AUDIO_SRC               I2S_INTERFACE //AUDIO_INTERFACE
+
+#define AUDIO_SRC               I2S_INTERFACE //SPORT_INTERFACE//I2S_INTERFACE //AUDIO_INTERFACE
 #define AUDIO_I2S_ROLE          I2S_SLAVE //I2S_MASTER
+
+#if AUDIO_SRC==SPORT_INTERFACE
+#define AUDIO_SAMPLE_RATE       48000
+#else
+#define AUDIO_SAMPLE_RATE       16000
+#endif
 
 //Modules
 static mm_context_t *streaming_video_ctx = NULL;
@@ -84,7 +91,11 @@ static int i2s_samplerate2index(int samplerate)
 		return SR_16KHZ;
 	}
 }
+#elif AUDIO_SRC==SPORT_INTERFACE
+#define USE_SPORT_TEST 0
+static sport_params_t sport_params;
 #endif
+#if AUDIO_SRC!= SPORT_INTERFACE
 
 static opusc_params_t opusc_rtsp_params = {
 	.sample_rate = AUDIO_SAMPLE_RATE,
@@ -110,6 +121,7 @@ static aac_params_t aac_params = {
 	.mem_block_size = 128,
 	.mem_frame_size = 1024
 };
+#endif
 
 static rtsp2_params_t rtsp2_v1_params = {
 	.type = AVMEDIA_TYPE_VIDEO,
@@ -124,7 +136,7 @@ static rtsp2_params_t rtsp2_a_params = {
 	.type = AVMEDIA_TYPE_AUDIO,
 	.u = {
 		.a = {
-			.channel    = 1,
+			.channel    = 4,
 			.samplerate = AUDIO_SAMPLE_RATE,
 		}
 	}
@@ -155,6 +167,9 @@ int wifi_streaming_initialize(void)
 	streaming_video_params.rc_mode = ai_stream_param->rc_mode;
 	streaming_video_params.rotation = ai_stream_param->rotation;
 	streaming_video_params.cavlc = ai_stream_param->cavlc;
+	streaming_video_params.minQp = ai_stream_param->minQp;
+	streaming_video_params.maxQp = ai_stream_param->maxQp;
+	
 	if (streaming_video_params.type == 0) {
 		rtsp2_v1_params.u.v.codec_id = AV_CODEC_ID_H265;
 		streaming_video_params.level = ai_stream_param->h265_level;
@@ -167,6 +182,7 @@ int wifi_streaming_initialize(void)
 		AI_GLASS_ERR("Wrong video type rtsp video code id is not set\n\r");
 		goto wifi_streaming_initialize_fail;
 	}
+#if AUDIO_SRC!=SPORT_INTERFACE
 	printf("audio type: %d \r\n", ai_stream_param->audio_type);
 	if (ai_stream_param->audio_type == 0) {
 		rtsp2_a_params.u.a.codec_id = AV_CODEC_ID_MP4A_LATM;
@@ -177,7 +193,7 @@ int wifi_streaming_initialize(void)
 		AI_GLASS_ERR("Wrong audio type rtsp audio code id is not set\n\r");
 		goto wifi_streaming_initialize_fail;
 	}
-
+#endif
 #if AUDIO_SRC==AUDIO_INTERFACE
 	streaming_audio_ctx = mm_module_open(&audio_module);
 	memcpy((void *)&audio_params, (void *)&default_audio_params, sizeof(audio_params_t));
@@ -206,7 +222,33 @@ int wifi_streaming_initialize(void)
 		AI_GLASS_ERR("i2s open fail\n\r");
 		goto wifi_streaming_initialize_fail;
 	}
+#elif AUDIO_SRC==SPORT_INTERFACE
+	rtsp2_a_params.u.a.codec_id = AV_CODEC_ID_PCM_RAW;
+	streaming_audio_ctx = mm_module_open(&sport_module);
+	if (streaming_audio_ctx) {
+		mm_module_ctrl(streaming_audio_ctx, CMD_SPORT_GET_PARAMS, (int)&sport_params);
+		sport_params.sample_rate       = 48000;
+        sport_params.sport_ch_num      = CH_4;
+        sport_params.sport_ch_len      = SPORT_CL_32BIT;   // 32-bit slots
+        sport_params.sport_data_len    = SPORT_DL_24BIT;   // 24-bit valid data
+        sport_params.sport_word_length = 24;
+        sport_params.sport_format      = SPORT_I2S;
+		sport_params.sport_role        = SPORT_SLAVE_MODE;
+		sport_params.rx_channel_select = SPORT_CH_SEL_ALL;
+		sport_params.rx_byte_swap      = DISABLE;
+		sport_params.tx_byte_swap      = DISABLE;
+		sport_params.pin_group_num     = 0;
+		mm_module_ctrl(streaming_audio_ctx, CMD_SPORT_SET_PARAMS, (int)&sport_params);
+		mm_module_ctrl(streaming_audio_ctx, MM_CMD_SET_QUEUE_LEN, 32);
+		mm_module_ctrl(streaming_audio_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_STATIC);
+		
+
+	} else {
+		AI_GLASS_ERR("sport open fail\n\r");
+		goto wifi_streaming_initialize_fail;
+	}
 #endif
+#if AUDIO_SRC!=SPORT_INTERFACE
 	if (ai_stream_param->audio_type == 0) {
 		streaming_aac_ctx = mm_module_open(&aac_module);
 		if(streaming_aac_ctx) {
@@ -234,7 +276,7 @@ int wifi_streaming_initialize(void)
 		AI_GLASS_ERR("Wrong audio type mmf audio is not set\n\r");
 		goto wifi_streaming_initialize_fail;
 	}
-
+#endif
 	streaming_rtsp2_ctx = mm_module_open(&rtsp2_module);
 	if (streaming_rtsp2_ctx) {
 		mm_module_ctrl(streaming_rtsp2_ctx, CMD_RTSP2_SELECT_STREAM, 0);
@@ -263,7 +305,7 @@ int wifi_streaming_initialize(void)
 		AI_GLASS_ERR("video open fail\n\r");
 		goto wifi_streaming_initialize_fail;
 	}
-
+#if AUDIO_SRC!=SPORT_INTERFACE
 	if (ai_stream_param->audio_type == 0) {
 		siso_streaming_audio = siso_create();
 		if (siso_streaming_audio) {
@@ -288,6 +330,7 @@ int wifi_streaming_initialize(void)
 			AI_GLASS_ERR("miso open fail for video streaming\n\r");
 			goto wifi_streaming_initialize_fail;
 		}
+		AI_GLASS_INFO("miso(videochn1_aac_rtsp2) started\n\r");
 	} else if (ai_stream_param->audio_type == 1) {
 		siso_streaming_audio = siso_create();
 		if (siso_streaming_audio) {
@@ -312,19 +355,41 @@ int wifi_streaming_initialize(void)
 			AI_GLASS_ERR("miso open fail for video streaming\n\r");
 			goto wifi_streaming_initialize_fail;
 		}
+		AI_GLASS_INFO("miso(videochn1_opusc_rtsp2) started\n\r");
 	} else {
 		AI_GLASS_ERR("Wrong audio type siso/miso is not set\n\r");
 		goto wifi_streaming_initialize_fail;
 	}
-	
-	AI_GLASS_INFO("miso(videochn1_aac_rtsp2) started\n\r");
+#endif
+#if AUDIO_SRC==SPORT_INTERFACE
+	miso_streaming_video_audio_rtsp = miso_create();
+	if (miso_streaming_video_audio_rtsp) {
+        miso_ctrl(miso_streaming_video_audio_rtsp, MMIC_CMD_ADD_INPUT0, (uint32_t)streaming_video_ctx, 0);
+        miso_ctrl(miso_streaming_video_audio_rtsp, MMIC_CMD_ADD_OUTPUT0, (uint32_t)streaming_rtsp2_ctx, 0);
+        miso_ctrl(miso_streaming_video_audio_rtsp, MMIC_CMD_SET_TASKPRIORITY, 4, 0);
+        miso_start(miso_streaming_video_audio_rtsp);
+        AI_GLASS_INFO("MISO started: VIDEO -> RTSP\n\r");
+	} else {
+		AI_GLASS_ERR("miso open fail for video streaming\n\r");
+		goto wifi_streaming_initialize_fail;
+	}
 
+#endif
+	mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_APPLY, streaming_video_params.stream_id);
 #if AUDIO_SRC==AUDIO_INTERFACE
 	mm_module_ctrl(streaming_audio_ctx, CMD_AUDIO_APPLY, 0);
 #elif AUDIO_SRC==I2S_INTERFACE
 	mm_module_ctrl(streaming_audio_ctx, CMD_I2S_APPLY, 0);
+#elif AUDIO_SRC==SPORT_INTERFACE
+	mm_module_ctrl(streaming_audio_ctx, CMD_SPORT_SET_RTSP_CTX, (int)streaming_rtsp2_ctx);
+#if USE_SPORT_TEST
+    mm_module_ctrl(streaming_audio_ctx, CMD_SPORT_SET_TEST_DATA, 1);
+#else
+	mm_module_ctrl(streaming_audio_ctx, CMD_SPORT_APPLY, 0);
+	mm_module_ctrl(streaming_audio_ctx, CMD_SPORT_SET_CHANNEL_SWAP, 1);
+    mm_module_ctrl(streaming_audio_ctx, CMD_SPORT_SET_RX, 1);
 #endif
-	mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_APPLY, streaming_video_params.stream_id);
+#endif
 
 	if (ai_stream_param) {
 		free(ai_stream_param);

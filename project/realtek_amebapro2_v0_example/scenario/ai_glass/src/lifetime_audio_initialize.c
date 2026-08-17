@@ -5,6 +5,7 @@
 
 #include "module_audio.h"
 #include "module_i2s.h"
+#include "module_sport.h"
 #include "module_opusc.h"
 #include "module_mp4.h"
 #include "log_service.h"
@@ -15,9 +16,14 @@
 #include "ai_glass_dbg.h"
 #include "ai_glass_media.h"
 
-#define AUDIO_SAMPLE_RATE       16000
-#define AUDIO_SRC               I2S_INTERFACE // or AUDIO_INTERFACE
+#define AUDIO_SRC               I2S_INTERFACE // I2S_INTERFACE, AUDIO_INTERFACE, or SPORT_INTERFACE
 #define AUDIO_I2S_ROLE          I2S_SLAVE
+
+#if AUDIO_SRC==SPORT_INTERFACE
+#define AUDIO_SAMPLE_RATE       48000
+#else
+#define AUDIO_SAMPLE_RATE       16000
+#endif
 
 // Modules
 static mm_context_t *lr_audio_ctx = NULL;
@@ -79,6 +85,8 @@ static int i2s_samplerate2index(int samplerate)
 		return SR_16KHZ;
 	}
 }
+#elif AUDIO_SRC==SPORT_INTERFACE
+static sport_params_t sport_params;
 #endif
 
 static opusc_params_t opusc_rtsp_params = {
@@ -196,6 +204,28 @@ int lifetime_audio_initialize(uint8_t record_filename_length, const char *filena
 		AI_GLASS_ERR("i2s open fail\n\r");
 		goto lifetime_audio_initialize_fail;
 	}
+#elif AUDIO_SRC==SPORT_INTERFACE
+	lr_audio_ctx = mm_module_open(&sport_module);
+	if (lr_audio_ctx) {
+		mm_module_ctrl(lr_audio_ctx, CMD_SPORT_GET_PARAMS, (int)&sport_params);
+		sport_params.sample_rate       = 48000;
+		sport_params.sport_ch_num      = CH_4;
+		sport_params.sport_ch_len      = SPORT_CL_32BIT;
+		sport_params.sport_data_len    = SPORT_DL_24BIT;
+		sport_params.sport_word_length = 32;
+		sport_params.sport_format      = SPORT_I2S;
+		sport_params.sport_role        = SPORT_SLAVE_MODE;
+		sport_params.rx_channel_select = SPORT_CH_SEL_ALL;
+		sport_params.rx_byte_swap      = DISABLE;
+		sport_params.tx_byte_swap      = DISABLE;
+		sport_params.pin_group_num     = 0;
+		mm_module_ctrl(lr_audio_ctx, CMD_SPORT_SET_PARAMS, (int)&sport_params);
+		mm_module_ctrl(lr_audio_ctx, MM_CMD_SET_QUEUE_LEN, 6);
+		mm_module_ctrl(lr_audio_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_STATIC);
+	} else {
+		AI_GLASS_ERR("sport open fail\n\r");
+		goto lifetime_audio_initialize_fail;
+	}
 #endif
 
 	lr_opusc_ctx = mm_module_open(&opusc_module);
@@ -209,6 +239,11 @@ int lifetime_audio_initialize(uint8_t record_filename_length, const char *filena
 			goto lifetime_audio_initialize_fail;
 	}
 
+	ai_glass_record_param_t *ai_record_param = NULL;
+	ai_record_param = (ai_glass_record_param_t *) malloc(sizeof(ai_glass_record_param_t));
+	memset(ai_record_param, 0x00, sizeof(ai_glass_record_param_t));
+	media_get_record_params(ai_record_param);
+	lr_mp4_params.record_length = ai_record_param->record_length;
 	lr_mp4_ctx = mm_module_open(&mp4_module);
 	lr_mp4_params.mp4_audio_format = AUDIO_OPUS;
 	lr_mp4_params.mp4_audio_duration = 40;
@@ -262,6 +297,9 @@ int lifetime_audio_initialize(uint8_t record_filename_length, const char *filena
 	mm_module_ctrl(lr_audio_ctx, CMD_AUDIO_APPLY, 0);
 #elif AUDIO_SRC==I2S_INTERFACE
 	mm_module_ctrl(lr_audio_ctx, CMD_I2S_APPLY, 0);
+#elif AUDIO_SRC==SPORT_INTERFACE
+	mm_module_ctrl(lr_audio_ctx, CMD_SPORT_APPLY, 0);
+	mm_module_ctrl(lr_audio_ctx, CMD_SPORT_SET_RX, 1);
 #endif
 	return 0;
 
@@ -282,9 +320,13 @@ void lifetime_audio_deinitialize(void)
 	if (lr_audio_ctx != NULL) {
 		mm_module_ctrl(lr_audio_ctx, CMD_AUDIO_SET_TRX, 0);
 	}
-#else
+#elif AUDIO_SRC==I2S_INTERFACE
 	if (lr_audio_ctx != NULL) {
 		mm_module_ctrl(lr_audio_ctx, CMD_I2S_SET_TRX, 0);
+	}
+#elif AUDIO_SRC==SPORT_INTERFACE
+	if (lr_audio_ctx != NULL) {
+		mm_module_ctrl(lr_audio_ctx, CMD_SPORT_SET_RX, 0);
 	}
 #endif
     if (lr_opusc_ctx != NULL) {

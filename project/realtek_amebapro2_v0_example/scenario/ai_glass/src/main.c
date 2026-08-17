@@ -210,8 +210,6 @@ void main(void)
 	//mpu_rodata_protect_init();
 	console_init();
 
-	voe_t2ff_prealloc();
-
 	setup();
 
 	/* Execute ai glass example */

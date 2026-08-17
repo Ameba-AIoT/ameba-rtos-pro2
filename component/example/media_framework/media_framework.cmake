@@ -55,6 +55,7 @@ list(
     mmf2_example_rtp_opusd_init.c
 	mmf2_example_pcm_array_audio_init.c
 	mmf2_example_2way_audio_g711_doorbell_init.c
+	mmf2_example_sport_audio_init.c
 	
 )
 list(TRANSFORM app_example_sources PREPEND ${CMAKE_CURRENT_LIST_DIR}/)

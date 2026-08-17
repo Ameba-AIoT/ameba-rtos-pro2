@@ -143,6 +143,7 @@ list(
 	${sdk_root}/component/soc/8735b/misc/driver/flash_api_ext.c
 	${sdk_root}/component/mbed/targets/hal/rtl8735b/i2c_api.c
 	${sdk_root}/component/mbed/targets/hal/rtl8735b/i2s_api.c
+	${sdk_root}/component/mbed/targets/hal/rtl8735b/sport_api.c
 	${sdk_root}/component/mbed/targets/hal/rtl8735b/pwmout_api.c
 	${sdk_root}/component/mbed/targets/hal/rtl8735b/sgpio_api.c
 	${sdk_root}/component/mbed/targets/hal/rtl8735b/spi_api.c
@@ -547,6 +548,7 @@ list(
 	${sdk_root}/component/media/rtp_codec/mjpeg/mjpeg.c
 	${sdk_root}/component/media/rtp_codec/h265/h265.c
 	${sdk_root}/component/media/rtp_codec/opus/opus.c
+	${sdk_root}/component/media/rtp_codec/sport/sport.c
 	#${sdk_root}/component/media/rtp_codec/mjpeg/mjpeg2jpeg.c
 )
 

@@ -133,7 +133,7 @@ struct codec_info {
 /*av codec tables*/
 //#include "section_config.h"
 //SDRAM_DATA_SECTION
-#define AVCODEC_SIZE 13
+#define AVCODEC_SIZE 14
 
 // TODO: fill all infomation
 static const struct codec_info av_codec_tables[AVCODEC_SIZE] = {
@@ -144,7 +144,8 @@ static const struct codec_info av_codec_tables[AVCODEC_SIZE] = {
 	{AV_CODEC_ID_MP4A_LATM, "MP4A", RTP_PT_DYN_BASE, 8000, 2, 0},
 	{AV_CODEC_ID_MP4V_ES, "MP4V", RTP_PT_DYN_BASE, 90000, 0, 0},
 	{AV_CODEC_ID_H265, "H265", RTP_PT_DYN_BASE, 90000, 0, 0},
-	{AV_CODEC_ID_OPUS, "opus", RTP_PT_DYN_BASE, 48000, 2, 0}
+	{AV_CODEC_ID_OPUS, "opus", RTP_PT_DYN_BASE, 48000, 2, 0},
+	{AV_CODEC_ID_PCM_RAW, "L24", RTP_PT_DYN_BASE, 48000, 4, 0}
 };
 
 

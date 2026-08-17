@@ -193,6 +193,8 @@ int rtsp_parse_stream_media_type(struct codec_info *codec)
 	case (AV_CODEC_ID_MP4A_LATM):
 	case (AV_CODEC_ID_OPUS):
 		return AVMEDIA_TYPE_AUDIO;
+	case (AV_CODEC_ID_PCM_RAW):
+    	return AVMEDIA_TYPE_AUDIO;
 	default:
 		return AVMEDIA_TYPE_UNKNOWN;
 	}
@@ -306,7 +308,11 @@ void rtp_stream_statistics_sync(struct stream_context *stream_ctx)
 			stream_ctx->statistics.rtp_tick_inc = stream_ctx->tsin_by_fs;
 			stream_ctx->statistics.delay_threshold = (stream_ctx->statistics.rtp_tick_inc * RTSP_DEPEND_CLK_HZ) / stream_ctx->samplerate;
 			break;
-
+		case (AV_CODEC_ID_PCM_RAW):
+			stream_ctx->statistics.rtp_tick_inc = stream_ctx->tsin_by_fs;
+			stream_ctx->statistics.delay_threshold =
+				(stream_ctx->statistics.rtp_tick_inc * RTSP_DEPEND_CLK_HZ) / stream_ctx->samplerate;
+			break;
 		}
 		break;
 	default:
@@ -930,6 +936,14 @@ static void create_sdp_a_string(char *string, struct stream_context *s, void *ex
 		a=ptime:40
 		a=maxptime:40
 		*/
+		break;
+	case (AV_CODEC_ID_PCM_RAW):
+		sprintf(string, "a=rtpmap:%d L24/%d/%d" CRLF
+				"a=control:streamid=%d" CRLF,
+				(s->codec->pt + s->stream_id),
+				s->samplerate,
+				s->channel,
+				s->stream_id);
 		break;
 	default:
 		break;

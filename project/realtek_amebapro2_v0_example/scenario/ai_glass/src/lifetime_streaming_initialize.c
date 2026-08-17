@@ -133,6 +133,8 @@ int lifetime_streaming_initialize(void) {
 	video_v1_params.rc_mode = stream_param->rc_mode;
     video_v1_params.rotation = stream_param->rotation;
 	video_v1_params.cavlc = stream_param->cavlc;
+	video_v1_params.minQp = stream_param->minQp;
+	video_v1_params.maxQp = stream_param->maxQp;
 
 	if(video_v1_params.type == 0) {
 		video_v1_params.level = stream_param->h265_level;

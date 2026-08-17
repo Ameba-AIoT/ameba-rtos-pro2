@@ -229,7 +229,7 @@ void sport_rx_params(sport_t *obj, sport_ch ch_num, sport_cl ch_len, sport_dl rx
 	rx_params.sport_rx0_dl = rx0_data_len;
 	rx_params.sport_rx1_dl = rx1_data_len;
 	rx_params.sport_rx_rate = rate;
-	hal_sport_tx_params(psport_adapter, &rx_params);
+	hal_sport_rx_params(psport_adapter, &rx_params);
 }
 
 void sport_dma_buffer(sport_t *obj, u8 *ptx0_buf, u8 *ptx1_buf, u8 *prx0_buf, u8 *prx1_buf, u32 page_num, u32 page_size)
@@ -238,8 +238,8 @@ void sport_dma_buffer(sport_t *obj, u8 *ptx0_buf, u8 *ptx1_buf, u8 *prx0_buf, u8
 	hal_sport_buf_params_t buf_params;
 
 	buf_params.tx0_buf = ptx0_buf;
-	buf_params.rx0_buf = ptx1_buf;
-	buf_params.tx1_buf = prx0_buf;
+	buf_params.rx0_buf = prx0_buf;
+	buf_params.tx1_buf = ptx1_buf;
 	buf_params.rx1_buf = prx1_buf;
 	buf_params.page_num = page_num;
 	buf_params.page_size = page_size;
@@ -309,17 +309,8 @@ int *sport_get_tx0_page(sport_t *obj)
 int *sport_get_tx1_page(sport_t *obj)
 {
 	hal_sport_adapter_t *psport_adapter = &obj->sport_adapter;
-	u8 page_idx;
 
-	page_idx = hal_sport_get_tx1_page(psport_adapter);
-
-	if (page_idx <= psport_adapter->base_addr->sp_dma_con_b.sp_page_num) {
-		return ((int *)psport_adapter->ptx1_page_list[page_idx]);
-	} else {
-		DBG_SPORT_WARN("Tx_1_page is busy: \r\n");
-		DBG_SPORT_WARN("page_idx: %d, PageNum: %d \r\n", page_idx, psport_adapter->base_addr->sp_dma_con_b.sp_page_num);
-		return NULL;
-	}
+	return hal_sport_get_tx1_page(psport_adapter);
 }
 
 void sport_tx0_page_send(sport_t *obj, u32 *pbuf)
@@ -331,7 +322,7 @@ void sport_tx0_page_send(sport_t *obj, u32 *pbuf)
 	for (i = 0; i < page_num; i++) {
 
 		if (psport_adapter->ptx0_page_list[i] == pbuf) {
-			hal_sport_tx0_page_send(psport_adapter, i);
+			hal_sport_tx0_page_send(psport_adapter, pbuf);
 			break;  // break the for loop
 		}
 	}
@@ -351,7 +342,7 @@ void sport_tx1_page_send(sport_t *obj, u32 *pbuf)
 	for (i = 0; i < page_num; i++) {
 
 		if (psport_adapter->ptx1_page_list[i] == pbuf) {
-			hal_sport_tx1_page_send(psport_adapter, i);
+			hal_sport_tx1_page_send(psport_adapter, pbuf);
 			break;  // break the for loop
 		}
 	}

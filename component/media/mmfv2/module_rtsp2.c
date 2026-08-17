@@ -29,6 +29,7 @@ int rtsp2_handle(void *p, void *input, void *output)
 
 	struct stream_context *stream_ctx = NULL;
 	struct rtp_object *payload = NULL;
+	printf("[RTSP2 DEBUG] got input type=%d size=%u\n", input_item->type, input_item->size);
 
 	// get channel
 	for (int i = 0; i < rtsp->nb_streams; i++) {
@@ -39,7 +40,14 @@ int rtsp2_handle(void *p, void *input, void *output)
 	}
 
 	if (stream_ctx == NULL) {
-		mm_printf("stream_ctx = NULL!\n\r");
+		mm_printf("[RTSP] stream_ctx=NULL! input_item->type=%lu, nb_streams=%d\n\r",
+				  (unsigned long)input_item->type, rtsp->nb_streams);
+		for (int i = 0; i < rtsp->nb_streams; i++) {
+			mm_printf("[RTSP]   stream[%d]: codec_id=%lu stream_id=%d\n\r",
+					  i,
+					  (unsigned long)rtsp->stream_ctx[i].rtpobj.codec_id,
+					  rtsp->stream_ctx[i].stream_id);
+		}
 		ret = -EFAULT;
 		goto rtsp2_handle_end;
 	}
@@ -69,6 +77,27 @@ int rtsp2_handle(void *p, void *input, void *output)
 		payload->timestamp = mm_read_mediatime_ms();
 	}
 
+	// if (input_item->type == 8) {
+	// 	int32_t *samples = (int32_t *)payload->data;
+	// 	for (int f = 0; f < 2; f++) {
+	// 		printf("[RTSP2 AUDIO] Frame %02d: C1=%d C2=%d C3=%d C4=%d\r\n",
+	// 			f,
+	// 			(samples[f*4+0] << 8) >> 8,
+	// 			(samples[f*4+1] << 8) >> 8,
+	// 			(samples[f*4+2] << 8) >> 8,
+	// 			(samples[f*4+3] << 8) >> 8);
+	// 	}
+	// }
+	if (input_item->type == 8) {
+		uint8_t *bytes = (uint8_t *)payload->data;
+
+		// Print first 32 bytes in hex
+		printf("[RTSP2 AUDIO] Hex dump: ");
+		for (int i = 0; i < 32 && i < payload->len; i++) {
+			printf("%02X ", bytes[i]);
+		}
+		printf("\n");
+	}
 
 	//printf("ts: %8x\n\r", payload->timestamp);
 	/* because we will fill&send a complete frame in single rtp object, set both fs & fe to 1 and fd to 0*/
@@ -222,7 +251,20 @@ int rtsp2_control(void *p, int cmd, int arg)
 			} else {
 				if (params->u.a.codec_id == AV_CODEC_ID_PCMU || params->u.a.codec_id == AV_CODEC_ID_PCMA) {
 					stream_ctx->tsin_by_fs = 320 / 2; //Audio half of audio framesize
+				} else if (params->u.a.codec_id == AV_CODEC_ID_PCM_RAW) {
+					stream_ctx->tsin_by_fs = 0; // No frame-size-based timestamp for raw PCM
 				}
+				// else if (params->u.a.codec_id == AV_CODEC_ID_PCM_RAW) {
+				// 	stream_ctx->tsin_by_fs = 0; // No frame-size-based timestamp for raw PCM
+				// 	// stream_ctx->samplerate = params->u.a.samplerate;
+                //     // stream_ctx->channel    = params->u.a.channel;
+
+                //     // *** PATCH: force codec info for L24 ***
+                //     stream_ctx->codec->codec_id       = AV_CODEC_ID_PCM_RAW;
+                //     strcpy((char*)stream_ctx->codec->codec_name, "L24");
+                //     stream_ctx->codec->clock_rate     = params->u.a.samplerate;
+                //     stream_ctx->codec->audio_channels = params->u.a.channel;
+				// }
 				stream_ctx->samplerate = params->u.a.samplerate;
 				stream_ctx->channel = params->u.a.channel;
 				codec_id = params->u.a.codec_id;
@@ -231,7 +273,7 @@ int rtsp2_control(void *p, int cmd, int arg)
 		if (codec_id != AV_CODEC_ID_UNKNOWN) {
 #ifndef ENABLE_SIP_MMFV2
 			get_codec_by_id(stream_ctx->codec, codec_id);
-			if (params->u.a.codec_id == AV_CODEC_ID_PCMU || params->u.a.codec_id == AV_CODEC_ID_PCMA || params->u.a.codec_id == AV_CODEC_ID_MP4A_LATM) {
+			if (params->u.a.codec_id == AV_CODEC_ID_PCMU || params->u.a.codec_id == AV_CODEC_ID_PCMA || params->u.a.codec_id == AV_CODEC_ID_MP4A_LATM || params->u.a.codec_id == AV_CODEC_ID_PCM_RAW) {
 				stream_ctx->codec->clock_rate = params->u.a.samplerate;
 			}
 			stream_ctx->media_type = rtsp_parse_stream_media_type(stream_ctx->codec);

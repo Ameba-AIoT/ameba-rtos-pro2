@@ -119,7 +119,13 @@ int sensor_idx = -1;
      (value) == VCENC_HEVC_MAIN_PROFILE)
 
 #define IS_VALID_STREAM_CAVLC(value) \
-	((value) == 0 || (value) == 1)
+        ((value) == 0 || (value) == 1)
+
+#define IS_VALID_STREAM_MINQP(value) \
+       ((value) >= 0 && (value) <= 51)
+
+#define IS_VALID_STREAM_MAXQP(value) \
+       ((value) >= 0 && (value) <= 51)
 
 static ai_glass_record_param_t record_params = {
 	.type = DEFAULT_RECORD_TYPE,
@@ -582,6 +588,14 @@ static int stream_data_update_if_valid(ai_glass_stream_param_t *ori_params, cons
     if (IS_VALID_STREAM_CAVLC(params->cavlc) && ori_params->cavlc != params->cavlc) {
         need_update = 1;
         ori_params->cavlc = params->cavlc;
+    }
+    if (IS_VALID_STREAM_MINQP(params->minQp) && ori_params->minQp != params->minQp) {
+        need_update = 1;
+        ori_params->minQp = params->minQp;
+    }
+    if (IS_VALID_STREAM_MAXQP(params->maxQp) && ori_params->maxQp != params->maxQp) {
+        need_update = 1;
+        ori_params->maxQp = params->maxQp;
     }
 
     if (need_update) {

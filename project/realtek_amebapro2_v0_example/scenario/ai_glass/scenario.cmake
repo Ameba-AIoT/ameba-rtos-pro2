@@ -55,6 +55,7 @@ list(
     ${sdk_root}/component/media/mmfv2/module_filesaver.c
     ${sdk_root}/component/media/mmfv2/module_rtsp2.c
     ${sdk_root}/component/media/mmfv2/module_opusc.c
+    ${sdk_root}/component/media/mmfv2/module_sport.c
 )
 
 #NN module

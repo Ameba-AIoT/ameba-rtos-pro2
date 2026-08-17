@@ -38,6 +38,7 @@ void mmf2_example_opus_array_rtsp_init(void);
 void mmf2_example_h264_array_rtsp_init(void);
 void mmf2_example_v1_param_change_init(void);
 void mmf2_example_2way_audio_g711_doorbell_init(void);
+void mmf2_example_sport_audio_init(void);
 void snapshot_setting(void);
 
 #endif /* MMF2_EXAMPLE_H */

@@ -46,7 +46,8 @@
 #define WIDTH_12M   4096
 #define HEIGHT_12M  3072
 
-#define BURST_MODE_MAX_COUNT   2 // when set to 1, disable burst mode. for DDR 128M, maximum can set to 2
+#define BURST_MODE_MAX_COUNT   1 // when set to 1, disable burst mode. for DDR 128M, maximum can set to 2
+#define ENABLE_12M 0 // This flag will only affect IMX681 sensor, when set to 1, enable 12M snapshot. For orignal 3M snapshot on IMX681 sensor set to 0
 
 enum {
 	MEDIA_INVALID_SNAP_TYPE = -11,  // MEDIA_INVALID_SNAPSHOT_TYPE
@@ -248,8 +249,8 @@ typedef struct {
 #define DEFAULT_STREAM_BPS        (2*1024 * 1024)
 #define DEFAULT_STREAM_FPS        30
 #define DEFAULT_STREAM_GOP        30
-#define DEFAULT_STREAM_MINQP      0
-#define DEFAULT_STREAM_MAXQP      0
+#define DEFAULT_STREAM_MINQP      25
+#define DEFAULT_STREAM_MAXQP      48
 #define DEFAULT_STREAM_ROTATION   0
 #define DEFAULT_STREAM_RCMODE     2 // 1: CBR, 2: VBR
 #define DEFAULT_STREAM_ATYPE      0
@@ -339,6 +340,7 @@ static enum hal_isp_ae_region max_dyn_region_idx = 0; // Data range: 0 ~ 3. 0: u
 // Definition of the audio interfcae
 #define I2S_INTERFACE           0
 #define AUDIO_INTERFACE         1
+#define SPORT_INTERFACE         2
 
 #define ENABLE_MEDIA_UPDATE_FLASH 0 // Set to 1 to enable media parameter update to flash, set to 0 to disable. When disabled, media parameters will not be saved after power off.
 

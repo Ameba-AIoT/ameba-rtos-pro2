@@ -1059,7 +1059,7 @@ int lifetime_snapshot_initialize(isp_info_sync_t *isp_info)
 	}
 
 // #if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_IMX471)
-	if ((current_sensor_id == SENSOR_IMX681) || (current_sensor_id == SENSOR_IMX471) || (current_sensor_id == SENSOR_OV13B10)) {
+	if ((current_sensor_id == SENSOR_IMX681 && ENABLE_12M == 1) || (current_sensor_id == SENSOR_IMX471) || (current_sensor_id == SENSOR_OV13B10)) {
 		// Update AE and AWB when closing the channel
 		media_update_preinit_isp_ae();
 		media_update_preinit_isp_awb();
@@ -1339,7 +1339,7 @@ int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 {
 	if (lfsnap_status == LIFESNAP_START) {
 
-		if ((current_sensor_id == SENSOR_IMX681) || (current_sensor_id == SENSOR_IMX471) || (current_sensor_id == SENSOR_OV13B10)) {
+		if ((current_sensor_id == SENSOR_IMX681 && ENABLE_12M == 1) || (current_sensor_id == SENSOR_IMX471) || (current_sensor_id == SENSOR_OV13B10)) {
 			AI_GLASS_INFO("Snapshot start 12M flow\r\n");
 			//prevent memory fragment, allocate hr splited raw buffer
 			// for(int i = 0; i < (total_burst > 2 ? BURST_MODE_MAX_COUNT:total_burst); i++) {
@@ -1458,7 +1458,7 @@ int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 int lifetime_highres_save(const char *file_name, uartcmdpacket_t *param)
 {
 // #if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_IMX471)
-	if ((current_sensor_id == SENSOR_IMX681) || (current_sensor_id == SENSOR_IMX471) || (current_sensor_id == SENSOR_OV13B10)) {
+	if ((current_sensor_id == SENSOR_IMX681 && ENABLE_12M == 1) || (current_sensor_id == SENSOR_IMX471) || (current_sensor_id == SENSOR_OV13B10)) {
 		if (lfsnap_status == LIFESNAP_GET) {
 			for(int i = 0; i < total_burst; i++) {
 				char active_name[160];
