@@ -27,6 +27,7 @@ struct sensor_params_t {
 #define SENSOR_YUV_HD_60        0x04  //  |   v    |   -    |   -    |   -    |    -   |
 /* CVSENS */
 #define SENSOR_CV2003           0x05  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_CV2005           0x0C  //  |   v    |   -    |   -    |   -    |    -   |
 /* IMAGEDESIGN */
 #define SENSOR_MIS2008          0x06  //  |   v    |   -    |   v    |   -    |    -   |
 /* NOVATEK */
@@ -62,6 +63,7 @@ struct sensor_params_t {
 #define SENSOR_GC4693           0x29  //  |   v    |   v    |   -    |   -    |    v   |
 #define SENSOR_GC5035           0x2A  //  |   v    |   v    |   v    |   -    |    -   |
 #define SENSOR_GC05A2           0x2B  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_GC8613_FHD       0x2C  //  |   v    |   -    |   -    |   -    |    -   |
 /* SONY */
 #define SENSOR_IMX307           0x30  //  |   v    |   -    |   v    |   v    |    -   |
 #define SENSOR_IMX327           0x31  //  |   v    |   -    |   v    |   v    |    -   |
@@ -123,6 +125,7 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_YUV_HD_60]        = {1280,  720, 60},
 	/* CVSENS */
 	[SENSOR_CV2003]           = {1920, 1080, 30},
+	[SENSOR_CV2005]           = {1920, 1080, 30},
 	/* IMAGEDESIGN */
 	[SENSOR_MIS2008]          = {1920, 1080, 30},
 	/* NOVATEK */
@@ -158,6 +161,7 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_GC4693]           = {2560, 1440, 24},
 	[SENSOR_GC5035]           = {2592, 1944, 15},
 	[SENSOR_GC05A2]           = {2592, 1944, 15},
+	[SENSOR_GC8613_FHD]       = {1920, 1080, 30},
 	/* SONY */
 	[SENSOR_IMX307]           = {1920, 1080, 30},
 	[SENSOR_IMX327]           = {1920, 1080, 24},
