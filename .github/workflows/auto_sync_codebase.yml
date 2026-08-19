@@ -3,7 +3,8 @@ name: Daily Sync Codebase
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 0 1,15 * *"
+    - cron: "30 0 * * *"
+#    - cron: "30 0 1,15 * *"
 
 permissions:
   contents: write
