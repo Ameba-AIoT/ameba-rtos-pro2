@@ -12,7 +12,8 @@
 #define SYS_COUNT_SYS_LABEL         "sysfile"
 #define SYS_COUNT_LOG_LABEL         "logfile"
 
-#define MAX_BURST 100 // or make dynamic 
+#define MAX_BURST 100 // or make dynamic
+#define SAVE_DISK 0 // set 0 for external disk, 1 for ram disk
 extern char burst_names[MAX_BURST][64]; 
 extern volatile int burst_count;
 
@@ -48,6 +49,7 @@ int extdisk_delete_bin_files(void);
 void extdisk_count_filenum(const char *dir_path, const char **extensions, uint16_t *ext_counts, uint16_t num_extensions, const char *exclude_filename);
 cJSON *extdisk_get_filelist(const char *list_path, uint16_t *file_number, const char **extensions, uint16_t num_extensions, const char *exclude_filename);
 const char *extdisk_get_filesystem_tag_name(void);
+int extdisk_reset_file_cntlist(void);
 
 int extdisk_filesystem_init(const char *disk_tag, int vfs_type, int interface);
 int extdisk_filesystem_deinit(const char *disk_tag, int vfs_type, int interface);

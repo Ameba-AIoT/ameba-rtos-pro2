@@ -248,7 +248,16 @@ static int jpeg_encode_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 {
 	jpeg_nv12_addr = (uint8_t *) jpeg_addr;
 	jpeg_nv12_len = jpeg_len;
+#if SAVE_DISK == 0
 	FILE *life_snapshot_file = extdisk_fopen(file_save_path, "wb");
+#elif SAVE_DISK == 1
+	long long free_bytes = fatfs_ram_get_free_space_byte();
+	if (jpeg_nv12_len > free_bytes) {
+		AI_GLASS_ERR("Not enough RAM disk space: need %u, free %lld\n", jpeg_nv12_len, free_bytes);
+		return -1; // abort save
+	}
+    FILE *life_snapshot_file = ramdisk_fopen(file_save_path, "wb");
+#endif
 	if (!life_snapshot_file) {
 		AI_GLASS_ERR("open jpg file %s fail\r\n", file_save_path);
 		lfsnap_status = LIFESNAP_FAIL;
@@ -260,10 +269,19 @@ static int jpeg_encode_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 	emmc_save_time = mm_read_mediatime_ms();
 	//write jpg data
 	for (uint32_t i = 0; i < jpeg_nv12_len; i += JPG_WRITE_SIZE) {
+#if SAVE_DISK == 0
 		extdisk_fwrite((const void *)(jpeg_nv12_addr + i), 1, ((i + JPG_WRITE_SIZE) >= jpeg_nv12_len) ? (jpeg_nv12_len - i) : JPG_WRITE_SIZE, life_snapshot_file);
+#elif SAVE_DISK == 1
+		ramdisk_fwrite((const void *)(jpeg_nv12_addr + i), 1, ((i + JPG_WRITE_SIZE) >= jpeg_nv12_len) ? (jpeg_nv12_len - i) : JPG_WRITE_SIZE, life_snapshot_file);
+#endif
 	}
-	extdisk_fclose(life_snapshot_file);
+#if SAVE_DISK == 0
+    extdisk_fclose(life_snapshot_file);
+#elif SAVE_DISK == 1
+    ramdisk_fclose(life_snapshot_file);
+#endif
 	emmc_save_time = mm_read_mediatime_ms() - emmc_save_time;
+	AI_GLASS_MSG("JPEG length = %u bytes\r\n", jpeg_nv12_len);
 	xSemaphoreGive(jpeg_get_sema);
 	return 0;
 }
@@ -1324,10 +1342,15 @@ int lifetime_hr_snapshot_initialize(isp_info_sync_t *isp_info)
 		goto endoflifesnapshot;
 	}
 	printf("=================lfsnap_status :%d , burst_count:%d====================\r\n",lfsnap_status, burst_count);
+	
 	if (lfsnap_status == LIFESNAP_DONE && burst_count == 0) {
 		printf("lfsnap_status :%d , burst_count:%d\r\n",lfsnap_status, burst_count);
 		lfsnap_status = LIFESNAP_START;
 		total_burst = 1;
+	}
+	if (isp_values_initialized == 1) {
+		AI_GLASS_MSG("isp_values_initialized =%d\n\r",isp_values_initialized);
+		lfsnap_status = LIFESNAP_START;
 	}
 	return 0;
 endoflifesnapshot:
@@ -1338,7 +1361,6 @@ endoflifesnapshot:
 int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 {
 	if (lfsnap_status == LIFESNAP_START) {
-
 		if ((current_sensor_id == SENSOR_IMX681 && ENABLE_12M == 1) || (current_sensor_id == SENSOR_IMX471) || (current_sensor_id == SENSOR_OV13B10)) {
 			AI_GLASS_INFO("Snapshot start 12M flow\r\n");
 			//prevent memory fragment, allocate hr splited raw buffer
@@ -1347,7 +1369,6 @@ int lifetime_snapshot_take(const char *file_name, uartcmdpacket_t *param)
 				int tiled_w = out_img_width / 2 + out_img_overlap_width;
 				int tiled_h = out_img_height / 2 + out_img_overlap_height;
 				uint32_t tiled_img_size = tiled_w * tiled_h * 2;
-
 				if(alloc_split_raw_item(&(splited_raw_image[i]), tiled_img_size) == NULL) {
 					AI_GLASS_ERR("splited raw image malloc failed\n");
 					AI_GLASS_INFO("Available heap %d\r\n", xPortGetFreeHeapSize());
@@ -1567,7 +1588,7 @@ int lifetime_snapshot_deinitialize(void)
 		if (ls_siso_snapshot_filesaver) {
 			siso_pause(ls_siso_snapshot_filesaver);
 		}
-
+#if SAVE_DISK == 0
 		//Stop module
 		if (ls_snapshot_ctx && (hal_voe_ready() == OK)) {
 			printf("hal_voe_ready() %d\r\n", hal_voe_ready());
@@ -1580,10 +1601,7 @@ int lifetime_snapshot_deinitialize(void)
 			siso_delete(ls_siso_snapshot_filesaver);
 			ls_siso_snapshot_filesaver = NULL;
 		}
-		//AINR
-		if(ainr_ctx) {
-			ainr_deinit(ainr_ctx);
-		}
+		
 		//Close module
 		if (ls_snapshot_ctx) {
 			ls_snapshot_ctx = mm_module_close(ls_snapshot_ctx);
@@ -1591,6 +1609,12 @@ int lifetime_snapshot_deinitialize(void)
 		if (ls_filesaver_ctx) {
 			ls_filesaver_ctx = mm_module_close(ls_filesaver_ctx);
 		}
+#endif
+		//AINR
+		if(ainr_ctx) {
+			ainr_deinit(ainr_ctx);
+		}
+
 		lfsnap_status = LIFESNAP_IDLE;
 		if(sensor_idx != -1){
 			sensor_idx = -1;

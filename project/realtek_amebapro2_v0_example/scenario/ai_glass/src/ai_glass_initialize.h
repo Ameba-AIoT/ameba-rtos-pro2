@@ -17,6 +17,7 @@ extern volatile int critical_process_started;
 extern EventGroupHandle_t s_lifetime_event;
 
 extern void ai_glass_init_external_disk(void);
+extern void ai_glass_init_ram_disk(void);
 
 #define EXTDISK_LOG   0
 #if EXTDISK_LOG

@@ -46,8 +46,9 @@
 #define WIDTH_12M   4096
 #define HEIGHT_12M  3072
 
-#define BURST_MODE_MAX_COUNT   2 // when set to 1, disable burst mode. for DDR 128M, maximum can set to 2
+#define BURST_MODE_MAX_COUNT 2// when set to 1, disable burst mode. for DDR 128M, maximum can set to 2
 #define ENABLE_12M 1 // This flag will only affect IMX681 sensor, when set to 1, enable 12M snapshot. For orignal 3M snapshot on IMX681 sensor set to 0
+extern int isp_values_initialized;
 
 enum {
 	MEDIA_INVALID_SNAP_TYPE = -11,  // MEDIA_INVALID_SNAPSHOT_TYPE

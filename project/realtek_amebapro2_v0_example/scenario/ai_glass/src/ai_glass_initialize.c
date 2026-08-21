@@ -83,10 +83,10 @@ static uint8_t temp_rfile_name[MAX_FILENAME_SIZE] = {0};
 volatile uint8_t bt_progress;
 
 volatile int critical_process_started = 0;
+int isp_values_initialized = 0;
 
 // Funtion Prototype
 static void ai_glass_deinit_external_disk(void);
-static void ai_glass_init_ram_disk(void);
 void ai_glass_log_init(void);
 
 static char version_str[16] = {0};
@@ -376,7 +376,7 @@ static void ai_glass_deinit_external_disk(void)
 	}
 }
 
-static void ai_glass_init_ram_disk(void)
+void ai_glass_init_ram_disk(void)
 {
 	if (!ramdisk_get_init_status()) {
 		ramdisk_filesystem_init("ai_ram");
@@ -384,12 +384,24 @@ static void ai_glass_init_ram_disk(void)
 }
 
 int ai_glass_disk_reformat(void) {
+#if SAVE_DISK == 0
 	ai_glass_init_external_disk();
+#elif SAVE_DISK == 1 
+	ai_glass_init_ram_disk();
+#endif
 	AI_GLASS_MSG("Format disk to FAT32\r\n");
+#if SAVE_DISK == 0
 	int ret = vfs_user_format(ai_glass_disk_name, VFS_FATFS, EXTDISK_PLATFORM);
+#elif SAVE_DISK == 1 
+	int ret = vfs_user_format("ai_ram", VFS_FATFS, VFS_INF_RAM);
+#endif
+	
 	if (ret == FR_OK) {
 		AI_GLASS_MSG("format successfully\r\n");
+#if SAVE_DISK == 0
+	
 		ai_glass_deinit_external_disk();
+#endif
 		return AI_GLASS_CMD_COMPLETE;
 	} else {
 		AI_GLASS_ERR("format failed %d\r\n", ret);
@@ -1660,7 +1672,11 @@ static void ai_glass_get_power_down(uartcmdpacket_t *param)
 	int ret = 0;
 	wifi_disable_ap_mode();
 	// Save filelist to EMMC
+#if SAVE_DISK == 0
 	ai_glass_init_external_disk();
+#elif SAVE_DISK == 1 
+	ai_glass_init_ram_disk();
+#endif
 	ret = extdisk_save_file_cntlist();
 	AI_GLASS_MSG("Save FILE Cnt List status: %d, %lu\r\n", ret, mm_read_mediatime_ms());
 #if EXTDISK_LOG
@@ -1942,7 +1958,13 @@ static void ai_glass_set_gps(uartcmdpacket_t *param)
 static void ai_glass_get_file_cnt(uartcmdpacket_t *param)
 {
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_FILE_CNT\r\n");
+
+#if SAVE_DISK == 0
 	ai_glass_init_external_disk();
+#elif SAVE_DISK == 1 
+	ai_glass_init_ram_disk();
+#endif
+
 	uint8_t result = AI_GLASS_CMD_COMPLETE;
 	uint16_t film_num = extdisk_get_filecount(SYS_COUNT_FILM_LABEL);
 	uint16_t snapshot_num = extdisk_get_filecount(SYS_COUNT_PIC_LABEL);
@@ -1957,9 +1979,19 @@ static void ai_glass_get_sd_info(uartcmdpacket_t *param)
 {
 	AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_SD_INFO %lu\r\n", mm_read_mediatime_ms());
 	critical_process_started = 1;
-	ai_glass_init_external_disk();
-	uint64_t device_used_bytes = fatfs_get_used_space_byte();
-	uint64_t device_total_bytes = device_used_bytes + fatfs_get_free_space_byte();
+	
+#if SAVE_DISK == 0   // External disk (SD/EMMC)
+    ai_glass_init_external_disk();
+    uint64_t device_used_bytes = fatfs_get_used_space_byte();
+    uint64_t device_total_bytes = device_used_bytes + fatfs_get_free_space_byte();
+
+#elif SAVE_DISK == 1 // RAM disk
+    ai_glass_init_ram_disk(); // make sure RAM disk is mounted
+    uint64_t device_free_bytes = fatfs_ram_get_free_space_byte();
+    uint64_t device_total_bytes = (uint64_t)fatfs_get_ram_total_szie() * 1024; // KB → bytes
+    uint64_t device_used_bytes = device_total_bytes - device_free_bytes;
+#endif
+
 	uint32_t device_used_Kbytes = (uint32_t)(device_used_bytes / 1024);
 	uint32_t device_total_Kbytes = (uint32_t)(device_total_bytes / 1024);
 
@@ -1981,7 +2013,7 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 			status = AI_GLASS_BUSY;
 			AI_GLASS_MSG("Recording has started, not starting another recording\r\n");
 		} else {
-			if (BURST_MODE_MAX_COUNT == 2) {
+			if (BURST_MODE_MAX_COUNT == 2 && SAVE_DISK == 0) {
 				AI_GLASS_WARN("AI glass snapshot burst, snapshot + 1\r\n");
 				total_burst++;
 				uint8_t *snapshot_param = uart_parser_snapshot_video_info(param, &mode);
@@ -2010,6 +2042,7 @@ static void ai_glass_snapshot(uartcmdpacket_t *param)
 		AI_GLASS_MSG("%s get mode = %d\r\n", __func__, mode);
 		if (mode == 1) {
 			AI_GLASS_MSG("Process AI SNAPSHOT\r\n");
+			ai_glass_init_ram_disk();
 			media_get_ai_snapshot_params(&ai_snap_params);
 			parser_snapshot_pkt2param(&ai_snap_params, snapshot_param);
 			if (media_update_ai_snapshot_params(&ai_snap_params) != MEDIA_OK) {
@@ -2086,8 +2119,12 @@ lifetimesnapshot:
 					char uart_filename_str[160] = {0};
 					memset(uart_filename_str, 0, file_name_length + 1);
 					memcpy(uart_filename_str, snapshot_param + 1, file_name_length);
-					AI_GLASS_MSG("Filename retrieved from 8773\r\n"); 
+					AI_GLASS_MSG("Filename retrieved from 8773\r\n");
+#if SAVE_DISK == 0
 					extdisk_generate_unique_filename("", uart_filename_str, ".jpg", (char *)temp_record_filename_buffer, 160);
+#elif SAVE_DISK == 1
+					ramdisk_generate_unique_filename("", uart_filename_str, ".jpg", (char *)temp_record_filename_buffer, 160);
+#endif
 					snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s", (const char *)temp_record_filename_buffer);
 					if (burst_count < MAX_BURST) { 
 						strncpy(burst_names[burst_count], temp_record_filename_buffer, 64-1); 
@@ -2105,8 +2142,11 @@ lifetimesnapshot:
 						ai_snap_params.lifetime_file_name_len = sizeof(ai_snap_params.lifetime_file_name) - 1;
 					}
 					ai_snap_params.lifetime_file_name[ai_snap_params.lifetime_file_name_len] = '\0';
-					
+#if SAVE_DISK == 0					
 					extdisk_generate_unique_filename("", (const char *)uart_filename_str, ".jpg", (char *)temp_record_filename_buffer, 160);
+#elif SAVE_DISK == 1
+					ramdisk_generate_unique_filename("", (const char *)uart_filename_str, ".jpg", (char *)temp_record_filename_buffer, 160);
+#endif					
 					snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s", (const char *)temp_record_filename_buffer);
 					AI_GLASS_MSG("lifetime_snap_name = %s\r\n", (char *)lifetime_snap_name);
 					
@@ -2114,13 +2154,21 @@ lifetimesnapshot:
 					char *cur_time_str = (char *)media_filesystem_get_current_time_string();
 					if (cur_time_str) {
 						AI_GLASS_MSG("Filename generated from 8735B\r\n");
+#if SAVE_DISK == 0
 						extdisk_generate_unique_filename("PICTURE_0_0_", cur_time_str, ".jpg", (char *)temp_record_filename_buffer, 160);
+#elif SAVE_DISK == 1
+						ramdisk_generate_unique_filename("PICTURE_0_0_", cur_time_str, ".jpg", (char *)temp_record_filename_buffer, 160);
+#endif	
 						snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s", (const char *)temp_record_filename_buffer);
 						AI_GLASS_MSG("lifetime_snap_name = %s\r\n", (char *)lifetime_snap_name);
 						free(cur_time_str);
 					} else {
 						AI_GLASS_WARN("no memory for lifetime snapshot file name\r\n");
+#if SAVE_DISK == 0
 						extdisk_generate_unique_filename("PICTURE_0_0_", "19800101", ".jpg", (char *)temp_record_filename_buffer, 160);
+#elif SAVE_DISK == 1
+						ramdisk_generate_unique_filename("PICTURE_0_0_", "19800101", ".jpg", (char *)temp_record_filename_buffer, 160);
+#endif	
 					}
 				}
 lifetimesnapshottake:
@@ -2133,7 +2181,11 @@ lifetimesnapshottake:
 						// for non HR sensor, return 0x22 status
 						uart_resp_snapshot(param, status);
 					}
+#if SAVE_DISK == 0
 					ai_glass_init_external_disk();
+#elif SAVE_DISK == 1 
+					ai_glass_init_ram_disk();
+#endif
 					if (lifetime_highres_save((const char *)lifetime_snap_name, param) != 0) {
 						AI_GLASS_WARN("lifetime snapshot high res save failed\r\n");
 						status = AI_GLASS_PROC_FAIL;
@@ -3028,6 +3080,9 @@ static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 		} else if (current_sensor_id == SENSOR_OV13B10) {
 			sensor_flag = 2;
 		}
+#if SAVE_DISK == 0
+	ai_glass_init_external_disk();
+#endif
         int status = uart_resp_get_wifi_parameter(param, dummy, length, sensor_flag, enable_gsensor);
 
         if (status == 0) {
@@ -3106,7 +3161,11 @@ static void lfsnap(void)
 		goto endofsnapshot;
 	}
 	AI_GLASS_MSG("snapshot aiglass_mass_storage_deinit time = %lu\r\n", mm_read_mediatime_ms());
+#if SAVE_DISK == 0
 	ai_glass_init_external_disk();
+#elif SAVE_DISK == 1 
+	ai_glass_init_ram_disk();
+#endif
 	AI_GLASS_MSG("Process LIFETIME SNAPSHOT\r\n");
 
 	int ret = lifetime_snapshot_initialize(&isp_info);
@@ -3116,12 +3175,20 @@ static void lfsnap(void)
 
 		char *cur_time_str = (char *)media_filesystem_get_current_time_string();
 		if (cur_time_str) {
+#if SAVE_DISK == 0
 			extdisk_generate_unique_filename("PICTURE_0_0_", cur_time_str, ".jpg", (char *)temp_record_filename_buffer, 160);
+#elif SAVE_DISK == 1
+			ramdisk_generate_unique_filename("PICTURE_0_0_", cur_time_str, ".jpg", (char *)temp_record_filename_buffer, 160);
+#endif	
 			snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s", (const char *)temp_record_filename_buffer);
 			free(cur_time_str);
 		} else {
 			AI_GLASS_WARN("no memory for lifetime snapshot file name\r\n");
+#if SAVE_DISK == 0
 			extdisk_generate_unique_filename("PICTURE_0_0_", "19800101", ".jpg", (char *)temp_record_filename_buffer, 160);
+#elif SAVE_DISK == 1
+			ramdisk_generate_unique_filename("PICTURE_0_0_", "19800101", ".jpg", (char *)temp_record_filename_buffer, 160);
+#endif
 		}
 		uartcmdpacket_t *param = NULL;
 		if (lifetime_snapshot_take((const char *)lifetime_snap_name, param) == 0) {
@@ -3312,7 +3379,7 @@ void ai_glass_service_thread(void *param)
 	media_filesystem_init();
 #endif 
 	media_filesystem_setup_gpstime(0, 0); // Set up GPS start time to prevent failed for file system
-	ai_glass_init_ram_disk();
+	
 	//ai_glass_init_external_disk(); // init EMMC here will cause 160 ms delay
 	//extdisk_save_file_cntlist();
 	AI_GLASS_MSG("vfs system done %lu\r\n", mm_read_mediatime_ms());
@@ -3446,7 +3513,11 @@ void fENABLEAPMODE(void *arg)
 	if (argc) {
 		int apmode_enable = atoi(argv[1]);
 		if (apmode_enable) {
+#if SAVE_DISK == 0
 			ai_glass_init_external_disk();
+#elif SAVE_DISK == 1 
+			ai_glass_init_ram_disk();
+#endif
 			AI_GLASS_MSG("Command enable AP mode start = %lu\r\n", mm_read_mediatime_ms());
 			if (wifi_enable_ap_mode(AI_GLASS_AP_SSID, AI_GLASS_AP_PASSWORD, AI_GLASS_AP_CHANNEL, 20) == WLAN_SET_OK) {
 				deinitial_media(); // For saving power
@@ -3594,22 +3665,46 @@ void fLFSNAPSHOT(void *arg)
 		goto endofsnapshot;
 	}
 	AI_GLASS_MSG("snapshot aiglass_mass_storage_deinit time = %lu\r\n", mm_read_mediatime_ms());
+#if SAVE_DISK == 0
 	ai_glass_init_external_disk();
+#elif SAVE_DISK == 1 
+	ai_glass_init_ram_disk();
+#endif
 	AI_GLASS_MSG("Process LIFETIME SNAPSHOT\r\n");
+	int ret = 0;
+	if (isp_values_initialized == 0) {
+        ret = lifetime_snapshot_initialize(&isp_info);
+    } else {
+		video_pre_init_params_t init_params = {0};
+		// Second run and later: reuse cached values
+        memset(&init_params, 0x00, sizeof(video_pre_init_params_t));
+        media_get_preinit_isp_data(&init_params);
+        AI_GLASS_INFO("Reusing cached ISP values: isp_gain:%d\r\n", init_params.isp_gain);
 
-	int ret = lifetime_snapshot_initialize(&isp_info);
+        // Go straight to HR snapshot init
+        ret = lifetime_hr_snapshot_initialize(&isp_info);
+	}
+
 	if (ret == 0) {
 		char temp_record_filename_buffer[160] = {0};
 		uint8_t lifetime_snap_name[160] = {0};
 
 		char *cur_time_str = (char *)media_filesystem_get_current_time_string();
 		if (cur_time_str) {
+#if SAVE_DISK == 0
 			extdisk_generate_unique_filename("PICTURE_0_0_", cur_time_str, ".jpg", (char *)temp_record_filename_buffer, 160);
+#elif SAVE_DISK == 1
+			ramdisk_generate_unique_filename("PICTURE_0_0_", cur_time_str, ".jpg", (char *)temp_record_filename_buffer, 160);
+#endif	
 			snprintf((char *)lifetime_snap_name, sizeof(lifetime_snap_name), "%s", (const char *)temp_record_filename_buffer);
 			free(cur_time_str);
 		} else {
 			AI_GLASS_WARN("no memory for lifetime snapshot file name\r\n");
+#if SAVE_DISK == 0
 			extdisk_generate_unique_filename("PICTURE_0_0_", "19800101", ".jpg", (char *)temp_record_filename_buffer, 160);
+#elif SAVE_DISK == 1
+			ramdisk_generate_unique_filename("PICTURE_0_0_", "19800101", ".jpg", (char *)temp_record_filename_buffer, 160);
+#endif
 		}
 		uartcmdpacket_t *param = NULL;
 		if (lifetime_snapshot_take((const char *)lifetime_snap_name, param) == 0) {
@@ -3624,11 +3719,15 @@ void fLFSNAPSHOT(void *arg)
 		// Save filelist to EMMC
 		extdisk_save_file_cntlist();
 		AI_GLASS_MSG("Extdisk save file countlist done = %lu\r\n", mm_read_mediatime_ms());
+		uartcmdpacket_t dummy_param;
+		ai_glass_get_file_cnt(&dummy_param);
+		ai_glass_get_sd_info(&dummy_param);
 		status = AI_GLASS_CMD_COMPLETE;
 		AI_GLASS_MSG("wait for lifetime snapshot deinit\r\n");
 		while (lifetime_snapshot_deinitialize()) {
 			vTaskDelay(1);
 		}
+		isp_values_initialized = 1;
 		AI_GLASS_MSG("lifetime snapshot deinit done = %lu\r\n", mm_read_mediatime_ms());
 	} else if (ret == -2) {
 		status = AI_GLASS_BUSY;
@@ -4049,7 +4148,9 @@ void fAIGLASSAISNAP(void *arg)
 			snap_rotation = DEFAULT_AISNAP_ROTATION;
 		}
 	}
-	
+
+	ai_glass_init_ram_disk();
+
 	AI_GLASS_MSG("AI Snapshot params: filename=%s, width=%lu, height=%lu, qlevel=%u, rotation=%u\r\n",
 	             filename, snap_width, snap_height, snap_qlevel, snap_rotation);
 	

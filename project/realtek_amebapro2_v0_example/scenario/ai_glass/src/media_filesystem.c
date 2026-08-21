@@ -136,6 +136,16 @@ static void time_transfer_to_string(time_t rawtime, char *buffer, uint32_t buffe
 	return;
 }
 
+static const char *get_active_tag(void) {
+    if (ai_glass_extdisk_done) {
+        return ai_glass_extdisk_tag;
+    }
+    if (ai_glass_ramdisk_done) {
+        return ai_glass_ramdisk_tag;
+    }
+    return NULL; // No disk initialized
+}
+
 #define CUR_TIME_BUFFER_SIZE 30
 const char *media_filesystem_get_current_time_string(void)
 {
@@ -274,10 +284,35 @@ static int get_file_sys_count(cJSON *storage, const char *type_name)
 	}
 }
 
+int extdisk_reset_file_cntlist(void)
+{
+    if (!ai_glass_extdisk_done && !ai_glass_ramdisk_done) {
+        FILE_SYS_WARN("No disk initialized yet\r\n");
+        return -1;
+    }
+    
+    if (filecount_object) {
+        cJSON *pic = cJSON_GetObjectItem(filecount_object, SYS_COUNT_PIC_LABEL);
+        if (pic) pic->valuedouble = 0;
+        
+        cJSON *film = cJSON_GetObjectItem(filecount_object, SYS_COUNT_FILM_LABEL);
+        if (film) film->valuedouble = 0;
+        
+        cJSON *sys = cJSON_GetObjectItem(filecount_object, SYS_COUNT_SYS_LABEL);
+        if (sys) sys->valuedouble = 0;
+        
+        cJSON *log = cJSON_GetObjectItem(filecount_object, SYS_COUNT_LOG_LABEL);
+        if (log) log->valuedouble = 0;
+        
+        return 0;
+    }
+    return -1;
+}
+
 int extdisk_get_filecount(const char *count_label)
 {
-	if (!ai_glass_extdisk_done) {
-		FILE_SYS_WARN("External disk is not initialized yet\r\n");
+	if (!ai_glass_extdisk_done && !ai_glass_ramdisk_done) {
+		FILE_SYS_WARN("No disk initialized yet\r\n");
 		return 0;
 	}
 
@@ -477,12 +512,19 @@ static void extdisk_get_filenum(const char *dir_path, const char **extensions, u
 
 void extdisk_count_filenum(const char *dir_path, const char **extensions, uint16_t *ext_counts, uint16_t num_extensions, const char *exclude_filename)
 {
-	if (!ai_glass_extdisk_done) {
-		FILE_SYS_WARN("External disk is not initialized yet\r\n");
+	if (!ai_glass_extdisk_done && !ai_glass_ramdisk_done) {
+		FILE_SYS_WARN("No disk initialized yet\r\n");
+		return 0;
+	}
+
+	const char *tag = get_active_tag();
+    if (!tag) {
 		return;
 	}
-	char ai_glass_path[MAX_FILE_LEN] = {0};
-	snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_extdisk_tag, dir_path);
+
+    char ai_glass_path[MAX_FILE_LEN] = {0};
+    snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", tag, dir_path);
+
 	for (uint16_t i = 0; i < num_extensions; i++) {
 		ext_counts[i] = 0;
 	}
@@ -613,12 +655,18 @@ endoffun:
 
 cJSON *extdisk_get_filelist(const char *list_path, uint16_t *file_number, const char **extensions, uint16_t num_extensions, const char *exclude_filename)
 {
-	if (!ai_glass_extdisk_done) {
-		FILE_SYS_WARN("External disk is not initialized yet\r\n");
+	if (!ai_glass_extdisk_done && !ai_glass_ramdisk_done) {
+		FILE_SYS_WARN("No disk initialized yet\r\n");
+		return 0;
+	}
+	
+	const char *tag = get_active_tag();
+    if (!tag) {
 		return NULL;
 	}
+
 	char ai_glass_path[MAX_FILE_LEN] = {0};
-	snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_extdisk_tag, list_path);
+    snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", tag, list_path);
 
 	*file_number = 0;
 
@@ -627,14 +675,20 @@ cJSON *extdisk_get_filelist(const char *list_path, uint16_t *file_number, const 
 
 const char *extdisk_get_filesystem_tag_name(void)
 {
-	if (!ai_glass_extdisk_done) {
-		FILE_SYS_WARN("External disk is not initialized yet\r\n");
+	if (!ai_glass_extdisk_done && !ai_glass_ramdisk_done) {
+		FILE_SYS_WARN("No disk initialized yet\r\n");
+		return 0;
+	}
+
+	const char *tag = get_active_tag();
+    if (!tag) {
 		return NULL;
 	}
+
 	char *tag_name = malloc(MAX_TAG_LEN);
-	if (tag_name) {
-		snprintf(tag_name, MAX_TAG_LEN, "%s", ai_glass_extdisk_tag);
-	}
+    if (tag_name) {
+        snprintf(tag_name, MAX_TAG_LEN, "%s", tag);
+    }
 	return tag_name;
 }
 
@@ -661,7 +715,10 @@ static cJSON *parser_file_cntlist_json(char *filename)
 		if (num_extensions > 0 && num_extensions <= MAX_GROUP_COUNT) {
 			uint16_t ext_counts[MAX_GROUP_COUNT] = {0};
 			char ai_glass_path[MAX_FILE_LEN] = {0};
-			snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_extdisk_tag, "");
+			const char *tag = get_active_tag();
+			if (tag) {
+				snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", tag, "");
+			}
 			extdisk_get_filenum(ai_glass_path, extensions, ext_counts, num_extensions, "ai_snapshot.jpg");
 			uint16_t film_num = ext_counts[0];
 			uint16_t picture_num = ext_counts[1] + ext_counts[2];
@@ -740,7 +797,22 @@ FILE *ramdisk_fopen(const char *filename, const char *mode)
 	}
 	char ai_glass_path[MAX_FILE_LEN] = {0};
 	snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_ramdisk_tag, filename);
-	return fopen(ai_glass_path, mode);
+	
+	int file_exists = (access(ai_glass_path, F_OK) == F_OK);
+    FILE *newfile = fopen(ai_glass_path, mode);
+
+    if (!file_exists && newfile) {
+        if (check_extension(ai_glass_path, ".jpg") || check_extension(ai_glass_path, ".jpeg")) {
+            increase_file_sys_count(filecount_object, SYS_COUNT_PIC_LABEL);
+        } else if (check_extension(ai_glass_path, ".mp4")) {
+            increase_file_sys_count(filecount_object, SYS_COUNT_FILM_LABEL);
+        } else if (check_extension(ai_glass_path, ".bin")) {
+            increase_file_sys_count(filecount_object, SYS_COUNT_SYS_LABEL);
+        } else if (check_extension(ai_glass_path, ".txt")) {
+            increase_file_sys_count(filecount_object, SYS_COUNT_LOG_LABEL);
+        }
+    }
+	return newfile;
 }
 
 int ramdisk_fclose(FILE *stream)
@@ -804,8 +876,21 @@ int ramdisk_remove(const char *filename)
 		return -1;
 	}
 	char ai_glass_path[MAX_FILE_LEN] = {0};
-	snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_extdisk_tag, filename);
-	return remove(ai_glass_path);
+	snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_ramdisk_tag, filename);
+	
+	int ret = remove(ai_glass_path);
+    if (ret == 0) {
+        if (check_extension(ai_glass_path, ".jpg") || check_extension(ai_glass_path, ".jpeg")) {
+            decrease_file_sys_count(filecount_object, SYS_COUNT_PIC_LABEL);
+        } else if (check_extension(ai_glass_path, ".mp4")) {
+            decrease_file_sys_count(filecount_object, SYS_COUNT_FILM_LABEL);
+        } else if (check_extension(ai_glass_path, ".bin")) {
+            decrease_file_sys_count(filecount_object, SYS_COUNT_SYS_LABEL);
+        } else if (check_extension(ai_glass_path, ".txt")) {
+            decrease_file_sys_count(filecount_object, SYS_COUNT_LOG_LABEL);
+        }
+    }
+    return ret;
 }
 
 int extdisk_get_init_status(void)
@@ -885,6 +970,9 @@ int ramdisk_filesystem_init(const char *disk_tag)
 	FILE_SYS_MSG("ai glass get ramdisk name %s\r\n", ai_glass_ramdisk_tag);
 	FILE_SYS_MSG("ai glass ramdisk time %lu\r\n", mm_read_mediatime_ms());
 	vfs_user_register(disk_tag, VFS_FATFS, VFS_INF_RAM); // cost about 10ms for RAM disk
+	char ai_glass_path[MAX_FILE_LEN] = {0};
+    snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_ramdisk_tag, SYS_COUNT_FILENAME);
+    filecount_object = parser_file_cntlist_json(ai_glass_path);
 	ai_glass_ramdisk_done = 1;
 	FILE_SYS_MSG("ai glass ramdisk done time %lu\r\n", mm_read_mediatime_ms());
 	xSemaphoreGive(ramdisk_mutex);
@@ -893,14 +981,17 @@ int ramdisk_filesystem_init(const char *disk_tag)
 
 int extdisk_save_file_cntlist(void)
 {
-	if (!ai_glass_extdisk_done) {
-		FILE_SYS_WARN("External disk is not initialized yet\r\n");
+	if (!ai_glass_extdisk_done && !ai_glass_ramdisk_done) {
+		FILE_SYS_WARN("No disk initialized yet\r\n");
 		return 0;
 	}
-	char ai_glass_path[MAX_FILE_LEN] = {0};
 	if (filecount_object) {
-		snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_extdisk_tag, SYS_COUNT_FILENAME);
-		filecount_object = save_file_cntlist_json(filecount_object, ai_glass_path);
+        const char *tag = get_active_tag();
+        if (tag) {
+            char ai_glass_path[MAX_FILE_LEN] = {0};
+            snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", tag, SYS_COUNT_FILENAME);
+            filecount_object = save_file_cntlist_json(filecount_object, ai_glass_path);
+        }
 	}
 
 	return 0;

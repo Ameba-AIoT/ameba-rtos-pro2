@@ -498,8 +498,11 @@ exit:
 static void transfer_file_normal_internal(struct httpd_conn *conn, FILE *http_file)
 {
 	while (1) {
-		int br = extdisk_fread(data_buf, 1, HTTP_DATA_BUF_SIZE, http_file);
-
+#if SAVE_DISK == 0
+			int br = extdisk_fread(data_buf, 1, HTTP_DATA_BUF_SIZE, http_file);
+#elif SAVE_DISK == 1 
+			int br = ramdisk_fread(data_buf, 1, HTTP_DATA_BUF_SIZE, http_file);
+#endif
 		if (br < 0) {
 			WLAN_SCEN_ERR("Read ERROR, error num %d\r\n", br);
 			break;
@@ -531,8 +534,11 @@ static void http_file_read_thread(void *pvParameters)
 	file_msg_t msg = {0};
 	uint32_t notifyValue;
 	int send_success = 1;
-
-	extdisk_fseek(http_file, 0, SEEK_SET);
+#if SAVE_DISK == 0
+		extdisk_fseek(http_file, 0, SEEK_SET);
+#elif SAVE_DISK == 1 
+		ramdisk_fseek(http_file, 0, SEEK_SET);
+#endif
 	while (1) {
 		// Check for stop signal from writer task
 		if (xTaskNotifyWait(0, 0, &notifyValue, 0) == pdPASS) {
@@ -546,7 +552,12 @@ static void http_file_read_thread(void *pvParameters)
 
 		// Read data from the file
 		if (msg.fileread == 0) {
+#if SAVE_DISK == 0
 			int br = extdisk_fread(msg.message, 1, QUEUE_ITEM_SIZE, http_file);
+#elif SAVE_DISK == 1 
+			int br = ramdisk_fread(msg.message, 1, QUEUE_ITEM_SIZE, http_file);
+#endif
+			
 			if (br < 0) {
 				WLAN_SCEN_ERR("[Reader Task] Read ERROR\r\n");
 				WLAN_SCEN_ERR("[Reader Task] Send notify READ_STATUS_ERROR to Writer Task Handle for error\r\n");
@@ -1058,7 +1069,11 @@ static void media_getfile_cb(struct httpd_conn *conn)
 				ai_glass_extdisk_log_stop();
 			}
 #endif
+#if SAVE_DISK == 0
 			http_file = extdisk_fopen(filename, "r");
+#elif SAVE_DISK == 1 
+			http_file = ramdisk_fopen(filename, "r");
+#endif
 			if (http_file == NULL) {
 				httpd_response_bad_request(conn, (char *)"Bad Request: No such file");
 				goto http_end;
@@ -1115,7 +1130,11 @@ static void media_getfile_cb(struct httpd_conn *conn)
 			// extdisk_fseek(http_file, 0, SEEK_END); 
 			// int file_size = extdisk_ftell(http_file);
 			// printf("File_size: %d\r\n", file_size);
+#if SAVE_DISK == 0
 			extdisk_fclose(http_file);
+#elif SAVE_DISK == 1 
+			ramdisk_fclose(http_file);
+#endif
 			http_file = NULL;
 			if ((notifyValue & (WRITE_TASK_SUCCESS_BIT | READ_TASK_SUCCESS_BIT)) == (WRITE_TASK_SUCCESS_BIT | READ_TASK_SUCCESS_BIT)) {
 				WLAN_SCEN_MSG("Http send %s completed successfully\r\n", filename);
@@ -1123,7 +1142,11 @@ static void media_getfile_cb(struct httpd_conn *conn)
 				// DELETE FILE MECHANISM HAS CHANGED
 				if (delete_file_after_upload) {
 					// vTaskDelay(2000);
+#if SAVE_DISK == 0
 					extdisk_remove(filename);
+#elif SAVE_DISK == 1 
+					ramdisk_remove(filename);
+#endif
 					extdisk_save_file_cntlist();
 					WLAN_SCEN_MSG("Delete file %s\r\n", filename);
 				} else {
@@ -1142,7 +1165,12 @@ static void media_getfile_cb(struct httpd_conn *conn)
 
 			uint32_t  total_read = 0;
 			while (1) {
+#if SAVE_DISK == 0
 				uint32_t  bytes_read = extdisk_fread(buffer + total_read, 1, (4 * 1024 * 1024) - total_read, http_file);
+#elif SAVE_DISK == 1 
+				uint32_t  bytes_read = ramdisk_fread(buffer + total_read, 1, (4 * 1024 * 1024) - total_read, http_file);
+#endif
+				
 				if (bytes_read == 0) {
 					break;
 				}
@@ -1166,7 +1194,11 @@ static void media_getfile_cb(struct httpd_conn *conn)
 			param->length = total_read;
 			param->conn = conn;  
 			param->caller_task_handle = xTaskGetCurrentTaskHandle();
+#if SAVE_DISK == 0
 			extdisk_fclose(http_file);
+#elif SAVE_DISK == 1 
+			ramdisk_fclose(http_file);
+#endif
 			http_file = NULL;
 			// Create the sending task
 			if (xTaskCreate(http_heap_send_thread, "Sender", 8192, (void *)param, 5, NULL) != pdPASS) {
@@ -1206,7 +1238,11 @@ http_end:
 		filename = NULL;
 	}
 	if (http_file) {
+#if SAVE_DISK == 0
 		extdisk_fclose(http_file);
+#elif SAVE_DISK == 1 
+		ramdisk_fclose(http_file);
+#endif
 		http_file = NULL;
 	}
 	if (buffer) {
@@ -2045,13 +2081,21 @@ static void delete_file_cb(struct httpd_conn *conn)
 		}
 #endif
 		if (delete_file_name != NULL) {
+#if SAVE_DISK == 0
 			extdisk_remove(delete_file_name);
+#elif SAVE_DISK == 1 
+			ramdisk_remove(delete_file_name);
+#endif
 			extdisk_save_file_cntlist();
 			WLAN_SCEN_MSG("Deleted file %s\r\n", delete_file_name);
 			uartcmdpacket_t dummy_param;
 			memset(&dummy_param, 0, sizeof(dummy_param));
 			AI_GLASS_INFO("get UART_RX_OPC_CMD_GET_FILE_CNT\r\n");
+#if SAVE_DISK == 0
 			ai_glass_init_external_disk();
+#elif SAVE_DISK == 1 
+			ai_glass_init_ram_disk();
+#endif
 			uint8_t result = AI_GLASS_CMD_COMPLETE;
 			uint16_t film_num = extdisk_get_filecount(SYS_COUNT_FILM_LABEL);
 			uint16_t snapshot_num = extdisk_get_filecount(SYS_COUNT_PIC_LABEL);
@@ -2102,6 +2146,8 @@ static void delete_all_files_cb(struct httpd_conn *conn)
 
         WLAN_SCEN_MSG("Reformatting disk\r\n");
         ai_glass_disk_reformat();
+		extdisk_reset_file_cntlist();
+        extdisk_save_file_cntlist();
 
         httpd_response_write_header_start(conn, (char *)"200 OK", (char *)"text/plain", 0);
         httpd_response_write_header(conn, (char *)"Connection", (char *)"close");
