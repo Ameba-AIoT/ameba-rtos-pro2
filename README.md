@@ -1,7 +1,7 @@
 # Ameba Freertos Pro2 SDK (ameba-rtos-pro2)
 ![image](https://github.com/user-attachments/assets/3361d863-7328-4b55-83cf-584b6d969393)
 
-PLease refer to this document for the compile environment of the SDK.
+Please refer to this document for the compile environment of the SDK.
 
 ## Application Notes and Environment setup
 ### Online documents
@@ -13,11 +13,11 @@ PLease refer to this document for the compile environment of the SDK.
 - [web - Private AI glass application documents](https://ameba-doc-ai-glass-doc.readthedocs-hosted.com/en/latest/)
 
 ### downloadable tools
-- [msys64_v10_3 tools](https://github.com/Ameba-AIoT/ameba-tool-rtos-pro2/releases/tag/msys64_v10_3) A cmake envidoment setup for Windows OS.
+- [msys64_v10_3 tools](https://github.com/Ameba-AIoT/ameba-tool-rtos-pro2/releases/tag/msys64_v10_3) A Cmake environment setup for Windows OS.
 
-- [amebe-rtos-pro2 toolchain 10.3.0](https://github.com/Ameba-AIoT/ameba-toolchain/releases/tag/V10.3.0-amebe-rtos-pro2) Ameba SDK nesseaery toolchain.
+- [amebe-rtos-pro2 toolchain 10.4.1](https://github.com/Ameba-AIoT/ameba-toolchain/releases/tag/V10.4.1-ameba-rtos-pro2) Ameba SDK necessary toolchain.
 
-- [Image tools - Pro2_PG_tool_v1.4.3](https://github.com/Ameba-AIoT/ameba-rtos-pro2/tree/main/tools/Pro2_PG_tool_v1.4.3) Binory/flash/firmware file download tools.
+- [Image tools - Pro2_PG_tool_v1.4.3](https://github.com/Ameba-AIoT/ameba-rtos-pro2/tree/main/tools/Pro2_PG_tool_v1.4.3) Binary/flash/firmware file download tools.
 
 ## License
 
