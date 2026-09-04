@@ -413,8 +413,10 @@ static void media_list_cb(struct httpd_conn *conn)
 		const char *extensions[] = { ".mp4", ".csv", ".jpeg", ".jpg", ".txt"};
 		uint16_t num_extensions = sizeof(extensions) / sizeof(extensions[0]);
 		cJSON *list_json = extdisk_get_filelist("", &file_num, extensions, num_extensions, "ai_snapshot.jpg");
+		WLAN_SCEN_MSG("file_num=%d\n", file_num);
 		if (list_json != NULL) {
 			file_list = cJSON_Print(list_json);
+			WLAN_SCEN_MSG("json len=%d\n", strlen(file_list));
 			cJSON_Delete(list_json);
 			WLAN_SCEN_MSG("%s\r\n", file_list);
 		} else {
@@ -423,6 +425,7 @@ static void media_list_cb(struct httpd_conn *conn)
 		// Save filelist to EMMC
 		extdisk_save_file_cntlist();
 		uint32_t file_list_len = strlen(file_list);
+		WLAN_SCEN_MSG("goto header, len=%lu\n", file_list_len);
 		httpd_response_write_header_start(conn, (char *)"200 OK", (char *)"text/plain", file_list_len);
 		httpd_response_write_header(conn, (char *)"Access-Control-Allow-Origin", (char *)"*");
 		//httpd_response_write_header(conn, (char *)"Access-Control-Allow-Methods", (char *)"GET, POST, OPTIONS");
@@ -430,7 +433,20 @@ static void media_list_cb(struct httpd_conn *conn)
 		//httpd_response_write_header(conn, (char *)"Access-Control-Allow-Credentials", (char *)"true");
 		httpd_response_write_header(conn, (char *)"Connection", (char *)"close");
 		httpd_response_write_header_finish(conn);
-		httpd_response_write_data(conn, (uint8_t *)file_list, file_list_len);
+		// Send JSON in chunks to avoid exceeding the 16384-byte TLS record limit
+		uint32_t sent = 0;
+		while (sent < file_list_len) {
+			uint32_t chunk_size = file_list_len - sent;
+			if (chunk_size >= HTTP_DATA_BUF_SIZE*4) {
+				chunk_size = HTTP_DATA_BUF_SIZE*4;  // cap to 4KB per send
+			}
+			int ret = httpd_response_write_data(conn, (uint8_t *)file_list + sent, chunk_size);
+			if (ret <= 0) {
+				WLAN_SCEN_ERR("http error ret = %d\r\n", ret);
+				break;
+			}
+			sent += ret;
+		}
 	} else if (httpd_request_is_method(conn, (char *)"OPTIONS")) {
 		// Handle pre-flight OPTIONS request for CORS
 		httpd_response_write_header_start(conn, (char *)"204 No Content", NULL, 0);

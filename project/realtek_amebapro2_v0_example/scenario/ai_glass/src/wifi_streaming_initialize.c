@@ -23,8 +23,10 @@
 
 #if AUDIO_SRC==SPORT_INTERFACE
 #define AUDIO_SAMPLE_RATE       48000
+#define RTSP_CH       4
 #else
 #define AUDIO_SAMPLE_RATE       16000
+#define RTSP_CH       1
 #endif
 
 //Modules
@@ -136,7 +138,7 @@ static rtsp2_params_t rtsp2_a_params = {
 	.type = AVMEDIA_TYPE_AUDIO,
 	.u = {
 		.a = {
-			.channel    = 4,
+			.channel    = RTSP_CH,
 			.samplerate = AUDIO_SAMPLE_RATE,
 		}
 	}

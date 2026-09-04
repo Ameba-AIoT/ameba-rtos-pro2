@@ -200,47 +200,57 @@ static int check_extension(const char *filename, const char *ext)
 static int check_valid_file_and_remove(const char *list_path, const char *filename, const char *exclude_filename, const char **extensions,
 									   uint16_t num_extensions)
 {
-	struct stat finfo = {0};
-	int res;
+      // Part 1: cheap string-only checks. No disk access here.
+      if (is_excluded_file(filename, SYS_COUNT_FILENAME)) {
+              FILE_SYS_MSG("file %s is a exclude file %s\n", filename, exclude_filename);
+              return -1;
+      }
+      if (is_excluded_file(filename, exclude_filename)) {
+              FILE_SYS_MSG("file %s is a exclude file %s\n", filename, exclude_filename);
+              return -1;
+      }
 
-	if (is_excluded_file(filename, SYS_COUNT_FILENAME)) {
-		FILE_SYS_MSG("file %s is a exclude file %s\n", filename, exclude_filename);
-		return -1;
-	} else if (is_excluded_file(filename, exclude_filename)) {
-		FILE_SYS_MSG("file %s is a exclude file %s\n", filename, exclude_filename);
-		return -1;
-	} else {
-		char *file_path = malloc(PATH_MAX + 1);
-		if (file_path) {
-			snprintf(file_path, PATH_MAX + 1, "%s/%s", list_path, filename);
-			res = stat(file_path, &finfo);
+      // Part 2: match the extension BEFORE touching the disk.
+      // This skips the blocking stat() on every junk file
+      // (.nv12/.png/.bin/.py/...), which dominates runtime when the
+      // card holds many non-target files.
+      int ext_idx = -1;
+      for (int i = 0; i < num_extensions; i++) {
+              if (check_extension(filename, extensions[i])) {
+                      ext_idx = i;
+                      break;
+              }
+      }
+      if (ext_idx < 0) {
+              FILE_SYS_MSG("file %s is not a target extension, skip stat\n", filename);
+              return -1;
+      }
 
-			if (res == 0) {
-				if (strcmp(filename, "uart_log.txt") == 0) { 
-					// Keep uart_log.txt even if empty 
-				}
-				if (finfo.st_size == 0) {
-					FILE_SYS_WARN("size 0 is invlaid %s, remove file\r\n", file_path);
-					remove(file_path);
-					free(file_path);
-					return -1;
-				}
-			} else {
-				FILE_SYS_WARN("Failed to get file %s info (error: %d), remove file\r\n", file_path, res);
-				remove(file_path);
-				free(file_path);
-				return -1;
-			}
-			free(file_path);
-		}
-		for (int i = 0; i < num_extensions; i++) {
-			if (check_extension(filename, extensions[i])) {
-				return i;
-			}
-		}
-	}
+      // Part 3: only for files we actually keep do the stat / zero-size cleanup.
+      struct stat finfo = {0};
+      int res;
+      char *file_path = malloc(PATH_MAX + 1);
+      if (file_path) {
+              snprintf(file_path, PATH_MAX + 1, "%s/%s", list_path, filename);
+              res = stat(file_path, &finfo);
 
-	return -1;
+              if (res == 0) {
+                      if (finfo.st_size == 0 && strcmp(filename, "uart_log.txt") != 0) {
+                              FILE_SYS_WARN("size 0 is invlaid %s, remove file\r\n", file_path);
+                              remove(file_path);
+                              free(file_path);
+                              return -1;
+                      }
+              } else {
+                      FILE_SYS_WARN("Failed to get file %s info (error: %d), remove file\r\n", file_path, res);
+                      remove(file_path);
+                      free(file_path);
+                      return -1;
+              }
+              free(file_path);
+      }
+
+      return ext_idx;
 }
 
 static int file_exists(const char *filename)
@@ -561,6 +571,10 @@ static cJSON *create_json_file_object(const char *list_path, const char *filenam
 	cJSON *folder_obj = cJSON_CreateObject();
 	cJSON_AddStringToObject(folder_obj, "type", "file");
 	cJSON_AddStringToObject(folder_obj, "name", filename);
+
+	// NOTE: use heap, not a stack buffer, for the path. PATH_MAX is 4096,
+	// and this is called recursively by get_filelist(), so a path buffer on
+	// the stack overflows the (small) HTTP handler task stack -> hardfault.
 	struct stat finfo = {0};
 	char *file_path = malloc(PATH_MAX + 1);
 	if (file_path) {
@@ -568,40 +582,36 @@ static cJSON *create_json_file_object(const char *list_path, const char *filenam
 
 		int res = stat(file_path, &finfo);
 		if (res == 0) {
-			show_utc_format_time(finfo.st_mtime);
-			FILE_SYS_MSG("File: %s\n", file_path);
-			// Add file size
 			cJSON_AddNumberToObject(folder_obj, "file_size", (double)finfo.st_size);
+			char utctime_buffer[30] = {0};
+			time_transfer_to_string_utcform(finfo.st_mtime, utctime_buffer, sizeof(utctime_buffer));
+			cJSON_AddStringToObject(folder_obj, "time", (const char *)utctime_buffer);
 		} else {
 			FILE_SYS_WARN("Failed to get file %s info (error: %d)\n", file_path, res);
 		}
 
 		free(file_path);
 	}
-	//cJSON_AddNumberToObject(folder_obj, "time", finfo.st_mtime);
-	char utctime_buffer[30] = {0};
-	time_transfer_to_string_utcform(finfo.st_mtime, utctime_buffer, sizeof(utctime_buffer));
-	cJSON_AddStringToObject(folder_obj, "time", (const char *)utctime_buffer);
 	return folder_obj;
 }
 
-static cJSON *get_filelist(const char *list_path, const char *folder_name, uint16_t *file_number, const char **extensions, uint16_t num_extensions,
-						   const char *exclude_filename)
+static cJSON *get_filelist(const char *list_path, const char *folder_name, uint16_t *file_number, const char **extensions, uint16_t num_extensions, const char *exclude_filename)
 {
-	//int res = 0;
 	DIR *file_dir;
 	char *filename;
 	dirent *entry;
+
+	// NOTE: use heap for the sub-dir path, not a stack buffer. PATH_MAX is
+	// 4096 and this function recurses per sub-directory; a 4KB stack buffer
+	// here overflows the (small) HTTP handler task stack -> hardfault.
 	uint8_t *sub_dir_path = malloc(PATH_MAX + 1);
 
-	cJSON *filelist_obj = NULL;
-	filelist_obj = create_json_folder_object(list_path, folder_name);
+	cJSON *filelist_obj = create_json_folder_object(list_path, folder_name);
 	if (filelist_obj == NULL) {
 		goto endoffun;
 	}
 
 	file_dir = opendir(list_path);
-
 	if (file_dir) {
 		cJSON *contents = cJSON_CreateArray();
 		// each folder
@@ -614,20 +624,18 @@ static cJSON *get_filelist(const char *list_path, const char *folder_name, uint1
 			}
 			filename = entry->d_name;
 
-			// Skips hidden files and directories, as well as the special . and .. entries.
-			// More folder name of hidden folders can be added to skip if needed.
 			if (filename[0] == '.' || (strcmp(filename, "System Volume Information") == 0) || ((filename[0] == '.') && (filename[1] == '.'))) {
 				continue;
 			}
 
 			if (entry->d_type == DT_DIR) {
 				if (sub_dir_path) {
-					snprintf((char *)sub_dir_path, PATH_MAX + 1, "%s/%s", list_path, entry->d_name);
-					cJSON_AddItemToArray(contents, get_filelist((const char *)sub_dir_path, (const char *)entry->d_name, file_number, extensions, num_extensions,
-										 exclude_filename));
+					if (snprintf((char *)sub_dir_path, PATH_MAX + 1, "%s/%s", list_path, entry->d_name) < (PATH_MAX + 1)) {
+						cJSON_AddItemToArray(contents, get_filelist((const char *)sub_dir_path, (const char *)entry->d_name, file_number, extensions, num_extensions,
+											 exclude_filename));
+					}
 				}
 			} else {
-				// Add file to contents
 				if (check_valid_file_and_remove(list_path, entry->d_name, exclude_filename, extensions, num_extensions) >= 0) {
 					cJSON *file_obj = create_json_file_object(list_path, entry->d_name);
 					if (file_obj != NULL) {
