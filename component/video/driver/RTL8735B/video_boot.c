@@ -229,7 +229,7 @@ int video_boot_buf_calc(video_boot_stream_t vidoe_boot)
 			//dbg_printf("channel %d size %d\r\n",i,video_boot_stream.video_params[i].out_buf_size);
 			//shapshot
 			if (vidoe_boot.video_snapshot[i]) {
-				vidoe_boot.voe_heap_size += ((vidoe_boot.video_params[i].width * vidoe_boot.video_params[i].height * 3) / 2) + SNAPSHOT_BUF;
+				vidoe_boot.voe_heap_size += ((vidoe_boot.video_params[i].width * vidoe_boot.video_params[i].height * 3) / 2) + JPEG_EXTRA_BUF_SIZE;
 			}
 			//osd common
 			if (vidoe_boot.isp_info.osd_enable) {
@@ -263,7 +263,7 @@ int video_boot_buf_calc(video_boot_stream_t vidoe_boot)
 		dbg_printf("channel %d size %d\r\n", i, video_boot_stream.extra_video_params.out_buf_size);
 		//shapshot
 		if (vidoe_boot.extra_video_snapshot) {
-			vidoe_boot.voe_heap_size += ((vidoe_boot.extra_video_params.width * vidoe_boot.extra_video_params.height * 3) / 2) + SNAPSHOT_BUF;
+			vidoe_boot.voe_heap_size += ((vidoe_boot.extra_video_params.width * vidoe_boot.extra_video_params.height * 3) / 2) + JPEG_EXTRA_BUF_SIZE;
 		}
 	}
 
@@ -449,9 +449,9 @@ int video_boot_open(int ch_index, video_boot_params_t *v_stream)
 	if (isNormalSnapshotEn || isExtraSnapshotEn) {
 		v_adp->cmd[ch]->CodecType = v_stream->type | CODEC_JPEG;
 		v_adp->cmd[ch]->JpegMode = MODE_SNAPSHOT;
-		//Disable the ring buffer with JPEG SNAPSHOT. Setup the jpg_buf_size and jpg_rsvd_size as the same size
-		v_adp->cmd[ch]->jpg_buf_size = v_stream->width * v_stream->height * 3 / 2;
-		v_adp->cmd[ch]->jpg_rsvd_size = v_stream->width * v_stream->height * 3 / 2;
+		//Disable the ring buffer with JPEG SNAPSHOT. jpg_rsvd_size==0
+		v_adp->cmd[ch]->jpg_buf_size = ((v_stream->width * v_stream->height * 3) / 2) + JPEG_EXTRA_BUF_SIZE;
+		v_adp->cmd[ch]->jpg_rsvd_size = 0;
 		v_adp->cmd[ch]->qLevel = v_stream->jpeg_qlevel;
 	}
 

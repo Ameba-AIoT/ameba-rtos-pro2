@@ -1235,7 +1235,7 @@ int video_buf_calc(int v1_enable, int v1_w, int v1_h, int v1_bps, int v1_shapsho
 		g_enc_buff_size[0] = ((v1_w * v1_h) / VIDEO_RSVD_DIVISION + (v1_bps * V1_ENC_BUF_SIZE) / 8);
 		//shapshot
 		if (v1_shapshot) {
-			voe_heap_size += ((v1_w * v1_h * 3) / 2) + SNAPSHOT_BUF;
+			voe_heap_size += ((v1_w * v1_h * 3) / 2) + JPEG_EXTRA_BUF_SIZE;
 		}
 		//osd common
 		if (isp_info.osd_enable) {
@@ -1259,7 +1259,7 @@ int video_buf_calc(int v1_enable, int v1_w, int v1_h, int v1_bps, int v1_shapsho
 		g_enc_buff_size[1] = ((v2_w * v2_h) / VIDEO_RSVD_DIVISION + (v2_bps * V2_ENC_BUF_SIZE) / 8);
 		//shapshot
 		if (v2_shapshot) {
-			voe_heap_size += ((v2_w * v2_h * 3) / 2) + SNAPSHOT_BUF;
+			voe_heap_size += ((v2_w * v2_h * 3) / 2) + JPEG_EXTRA_BUF_SIZE;
 		}
 		//osd common
 		if (isp_info.osd_enable) {
@@ -1283,7 +1283,7 @@ int video_buf_calc(int v1_enable, int v1_w, int v1_h, int v1_bps, int v1_shapsho
 		g_enc_buff_size[2] = ((v3_w * v3_h) / VIDEO_RSVD_DIVISION + (v3_bps * V3_ENC_BUF_SIZE) / 8);
 		//shapshot
 		if (v3_shapshot) {
-			voe_heap_size += ((v3_w * v3_h * 3) / 2) + SNAPSHOT_BUF;
+			voe_heap_size += ((v3_w * v3_h * 3) / 2) + JPEG_EXTRA_BUF_SIZE;
 		}
 		//osd common
 		if (isp_info.osd_enable) {
@@ -1368,7 +1368,7 @@ static int video_nv12_channel_heapsize(int ch_id, int ch_codec, int ch_w, int ch
 		//JPG ENC output buffer
 		if (ch_jpg_only_shapshot) {
 			//JPEG for snapshot
-			ch_heap_size += ((ch_w * ch_h * 3) / 2) + SNAPSHOT_BUF;
+			ch_heap_size += ((ch_w * ch_h * 3) / 2) + JPEG_EXTRA_BUF_SIZE;
 		} else {
 			//JPEG for streaming
 			ch_heap_size += ((ch_w * ch_h * 3) / 2) * JPG_BUF_SIZE;
@@ -1483,7 +1483,7 @@ int video_extra_buf_calc(int originl_heapsize, int vext_enable, int vext_w, int 
 		g_enc_buff_size[3] = ((vext_w * vext_h) / VIDEO_RSVD_DIVISION + (vext_bps * VEXT_ENC_BUF_SIZE) / 8);
 		//snapshot
 		if (vext_shapshot) {
-			voe_heap_size += ((vext_w * vext_h * 3) / 2) + SNAPSHOT_BUF;
+			voe_heap_size += ((vext_w * vext_h * 3) / 2) + JPEG_EXTRA_BUF_SIZE;
 		}
 		//osd common
 		if (isp_info.osd_enable) {
@@ -2073,8 +2073,8 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 
 	int out_rsvd_size = (enc_in_w * enc_in_h) / VIDEO_RSVD_DIVISION;
 	int out_buf_size = 0;
-	int jpeg_out_buf_size = (enc_in_w * enc_in_h * 3) / 2; //jpeg max size = NV12 size
-	int jpeg_out_rsvd_size = jpeg_out_buf_size; //set buf_size==rsvd_size to disable ring buffer
+	int jpeg_out_buf_size = ((enc_in_w * enc_in_h * 3) / 2) + JPEG_EXTRA_BUF_SIZE;
+	int jpeg_out_rsvd_size = 0; //set rsvd_size==0 to disable ring buffer
 	unsigned char *cal_iq_addr;
 	struct isp_iq_cali *piq_cali_data;
 	int status = OK;
@@ -2268,7 +2268,7 @@ int video_open(video_params_t *v_stream, output_callback_t output_cb, void *ctx)
 					   , enc_out_h_offset
 					   , rotation
 					   , jpeg_qlevel
-					   , 0
+					   , (v_stream->out_mode ? v_stream->out_mode : 0) //set out mode if not 0
 					   , 2
 					   , paramter_table[2]);
 		if (ret < 0 || ret >= sizeof(cmd2)) {
@@ -2666,7 +2666,7 @@ static void video_clean_invalidate_heap(uint32_t *heap_addr, uint32_t heap_size)
 
 	while (1) {
 		video_cache_clean_pause();
-		
+
 		uint32_t cleaned_size = (heap_size - remain_heap_size) / sizeof(uint32_t);
 		if (remain_heap_size <= SLICE_SIZE) {
 			dcache_clean_invalidate_by_addr((uint32_t *)(heap_addr + cleaned_size), remain_heap_size);

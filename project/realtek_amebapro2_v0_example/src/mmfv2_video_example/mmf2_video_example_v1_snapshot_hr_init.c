@@ -92,6 +92,44 @@ Usage Guide:
 		component\video\driver\RTL8735B\video_user_boot.c
 		#define META_DATA_TEST
 
+7. Tips for measuring 12M snapshot timing:
+	(1) Raise the log UART baud rate so printf logs don't become the bottleneck
+		project\realtek_amebapro2_v0_example\src\main.c
+		void log_uart_port_init(int log_uart_tx, int log_uart_rx, uint32_t baud_rate)
+		{
+			baud_rate = 3000000;  //115200, 1500000, 3000000
+			...
+		}
+
+	(2) Raise video_task priority so it is not delayed by other tasks
+		project\realtek_amebapro2_v0_example\src\mmfv2_video_example\video_example_media_framework.c
+		void video_example_media_framework(void)
+		{
+			if (xTaskCreate(video_example_main, ((const char *)"mmf2_video"), 4096, NULL, tskIDLE_PRIORITY + 7, NULL) != pdPASS) {
+				printf("\r\n video_example_main: Create Task Error\n");
+			}
+		}
+
+	(3) Disable WIFI init, or measure timing only after WIFI connection is established
+		project\realtek_amebapro2_v0_example\src\main.c
+		void setup(void)
+		{
+		#if 0 // CONFIG_WLAN
+			...
+			wlan_network();
+		#endif
+		}
+
+	(4) STAGE_TIME_LOG_EN controls the per-stage timing log below. When it is set to 1,
+		save_file_to_sd() also skips writing the snapshot to the SD card so the SD write
+		time does not get counted into the measured snapshot time.
+		#define STAGE_TIME_LOG_EN 1 //1: print each stage's elapsed time, 0: disable
+
+8. Set OUTPUT_4_JPEG_DIRECT to 1 to JPEG-encode each 3M raw tile directly, instead of merging
+	4 tiles into one 12M NV12 first (saves time and memory). This also needs a bigger JPEG_EXTRA_BUF_SIZE:
+	component\video\driver\RTL8735B\video_boot.h
+	#define JPEG_EXTRA_BUF_SIZE   (3*2112*1616*3/2)  //cover 3 tiles of NV12 instead of 1
+
 Burst mode:
 
 	To enable burst mode, define BURST_MODE_MAX_COUNT larger than 1. For DDR 128M, maaximun can set to 2.
@@ -113,6 +151,7 @@ Output 12M JPEG Flow:
 4. Sent 4 x 3M raw into VOE and ouput to 4 x 3M NV12 image.
 5. Merge 4 x 3M NV12 into 12M NV12 image.
 6. Convert 12M NV12 image to 12M JPEG image.
+(with OUTPUT_4_JPEG_DIRECT=1, step 4 outputs 4 x 3M JPEG directly, skipping step 5 and 6. See item 8.)
 ====================================================================
 */
 
@@ -150,6 +189,11 @@ static uint32_t hr_nv12_size = OUT_IMG_WIDTH * OUT_IMG_HEIGHT * 3 / 2;
 #define BURST_MODE_MAX_COUNT 1 //when set to 1, disable burst mode. for DDR 128M, maaximun can set to 2
 #define USE_META_DATA 0
 #define ETGAIN_TOLERANCE_PERCENT 10 //AE converge tolerance: etgain change within this % is considered stable
+//1: let VOE JPEG-encode each raw tile directly (skip NV12 merge + single 12M JPEG encode), saves time and memory.
+//0: original flow, merge 4 tiles into one 12M NV12 image then encode one 12M JPEG.
+#define OUTPUT_4_JPEG_DIRECT 0
+#define STAGE_TIME_LOG_EN 0 //1: print each stage's elapsed time, 0: disable
+#define stage_time_printf(...) do { if (STAGE_TIME_LOG_EN) { printf(__VA_ARGS__); } } while (0)
 #if (USE_SENSOR == SENSOR_IMX681) || (USE_SENSOR == SENSOR_OV13B10)
 #define ENABLE_AINR 1
 #else
@@ -176,6 +220,13 @@ typedef struct {
 	void *phy_addr[SPLIT_RAW_NUM];
 } splited_raw_item_t;
 static splited_raw_item_t splited_raw_image[BURST_MODE_MAX_COUNT] = {0};
+#if OUTPUT_4_JPEG_DIRECT
+static int hr_jpeg_burst_idx = 0;
+static const char *hr_jpeg_tile_name[SPLIT_RAW_NUM] = {"UL", "UR", "LL", "LR"};
+#endif
+//measure time from the start of nv12/jpeg processing to the first jpeg file actually saved
+static unsigned long first_jpeg_ref_tick = 0;
+static int first_jpeg_reported = 0;
 
 static video_params_t video_v1_params = {
 	.stream_id 	= JPEG_CHANNEL,
@@ -209,6 +260,7 @@ enum file_process_command {
 OUT_IMG_WIDTH => full width
 h => full height
 */
+#if !OUTPUT_4_JPEG_DIRECT
 __attribute__((optimize("-O2")))
 static int yuv420stitch_step_4c(uint8_t *tiled_yuv, uint8_t *output_buf, const uint16_t w, const uint16_t h, const uint16_t overlap_width,
 								const uint16_t overlap_height, uint32_t *const out_size, const enum file_process_status proc_stat)
@@ -264,6 +316,7 @@ static int yuv420stitch_step_4c(uint8_t *tiled_yuv, uint8_t *output_buf, const u
 	*out_size += w_half * y_half;
 	return 0;
 }
+#endif
 
 __attribute__((optimize("-O2")))
 static void get_remosaiced_cord(uint16_t x, uint16_t y, uint16_t *rm_x, uint16_t *rm_y)
@@ -389,6 +442,10 @@ static void config_verification_path_buf_4c(struct verify_ctrl_config *v_cfg, co
 #define IMG_WRITE_SIZE          4096
 static int save_file_to_sd(char *fp, uint8_t *file_buf, uint32_t buf_size)
 {
+#if STAGE_TIME_LOG_EN
+	printf("[%s] timing mode: skip saving\r\n", __FUNCTION__);
+	return 0;
+#endif
 	FILE *m_file;
 	if (!file_buf) {
 		printf("file buf is empty!!\n");
@@ -513,14 +570,28 @@ static void file_process(char *file_path, uint32_t data_addr, uint32_t data_size
 		case MERGE_UR_NV12_2:
 		case MERGE_LL_NV12_2:
 		case MERGE_LR_NV12_2:
-			yuv420stitch_step_4c(img_buf, hr_nv12_image, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_OVERLAP_WIDTH, OUT_IMG_OVERLAP_HEIGHT, &out_size, file_proc_stat);
-			if (tiled_nv12_cnt == VERIFY_NUM - 1) {
-				file_proc_stat = PROCESS_DONE;
-			} else {
-				file_proc_stat = (file_proc_stat + 1 - MERGE_UL_NV12_1) % ORG_FRAME_NUM + MERGE_UL_NV12_1;
+#if OUTPUT_4_JPEG_DIRECT
+		{
+			int tile_idx = (file_proc_stat - MERGE_UL_NV12_1) / 2;
+			char jpgfilename[128];
+			snprintf(jpgfilename, sizeof(jpgfilename), "sd:/12M_%d_%s.jpg", hr_jpeg_burst_idx, hr_jpeg_tile_name[tile_idx]);
+			if (!first_jpeg_reported) {
+				first_jpeg_reported = 1;
+				stage_time_printf("time: first jpeg ready use %luus\r\n", (us_ticker_read() - first_jpeg_ref_tick));
 			}
-			tiled_nv12_cnt++;
-			return;
+			save_file_to_sd(jpgfilename, img_buf, data_size);
+			printf("save %s (%lu bytes)\r\n", jpgfilename, data_size);
+		}
+#else
+		yuv420stitch_step_4c(img_buf, hr_nv12_image, OUT_IMG_WIDTH, OUT_IMG_HEIGHT, OUT_IMG_OVERLAP_WIDTH, OUT_IMG_OVERLAP_HEIGHT, &out_size, file_proc_stat);
+#endif
+		if (tiled_nv12_cnt == VERIFY_NUM - 1) {
+			file_proc_stat = PROCESS_DONE;
+		} else {
+			file_proc_stat = (file_proc_stat + 1 - MERGE_UL_NV12_1) % ORG_FRAME_NUM + MERGE_UL_NV12_1;
+		}
+		tiled_nv12_cnt++;
+		return;
 		default:
 			printf("Invalid file_proc_stat: %d\r\n", file_proc_stat);
 			return;
@@ -679,6 +750,7 @@ static int hr_init_ae_awb(video_pre_init_params_t *init_params, int wait_ae_time
 static int hr_raw_capture(video_pre_init_params_t *init_params, int proc_raw_idx)
 {
 	int ret = OK;
+	unsigned long start_tick = us_ticker_read();
 	// get 12M raw
 	int sen_drv_mode_id = HR_RAW_MODE;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_SENSOR_ID, sen_drv_mode_id);
@@ -708,7 +780,7 @@ static int hr_raw_capture(video_pre_init_params_t *init_params, int proc_raw_idx
 	if (mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, JPEG_CHANNEL) != OK) {
 		return NOK;
 	}
-	while (file_proc_stat != SPLIT_RAW_IMAGE_START) {
+	while (file_proc_stat != SPLIT_RAW_IMAGE_START && file_proc_stat != PROCESS_DONE) {
 		vTaskDelay(1);
 		timeout_count++;
 		if (timeout_count > 100000) {
@@ -718,7 +790,9 @@ static int hr_raw_capture(video_pre_init_params_t *init_params, int proc_raw_idx
 		}
 	}
 	//process raw image and video close simutaneously.
+	unsigned long stream_stop_tick = us_ticker_read();
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
+	stage_time_printf("time: hr_raw_capture CMD_VIDEO_STREAM_STOP use %luus\r\n", (us_ticker_read() - stream_stop_tick));
 	while (file_proc_stat != PROCESS_DONE) {
 		vTaskDelay(1);
 		timeout_count++;
@@ -728,12 +802,14 @@ static int hr_raw_capture(video_pre_init_params_t *init_params, int proc_raw_idx
 			break;
 		}
 	}
+	stage_time_printf("time: hr_raw_capture use %luus\r\n", (us_ticker_read() - start_tick));
 	return ret;
 }
 
 static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx)
 {
 	int ret = OK;
+	unsigned long start_tick = us_ticker_read();
 	//switch to verify sequece driver
 	int sen_drv_mode_id = HR_SEQ_MODE;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_SENSOR_ID, sen_drv_mode_id);
@@ -759,11 +835,17 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 	video_v1_params.width = sensor_params[sen_id[sen_drv_mode_id]].sensor_width;
 	video_v1_params.height = sensor_params[sen_id[sen_drv_mode_id]].sensor_height;
 	video_v1_params.fps = sensor_params[sen_id[sen_drv_mode_id]].sensor_fps;
+#if OUTPUT_4_JPEG_DIRECT
+	video_v1_params.type = VIDEO_JPEG;
+	video_v1_params.jpeg_qlevel = 10;
+	hr_jpeg_burst_idx = proc_raw_idx;
+#else
 	video_v1_params.type = VIDEO_NV12;
+#endif
 	video_v1_params.ext_fmt = 0;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_PARAMS, (int)&video_v1_params);
 
-	//merge output 4 * 3M nv12 to 12M nv12 image
+	//merge output 4 * 3M nv12 to 12M nv12 image (or save each tile as jpeg directly, see OUTPUT_4_JPEG_DIRECT)
 	file_proc_cmd = MERGE_NV12_IMAGE;
 	file_proc_stat = MERGE_UL_NV12_1 + max_dyn_region_idx * 2; //decide process order with max_dyn_region_idx
 	tiled_nv12_cnt = 0;
@@ -782,9 +864,11 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 			break;
 		}
 	}
+	unsigned long stream_stop_tick = us_ticker_read();
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
+	stage_time_printf("time: hr_raw_to_nv12 CMD_VIDEO_STREAM_STOP use %luus\r\n", (us_ticker_read() - stream_stop_tick));
 
-#if SAVE_DBG_IMG
+#if SAVE_DBG_IMG && !OUTPUT_4_JPEG_DIRECT
 	char nv12filename[128] = "sd:/12M.nv12";
 	snprintf(nv12filename, sizeof(nv12filename), "sd:/12M_%d.nv12", proc_raw_idx);
 	save_file_to_sd(nv12filename, (uint8_t *)hr_nv12_image, hr_nv12_size);
@@ -796,14 +880,20 @@ static int hr_raw_to_nv12(video_pre_init_params_t *init_params, int proc_raw_idx
 		init_params->v_cfg = NULL;
 	}
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)init_params);
+	stage_time_printf("time: hr_raw_to_nv12 use %luus\r\n", (us_ticker_read() - start_tick));
 	return ret;
 }
 
+#if !OUTPUT_4_JPEG_DIRECT
 static int jpg_save_done = 0;
 static char jpgfilename[128] = "sd:/12M.jpg";
 static void hr_jpg_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 {
 	printf("jpeg addr=%x, len=%lu\r\n", jpeg_addr, jpeg_len);
+	if (!first_jpeg_reported) {
+		first_jpeg_reported = 1;
+		stage_time_printf("time: first jpeg ready use %luus\r\n", (us_ticker_read() - first_jpeg_ref_tick));
+	}
 	save_file_to_sd(jpgfilename, (uint8_t *)jpeg_addr, jpeg_len);
 	printf("save %s\r\n", jpgfilename);
 	jpg_save_done = 1;
@@ -811,6 +901,7 @@ static void hr_jpg_done_cb(uint32_t jpeg_addr, uint32_t jpeg_len)
 static int hr_nv12_to_jpeg(video_pre_init_params_t *init_params, int jpg_save_timeout, int jpg_idx)
 {
 	int ret = OK;
+	unsigned long start_tick = us_ticker_read();
 	init_params->sens_pwr_dis = 1;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)init_params);
 	video_v1_params.direct_output = 0;
@@ -841,10 +932,14 @@ static int hr_nv12_to_jpeg(video_pre_init_params_t *init_params, int jpg_save_ti
 	} else {
 		ret = NOK;
 	}
+	unsigned long stream_stop_tick = us_ticker_read();
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, JPEG_CHANNEL);
+	stage_time_printf("time: hr_nv12_to_jpeg CMD_VIDEO_STREAM_STOP use %luus\r\n", (us_ticker_read() - stream_stop_tick));
 
+	stage_time_printf("time: hr_nv12_to_jpeg use %luus\r\n", (us_ticker_read() - start_tick));
 	return ret;
 }
+#endif
 
 static void example_deinit(void);
 void mmf2_video_example_v1_snapshot_hr_init(void)
@@ -875,6 +970,7 @@ void mmf2_video_example_v1_snapshot_hr_init(void)
 		}
 	}
 
+#if !OUTPUT_4_JPEG_DIRECT
 	//prevent memory fragment, allocate hr nv12 buffer
 	if (hr_nv12_image == NULL) {
 		hr_nv12_image = malloc(hr_nv12_size);
@@ -884,6 +980,7 @@ void mmf2_video_example_v1_snapshot_hr_init(void)
 		printf("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
 		goto mmf2_video_exmaple_v1_shapshot_hr_fail;
 	}
+#endif
 	//printf("Available heap 0x%x\r\n", xPortGetFreeHeapSize());
 
 	memset(&init_params, 0x00, sizeof(video_pre_init_params_t));
@@ -921,6 +1018,9 @@ void mmf2_video_example_v1_snapshot_hr_init(void)
 #endif
 		siso_ctrl(siso_video_filesaver_v1, MMIC_CMD_ADD_INPUT, (uint32_t)video_v1_ctx, 0);
 		siso_ctrl(siso_video_filesaver_v1, MMIC_CMD_ADD_OUTPUT, (uint32_t)filesaver_ctx, 0);
+#if STAGE_TIME_LOG_EN
+		siso_ctrl(siso_video_filesaver_v1, MMIC_CMD_SET_TASKPRIORITY, 7, 0);
+#endif
 		siso_start(siso_video_filesaver_v1);
 	} else {
 		rt_printf("siso_array_filesaver open fail\n\r");
@@ -937,13 +1037,17 @@ void mmf2_video_example_v1_snapshot_hr_init(void)
 		}
 	}
 
+	first_jpeg_ref_tick = us_ticker_read();
+	first_jpeg_reported = 0;
 	for (int i = 0; i < BURST_MODE_MAX_COUNT; i++) {
 		if (hr_raw_to_nv12(&init_params, i) == NOK) {
 			goto mmf2_video_exmaple_v1_shapshot_hr_fail;
 		}
+#if !OUTPUT_4_JPEG_DIRECT
 		if (hr_nv12_to_jpeg(&init_params, 10000, i) == NOK) {
 			goto mmf2_video_exmaple_v1_shapshot_hr_fail;
 		}
+#endif
 	}
 
 mmf2_video_exmaple_v1_shapshot_hr_fail:
