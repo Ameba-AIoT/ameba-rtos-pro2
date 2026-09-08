@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 2220b68a53b8cae875d074729c0d135024f577c8
+* [amebapro2][video] update OV5647 sensor driver
+
 SHA-1: 163537d4626e0db36a680a1ffe4d4af78a2013f8
 * [amebapro2][wlan] fix ssl counter report
 
