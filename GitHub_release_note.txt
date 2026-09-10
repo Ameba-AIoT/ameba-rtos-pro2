@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 9580cc90ffd7f218fdef9421cbcbec843536e75b
+* [amebapro2][usb] Update usbh uvc example
+
 SHA-1: 2220b68a53b8cae875d074729c0d135024f577c8
 * [amebapro2][video] update OV5647 sensor driver
 
