@@ -61,9 +61,10 @@ struct sensor_params_t {
 #define SENSOR_GC4653           0x27  //  |   v    |   v    |   v    |   -    |    v   |
 #define SENSOR_GC4663           0x28  //  |   v    |   v    |   v    |   v    |    v   |
 #define SENSOR_GC4693           0x29  //  |   v    |   v    |   -    |   -    |    v   |
-#define SENSOR_GC5035           0x2A  //  |   v    |   v    |   v    |   -    |    -   |
-#define SENSOR_GC05A2           0x2B  //  |   v    |   -    |   v    |   -    |    -   |
-#define SENSOR_GC8613_FHD       0x2C  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_GC4693_HD        0x2A  //  |   v    |   v    |   -    |   -    |    v   |
+#define SENSOR_GC5035           0x2B  //  |   v    |   v    |   v    |   -    |    -   |
+#define SENSOR_GC05A2           0x2C  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_GC8613_FHD       0x2D  //  |   v    |   -    |   -    |   -    |    -   |
 /* SONY */
 #define SENSOR_IMX307           0x30  //  |   v    |   -    |   v    |   v    |    -   |
 #define SENSOR_IMX327           0x31  //  |   v    |   -    |   v    |   v    |    -   |
@@ -159,6 +160,7 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_GC4653]           = {2560, 1440, 24},
 	[SENSOR_GC4663]           = {2560, 1440, 24},  //HDR Mode fps=20
 	[SENSOR_GC4693]           = {2560, 1440, 24},
+	[SENSOR_GC4693_HD]        = {1280,  720, 20},
 	[SENSOR_GC5035]           = {2592, 1944, 15},
 	[SENSOR_GC05A2]           = {2592, 1944, 15},
 	[SENSOR_GC8613_FHD]       = {1920, 1080, 30},

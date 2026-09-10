@@ -422,7 +422,7 @@ int video_boot_init_sensor_config(void)
 		}
 	} else {
 		sensor_power_on_sequence(0);
-		return -22;
+		return -1;
 	}
 
 	return ret;

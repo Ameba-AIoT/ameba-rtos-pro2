@@ -138,20 +138,16 @@ static struct rts_isp_i2c_reg g_k306p_bin_i2c_init_regs_asic[] = {
 #endif
 };
 
-int sensor_power_on_sequence(int on)
+static int sensor_hw_reset(void)
 {
 	int ret = 0;
 	static hal_gpio_adapter_t gpio_rstp;
 	gpio_rstp.pin_name = PIN_E0;
-	if (on) {
-		//hclk_set_rate(0);
-		//hal_gpio_deinit(&gpio_rstp);
-		hal_gpio_init(&gpio_rstp, PIN_E0);
-		hal_gpio_set_dir(&gpio_rstp, GPIO_OUT);
-		hal_gpio_write(&gpio_rstp, 0);
-		hal_delay_us(1000);
-		hal_gpio_write(&gpio_rstp, 1);
-	}
+	hal_gpio_init(&gpio_rstp, PIN_E0);
+	hal_gpio_set_dir(&gpio_rstp, GPIO_OUT);
+	hal_gpio_write(&gpio_rstp, 0);
+	hal_delay_us(1000);
+	hal_gpio_write(&gpio_rstp, 1);
 	return ret;
 }
 
@@ -164,7 +160,7 @@ int video_boot_init_sensor_config(void)
 	int id = 0xFFFF;
 	uint16_t data;
 
-	sensor_power_on_sequence(1);
+	sensor_hw_reset();
 	do {
 		id = 0xFFFF;
 		if (retry != 5) {
@@ -190,8 +186,7 @@ int video_boot_init_sensor_config(void)
 			hal_voe_i2c_write(g_k306p_bin_i2c_init_regs_asic[i].addr, g_k306p_bin_i2c_init_regs_asic[i].data);
 		}
 	} else {
-		sensor_power_on_sequence(0);
-		return -22;
+		return -1;
 	}
 
 	return ret;

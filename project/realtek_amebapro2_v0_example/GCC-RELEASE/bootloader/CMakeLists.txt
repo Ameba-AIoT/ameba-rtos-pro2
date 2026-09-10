@@ -29,6 +29,13 @@ list(
 )
 endif()
 
+if(DEFINED GC4693_HD)
+list(
+    APPEND bootloader_sources
+	${sdk_root}/component/video/driver/RTL8735B/sensor_gc4693_hd.c
+)
+endif()
+
 if(DEFINED PS5270)
 list(
     APPEND bootloader_sources
