@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: c5c8063fbf2d6e8f7d6a87bb51d66889fdd12a36
+* feat(video): [amebapro2] support gc4693 bootloader switch to gc4693_hd
+
 SHA-1: 9580cc90ffd7f218fdef9421cbcbec843536e75b
 * [amebapro2][usb] Update usbh uvc example
 
