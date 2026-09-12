@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 58cc982aef94b498eca811daa983d9229222364b
+* fix(video): [amebapro2] fix ov12890 excessive center brightness
+
 SHA-1: c5c8063fbf2d6e8f7d6a87bb51d66889fdd12a36
 * feat(video): [amebapro2] support gc4693 bootloader switch to gc4693_hd
 
