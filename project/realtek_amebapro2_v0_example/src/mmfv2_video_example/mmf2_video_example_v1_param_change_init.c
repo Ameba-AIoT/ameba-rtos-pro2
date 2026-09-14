@@ -1,4 +1,4 @@
-/******************************************************************************
+﻿/******************************************************************************
 *
 * Copyright(c) 2007 - 2021 Realtek Corporation. All rights reserved.
 *
@@ -11,6 +11,7 @@
 #include "mmf2_pro2_video_config.h"
 #include "video_example_media_framework.h"
 #include "log_service.h"
+#include "video_snapshot.h"
 
 /*****************************************************************************
 * ISP channel : 0
@@ -33,8 +34,11 @@
 static void atcmd_userctrl_init(void);
 static mm_context_t *video_v1_ctx			= NULL;
 static mm_context_t *rtsp2_v1_ctx			= NULL;
+static mm_siso_t *siso_video_rtsp_v1		= NULL;
 
-static mm_siso_t *siso_video_rtsp_v1			= NULL;
+static int snapshot_streaming_inited 		= 0;
+static int atcmd_snapshot_registered        = 0;
+static snapshot_user_config_t snap_cfg;
 
 static video_params_t video_v1_params = {
 	.stream_id = V1_CHANNEL,
@@ -63,6 +67,7 @@ enum param_change_option {
 	ISP_INIT_TEST,
 	SENSOR_DRIVER_CHANGE_TEST,
 	FPS_CHANGE_TEST,
+	VIDEO_CODEC_CHANGE_TEST,
 	TEST_NUM
 };
 
@@ -75,6 +80,7 @@ static const char *param_change_test_item[] = {
 	"ISP_INIT_TEST",
 	"SENSOR_DRIVER_CHANGE_TEST",
 	"FPS_CHANGE_TEST",
+	"VIDEO_CODEC_CHANGE_TEST"
 };
 
 static void change_resolution_parameter(int parm_index)
@@ -412,6 +418,131 @@ static void param_change_test(int idx, char *argv[MAX_ARGC])
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, V1_CHANNEL);
 		break;
 	}
+	case VIDEO_CODEC_CHANGE_TEST: {
+		int new_type = VIDEO_H264;
+		int snapshot_enable = 0;
+		int voe_heap_size = 0;
+
+		/* Check input */
+		if (argv == NULL || argv[2] == NULL) {
+			printf("please enter codec type with 'PCT=%d,[codec_type]'\r\n",
+				   VIDEO_CODEC_CHANGE_TEST);
+			printf("0: VIDEO_HEVC, "
+				   "1: VIDEO_H264, "
+				   "2: VIDEO_JPEG, "
+				   "6: VIDEO_HEVC_JPEG, "
+				   "7: VIDEO_H264_JPEG\r\n");
+			break;
+		}
+
+		new_type = strtol(argv[2], NULL, 10);
+
+		/* Check codec type */
+		if (new_type != VIDEO_HEVC &&
+			new_type != VIDEO_H264 &&
+			new_type != VIDEO_JPEG &&
+			new_type != VIDEO_HEVC_JPEG &&
+			new_type != VIDEO_H264_JPEG) {
+
+			printf("invalid codec type %d\r\n", new_type);
+			break;
+		}
+
+		printf("codec type change test: %d -> %d\r\n", video_v1_params.type, new_type);
+
+		snapshot_enable = (new_type == VIDEO_HEVC_JPEG || new_type == VIDEO_H264_JPEG);
+
+		if (snapshot_streaming_inited) {
+			printf("deinit snapshot streaming\r\n");
+
+			if (video_snapshot_deinit_with_streaming() < 0) {
+				printf("snapshot streaming deinit failed\r\n");
+			}
+
+			// The snapshot module shares video_v1_ctx and registered its
+			// callback on it. Make sure a stale callback can never fire on a
+			// later pure-JPEG stream (deinit frees snapshot_ctx).
+			mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SNAPSHOT_CB, (int)NULL);
+
+			snapshot_streaming_inited = 0;
+		}
+
+		// Stop current video / RTSP
+		siso_pause(siso_video_rtsp_v1);
+		mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_STREAMMING, OFF);
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, V1_CHANNEL);
+
+		// Update video codec parameters
+		video_v1_params.type = new_type;
+		if (new_type == VIDEO_JPEG) {
+			video_v1_params.fps = 5;
+			video_v1_params.gop = 5;
+		} else {
+			video_v1_params.fps = sensor_params[USE_SENSOR].sensor_fps;
+			video_v1_params.gop = sensor_params[USE_SENSOR].sensor_fps;
+		}
+
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_PARAMS, (int)&video_v1_params);
+
+		// Update RTSP parameters
+		if (new_type == VIDEO_H264 || new_type == VIDEO_H264_JPEG) {
+			rtsp2_v1_params.u.v.codec_id = AV_CODEC_ID_H264;
+		} else if (new_type == VIDEO_HEVC || new_type == VIDEO_HEVC_JPEG) {
+			rtsp2_v1_params.u.v.codec_id = AV_CODEC_ID_H265;
+		} else if (new_type == VIDEO_JPEG) {
+			rtsp2_v1_params.u.v.codec_id = AV_CODEC_ID_MJPEG;
+		}
+
+		// Keep RTSP FPS same as video
+		rtsp2_v1_params.u.v.fps = video_v1_params.fps;
+
+		mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_PARAMS, (int)&rtsp2_v1_params);
+		mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SELECT_STREAM, 0);
+		mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_APPLY, 0);
+
+		//Rebuild VOE heap
+		//snapshot_enable = 1: H264_JPEG / HEVC_JPEG
+		//snapshot_enable = 0: H264 / HEVC / JPEG
+
+		video_voe_release();
+
+		voe_heap_size = video_voe_presetting_by_params(&video_v1_params, snapshot_enable, NULL, 0, NULL, 0, NULL);
+		printf("\r\nvoe heap size = %d\r\n", voe_heap_size);
+		printf("\r\nvoe heap check passed, type = %d\r\n", new_type);
+
+		if (snapshot_enable) {
+			memset(&snap_cfg, 0x00, sizeof(snap_cfg));
+			snap_cfg.video_snapshot_ctx = video_v1_ctx;
+			snap_cfg.snapshot_write = snapshot_write_picture;
+			video_snapshot_set_config(&snap_cfg);
+
+			if (snapshot_vfs_init() < 0) {
+				printf("snapshot vfs init failed\r\n");
+			} else if (video_snapshot_init_with_streaming(&snap_cfg) < 0) {
+				printf("snapshot streaming init failed\r\n");
+			} else {
+				if (!atcmd_snapshot_registered) {
+					atcmd_snapshot_init(); //ATCMD => SNAP=SNAPS (Take picture to sdcard)
+					atcmd_snapshot_registered = 1;
+				}
+
+				snapshot_streaming_inited = 1;
+				printf("snapshot streaming ready\r\n");
+			}
+		}
+
+		//Restart video / RTSP
+		mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_STREAMMING, ON);
+		siso_resume(siso_video_rtsp_v1);
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, V1_CHANNEL);
+		if (new_type == VIDEO_JPEG) {
+			//JPEG output continuous for RTSP MJPEG streaming
+			mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SNAPSHOT, MODE_ENABLE);
+		}
+		printf("codec change complete: type=%d, snapshot=%d\r\n", new_type, snapshot_enable);
+
+		break;
+	}
 	default:
 		break;
 	}
@@ -487,6 +618,16 @@ static void fUC(void *arg)
 			sys_reset();
 		} else {
 			printf("invalid state, can not do %s reinit!\r\n", example);
+		}
+	} else if (!strcmp(arg, "TSS")) {
+		if (!(user_cmd & USR_CMD_EXAMPLE_DEINIT)) {
+			printf("snapshot %s\r\n", example);
+#if defined(configENABLE_TRUSTZONE) && (configENABLE_TRUSTZONE == 1)
+			rtw_create_secure_context(2048);
+#endif
+			mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SNAPSHOT, MODE_SNAPSHOT);
+		} else {
+			printf("invalid state, can not do %s snapshot!\r\n", example);
 		}
 	} else {
 		printf("invalid cmd");

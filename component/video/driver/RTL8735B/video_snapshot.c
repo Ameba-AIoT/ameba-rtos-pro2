@@ -255,6 +255,18 @@ int video_snapshot_deinit_with_streaming(void)
 	return 0;
 }
 snapshot_user_config_t snap_config;
+
+int video_snapshot_set_config(snapshot_user_config_t *config)
+{
+	if (!config) {
+		printf("The snapshot config is NULL\r\n");
+		return -1;
+	}
+
+	memcpy(&snap_config, config, sizeof(snap_config));
+	return 0;
+}
+
 static void fSNAP(void *arg)
 {
 	int ret = 0;

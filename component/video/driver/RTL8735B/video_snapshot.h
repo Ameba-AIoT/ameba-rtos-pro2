@@ -23,4 +23,5 @@ int video_snapshot_take_with_streaming(snapshot_user_config_t *config, char *fil
 int snapshot_vfs_init(void);
 int snapshot_write_picture(uint8_t *buf, uint32_t len, char *filename);
 void atcmd_snapshot_init(void);
+int video_snapshot_set_config(snapshot_user_config_t *config);
 #endif
