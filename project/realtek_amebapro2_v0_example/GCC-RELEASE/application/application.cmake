@@ -289,8 +289,100 @@ list(
 list(
 	APPEND app_sources
 	${sdk_root}/component/ethernet_mii/ethernet_mii.c
+)
+# ethernet_usb.c bridges lwip to the *legacy* host_new/cdc_ecm driver's API
+# (usbh_cdc_ecm_senddata/_on/_off/...). That API doesn't exist when
+# usb_stack=new (see libusbd.cmake) - component/example/
+# usbh_composite_cdc_acm_ecm_new provides its own bridge (rltk_mii_send/
+# rltk_mii_recv) against this port's usbh_cdc_ecm_send_data() API instead.
+if(NOT usb_stack STREQUAL "new")
+list(
+	APPEND app_sources
 	${sdk_root}/component/ethernet_mii/ethernet_usb.c
 )
+endif()
+
+# USB usb_stack/${usb_stack_ver} class drivers (device + host) - moved out of
+# libusbd.cmake so libusbd.cmake only builds the core stack (common/hal/
+# device-core/host-core). Unconditionally built, same as they were inside
+# libusbd.cmake's usb_stack "new" branch - no per-EXAMPLE selection.
+if(usb_stack STREQUAL "new")
+list(
+	APPEND app_sources
+
+	#Device class driver
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/cdc_acm/usbd_cdc_acm.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/msc/usbd_msc.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/msc/usbd_scsi.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/hid/usbd_hid.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc/usbd_uvc.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc/usbd_uvc_descriptor.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc/usbd_uvc_event.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/composite/usbd_composite_msc.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/composite/usbd_composite_scsi.c
+	#Host class driver
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/cdc_acm/usbh_cdc_acm.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/cdc_ecm/usbh_cdc_ecm.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/msc/usbh_msc.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/msc/usbh_msc_disk.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/msc/usbh_msc_scsi.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/uvc/usbh_uvc.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/uvc/usbh_uvc_class.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/uvc/usbh_uvc_parse.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/uvc/usbh_uvc_stream.c
+)
+# Optional: switch the MSC examples' storage backend between SD card (default)
+# and RAM disk. One cache var covers both composite and standalone MSC.
+# Disable SD with -DUSBD_MSC_SD_MODE=OFF.
+
+option(USBD_MSC_SD_MODE "Use SD card as MSC storage backend (disable with -DUSBD_MSC_SD_MODE=OFF)" ON)
+if(USBD_MSC_SD_MODE)
+list(
+	APPEND app_flags
+	CONFIG_USBD_COMPOSITE_MSC_SD_MODE=1
+	CONFIG_USBD_MSC_SD_MODE=1
+)
+endif()
+
+# NOTE: Two incompatible usb_ch9.h headers exist in the SDK.
+# Avoid target-wide include path changes that break other USB sources;
+# use -iquote to scope the required header to its own sources.
+set_source_files_properties(
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/cdc_acm/usbd_cdc_acm.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/msc/usbd_msc.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/msc/usbd_scsi.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/hid/usbd_hid.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc/usbd_uvc.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc/usbd_uvc_descriptor.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc/usbd_uvc_event.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/composite/usbd_composite_msc.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/composite/usbd_composite_scsi.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/cdc_acm/usbh_cdc_acm.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/cdc_ecm/usbh_cdc_ecm.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/msc/usbh_msc.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/msc/usbh_msc_disk.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/msc/usbh_msc_scsi.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/uvc/usbh_uvc.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/uvc/usbh_uvc_class.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/uvc/usbh_uvc_parse.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/uvc/usbh_uvc_stream.c
+	PROPERTIES COMPILE_OPTIONS
+	"-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/hal;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/common;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/core;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/cdc_acm;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/msc;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/hid;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/composite;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/core;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/cdc_acm;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/cdc_ecm;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/msc;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/uvc"
+)
+
+list(
+	APPEND app_inc_path
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/cdc_acm
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/msc
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/hid
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/composite
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/cdc_acm
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/cdc_ecm
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/msc
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/uvc
+)
+endif()
 
 #network
 list(
@@ -911,6 +1003,18 @@ else()
 	unset( aeclib_ex )
 endif()
 
+# usb_stack (see config.cmake) selects which USB core lib to link -
+# libusbd.a (legacy device_new/host_new/common_new) or libusbd_${usb_stack_ver}.a
+# (component/usb/usb_stack/${usb_stack_ver}'s core stack; its per-class drivers are plain
+# app_sources above, not part of this lib).
+# BUILD_LIB=1: lib is built from source by libusbd.cmake.
+# BUILD_LIB not set: pre-built lib is taken from GCC-RELEASE/application/output/.
+if(usb_stack STREQUAL "new")
+	set(usbdlib "usbd_${usb_stack_ver}")
+else()
+	set(usbdlib "usbd")
+endif()
+
 list(
 	APPEND libs
 	${wlanlib}
@@ -930,7 +1034,7 @@ list(
 	fdkaac
 	muxer
 	fmp4
-	usbd
+	${usbdlib}
 	qrcode
 	iperf3
 	nn

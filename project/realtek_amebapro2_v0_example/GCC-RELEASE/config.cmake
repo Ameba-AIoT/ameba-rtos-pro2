@@ -1,5 +1,35 @@
 cmake_minimum_required(VERSION 3.6)
 
+
+# USB device/host stack selection:
+#   "legacy" - current component/usb/device_new + host_new (+ common_new) driver, unchanged
+#   "new"    - ported component/usb/usb_stack/${usb_stack_ver} driver
+#              (CDC-ACM/MSC/HID/UVC device, CDC-ACM/CDC-ECM/MSC/UVC host)
+# Only one is ever compiled/linked in (see libusbd.cmake) - their public API
+# names collide (usbd_init, usbh_init, ...), so they cannot coexist in one image.
+# Override with -Dusb_stack=new|legacy on the cmake command line. If not
+# given, an EXAMPLE named usb*_new (they only build against the new stack's
+# class drivers) defaults to "new"; everything else defaults to "legacy" so
+# existing builds are unaffected.
+if(NOT DEFINED usb_stack)
+	if(DEFINED EXAMPLE AND EXAMPLE MATCHES "^usb.*_new$")
+		set(usb_stack "new")
+	else()
+		set(usb_stack "legacy")
+	endif()
+endif()
+
+if(NOT usb_stack STREQUAL "legacy" AND NOT usb_stack STREQUAL "new")
+	message(FATAL_ERROR "Unsupported usb_stack='${usb_stack}'; use 'legacy' or 'new'")
+endif()
+
+# Directory version of component/usb/usb_stack/ currently in use - all new
+# stack paths are built from this instead of a hardcoded version string, so
+# bumping to a new port only means: 1) copy/rename the current version directory
+# to component/usb/usb_stack/vX.Y.Z, 2) update this one variable. usb_stack does
+# not need to change because it selects the stack generation, not its version.
+set(usb_stack_ver "v1.0.0")
+
 if(NOT DEFINED CONFIG_DONE)
 	execute_process(COMMAND uname OUTPUT_VARIABLE uname)
 

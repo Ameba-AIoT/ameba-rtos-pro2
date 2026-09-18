@@ -1,0 +1,1039 @@
+/*
+ * Copyright (c) 2026 Realtek Semiconductor Corp.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Includes ------------------------------------------------------------------*/
+
+#include "usbd_msc.h"
+#include "usbd_scsi.h"
+
+#ifdef CONFIG_USBD_MSC_SD_MODE
+#include "fatfs_sdcard_api.h"
+#if defined(CONFIG_PLATFORM_8735B)
+#include "sdio_combine.h"
+#endif
+#endif
+
+/* Private defines -----------------------------------------------------------*/
+
+/* Private types -------------------------------------------------------------*/
+
+/* Private macros ------------------------------------------------------------*/
+
+/* Private function prototypes -----------------------------------------------*/
+
+static int usbd_msc_set_config(usb_dev_t *dev, u8 config);
+static int usbd_msc_clear_config(usb_dev_t *dev, u8 config);
+static int usbd_msc_setup(usb_dev_t *dev, usb_setup_req_t *req);
+static u16 usbd_msc_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf);
+static int usbd_msc_handle_ep_data_in(usb_dev_t *dev, u8 ep_addr, u8 status);
+static int usbd_msc_handle_ep_data_out(usb_dev_t *dev, u8 ep_addr, u32 len);
+static void usbd_msc_status_changed(usb_dev_t *dev, u8 old_status, u8 status);
+
+/* Private variables ---------------------------------------------------------*/
+
+static const char *const TAG = "MSC";
+
+/* USB Standard Device Descriptor */
+static const u8 usbd_msc_dev_desc[USB_LEN_DEV_DESC] = {
+	USB_LEN_DEV_DESC,                               /* bLength */
+	USB_DESC_TYPE_DEVICE,                           /* bDescriptorType */
+	0x00,                                           /* bcdUSB */
+	0x02,
+	0x00,                                           /* bDeviceClass */
+	0x00,                                           /* bDeviceSubClass */
+	0x00,                                           /* bDeviceProtocol */
+	USB_MAX_EP0_SIZE,                               /* bMaxPacketSize */
+	USB_LOW_BYTE(USBD_MSC_VID),                      /* idVendor */
+	USB_HIGH_BYTE(USBD_MSC_VID),
+	USB_LOW_BYTE(USBD_MSC_PID),                      /* idProduct */
+	USB_HIGH_BYTE(USBD_MSC_PID),
+	0x00,                                           /* bcdDevice */
+	0x02,
+	USBD_IDX_MFC_STR,                               /* iManufacturer */
+	USBD_IDX_PRODUCT_STR,                           /* iProduct */
+	USBD_IDX_SERIAL_STR,                            /* iSerialNumber */
+	0x01                                            /* bNumConfigurations */
+};  /* usbd_msc_dev_desc */
+
+/* USB Standard String Descriptor 0 */
+static const u8 usbd_msc_lang_id_desc[USB_LEN_LANGID_STR_DESC] = {
+	USB_LEN_LANGID_STR_DESC,                        /* bLength */
+	USB_DESC_TYPE_STRING,                           /* bDescriptorType */
+	USB_LOW_BYTE(USBD_MSC_LANGID_STRING),           /* wLANGID */
+	USB_HIGH_BYTE(USBD_MSC_LANGID_STRING),
+};  /* usbd_msc_lang_id_desc */
+
+#ifndef CONFIG_USB_FS
+/* USB Standard Device Qualifier Descriptor */
+static const u8 usbd_msc_device_qualifier_desc[USB_LEN_DEV_QUALIFIER_DESC] = {
+	USB_LEN_DEV_QUALIFIER_DESC,                     /* bLength */
+	USB_DESC_TYPE_DEVICE_QUALIFIER,                 /* bDescriptorType */
+	0x00,                                           /* bcdUSB */
+	0x02,
+	0x00,                                           /* bDeviceClass */
+	0x00,                                           /* bDeviceSubClass */
+	0x00,                                           /* bDeviceProtocol */
+	0x40,                                           /* bMaxPacketSize */
+	0x01,                                           /* bNumConfigurations */
+	0x00,                                           /* Reserved */
+};  /* usbd_msc_device_qualifier_desc */
+
+/* USB MSC Device High Speed Configuration Descriptor */
+static const u8 usbd_msc_hs_config_desc[] = {
+	/* USB Standard Configuration Descriptor */
+	USB_LEN_CFG_DESC,                               /* bLength */
+	USB_DESC_TYPE_CONFIGURATION,                    /* bDescriptorType */
+	0x00,                                           /* wTotalLength, runtime assigned */
+	0x00,
+	0x01,                                           /* bNumInterfaces */
+	0x01,                                           /* bConfigurationValue */
+	0x00,                                           /* iConfiguration */
+#if USBD_MSC_SELF_POWERED
+	0xC0,                                           /* bmAttributes: self powered */
+#else
+	0x80,                                           /* bmAttributes: bus powered */
+#endif
+	0x32,                                           /* bMaxPower */
+
+	/********************  Mass Storage interface ********************/
+	USB_LEN_IF_DESC,			/* bLength: Interface Descriptor size */
+	USB_DESC_TYPE_INTERFACE,	/* bDescriptorType: */
+	0x00,						/* bInterfaceNumber: Number of Interface */
+	0x00,						/* bAlternateSetting: Alternate setting */
+	0x02,						/* bNumEndpoints*/
+	0x08,						/* bInterfaceClass: MSC Class */
+	0x06,						/* bInterfaceSubClass : SCSI transparent*/
+	0x50,						/* nInterfaceProtocol */
+	0x00,						/* iInterface: */
+
+	/* BULK OUT Endpoint Descriptor */
+	USB_LEN_EP_DESC,			/* bLength */
+	USB_DESC_TYPE_ENDPOINT,	/* bDescriptorType */
+	USBD_MSC_BULK_OUT_EP,		/* bEndpointAddress */
+	0x02,						/* bmAttributes: BULK */
+	USB_LOW_BYTE(USBD_MSC_HS_MAX_PACKET_SIZE),  /* wMaxPacketSize: */
+	USB_HIGH_BYTE(USBD_MSC_HS_MAX_PACKET_SIZE),
+	0x00,						/* bInterval */
+
+	/* BULK IN Endpoint Descriptor */
+	USB_LEN_EP_DESC,			/* bLength */
+	USB_DESC_TYPE_ENDPOINT,	/* bDescriptorType */
+	USBD_MSC_BULK_IN_EP,		/* bEndpointAddress */
+	0x02,						/* bmAttributes: BULK */
+	USB_LOW_BYTE(USBD_MSC_HS_MAX_PACKET_SIZE),  /* wMaxPacketSize: */
+	USB_HIGH_BYTE(USBD_MSC_HS_MAX_PACKET_SIZE),
+	0x00                                            /* bInterval */
+};  /* usbd_msc_hs_config_desc */
+#endif
+
+/* USB MSC Device Full Speed Configuration Descriptor */
+static const u8 usbd_msc_fs_config_desc[] = {
+	/* USB Standard Configuration Descriptor */
+	USB_LEN_CFG_DESC,                               /* bLength */
+	USB_DESC_TYPE_CONFIGURATION,                    /* bDescriptorType */
+	0x00,                                           /* wTotalLength, runtime assigned */
+	0x00,
+	0x01,                                           /* bNumInterfaces */
+	0x01,                                           /* bConfigurationValue */
+	0x00,                                           /* iConfiguration */
+#if USBD_MSC_SELF_POWERED
+	0xC0,                                           /* bmAttributes: self powered */
+#else
+	0x80,                                           /* bmAttributes: bus powered */
+#endif
+	0x32,                                           /* bMaxPower */
+
+	/********************  Mass Storage interface ********************/
+	USB_LEN_IF_DESC,			/* bLength: Interface Descriptor size */
+	USB_DESC_TYPE_INTERFACE,	/* bDescriptorType: */
+	0x00,						/* bInterfaceNumber: Number of Interface */
+	0x00,						/* bAlternateSetting: Alternate setting */
+	0x02,						/* bNumEndpoints*/
+	0x08,						/* bInterfaceClass: MSC Class */
+	0x06,						/* bInterfaceSubClass : SCSI transparent*/
+	0x50,						/* nInterfaceProtocol */
+	0x00,						/* iInterface: */
+
+	/* BULK OUT Endpoint Descriptor */
+	USB_LEN_EP_DESC,			/* bLength */
+	USB_DESC_TYPE_ENDPOINT,	/* bDescriptorType */
+	USBD_MSC_BULK_OUT_EP,		/* bEndpointAddress */
+	0x02,						/* bmAttributes: BULK */
+	USB_LOW_BYTE(USBD_MSC_FS_MAX_PACKET_SIZE),  /* wMaxPacketSize: */
+	USB_HIGH_BYTE(USBD_MSC_FS_MAX_PACKET_SIZE),
+	0x00,						/* bInterval */
+
+	/* BULK IN Endpoint Descriptor */
+	USB_LEN_EP_DESC,			/* bLength */
+	USB_DESC_TYPE_ENDPOINT,	/* bDescriptorType */
+	USBD_MSC_BULK_IN_EP,		/* bEndpointAddress */
+	0x02,						/* bmAttributes: BULK */
+	USB_LOW_BYTE(USBD_MSC_FS_MAX_PACKET_SIZE),  /* wMaxPacketSize: */
+	USB_HIGH_BYTE(USBD_MSC_FS_MAX_PACKET_SIZE),
+	0x00                                            /* bInterval */
+};  /* usbd_msc_fs_config_desc */
+
+/* MSC Class Driver */
+static const usbd_class_driver_t usbd_msc_driver = {
+	.get_descriptor = usbd_msc_get_descriptor,
+	.set_config = usbd_msc_set_config,
+	.clear_config = usbd_msc_clear_config,
+	.setup = usbd_msc_setup,
+	.ep_data_in = usbd_msc_handle_ep_data_in,
+	.ep_data_out = usbd_msc_handle_ep_data_out,
+	.status_changed = usbd_msc_status_changed,
+};
+
+// physical disk access methods
+static usbd_msc_dev_t usbd_msc_dev;
+
+/* Add lock to avoid msc tx_thread preempts msc rx_thread when read the disk */
+static usb_os_lock_t usbd_msc_sd_lock = NULL;
+
+/* Private functions ---------------------------------------------------------*/
+
+#ifdef CONFIG_USBD_MSC_SD_MODE
+
+static int SD_init(void)
+{
+#if defined(CONFIG_PLATFORM_8735B)
+	sd_gpio_init();
+	sdio_driver_init();
+#endif
+	return usb_sd_init();
+}
+
+static int SD_deinit(void)
+{
+	return usb_sd_deinit();
+}
+
+#else /* !CONFIG_USBD_MSC_SD_MODE */
+
+static u8 *usbd_msc_ram_disk_buf;
+
+static int RAM_init(void)
+{
+	int result = HAL_OK;
+
+	usbd_msc_ram_disk_buf = (u8 *)usb_os_malloc(USBD_MSC_RAM_DISK_SIZE);
+	if (usbd_msc_ram_disk_buf == NULL) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Alloc RAM disk buf fail");
+		result = HAL_ERR_MEM;
+	}
+
+	return result;
+}
+
+static int RAM_deinit(void)
+{
+	if (usbd_msc_ram_disk_buf != NULL) {
+		usb_os_mfree((void *)usbd_msc_ram_disk_buf);
+		usbd_msc_ram_disk_buf = NULL;
+	}
+
+	return HAL_OK;
+}
+
+static int RAM_GetCapacity(u32 *sector_count)
+{
+	*sector_count = USBD_MSC_RAM_DISK_SECTORS;
+	return HAL_OK;
+}
+
+static int RAM_ReadBlocks(u32 sector, u8 *data, u32 count)
+{
+	int result = HAL_ERR_PARA;
+	if (sector + count <= USBD_MSC_RAM_DISK_SECTORS) {
+		usb_os_memcpy((void *)data, (void *)(usbd_msc_ram_disk_buf + sector * USBD_MSC_BLK_SIZE), count * USBD_MSC_BLK_SIZE);
+		result = HAL_OK;
+	}
+	return result;
+}
+
+static int RAM_WriteBlocks(u32 sector, const u8 *data, u32 count)
+{
+	int result = HAL_ERR_PARA;
+	if (sector + count <= USBD_MSC_RAM_DISK_SECTORS) {
+		usb_os_memcpy((void *)(usbd_msc_ram_disk_buf + sector * USBD_MSC_BLK_SIZE), (void *)data, count * USBD_MSC_BLK_SIZE);
+		result = HAL_OK;
+	}
+	return result;
+}
+
+#endif /* CONFIG_USBD_MSC_SD_MODE */
+
+/**
+* @brief  Abort the current transfer
+* @param  dev: device instance
+* @retval Status
+*/
+static void usbd_msc_abort(usb_dev_t *dev)
+{
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+	usb_msc_bot_cbw_t *cbw = cdev->cbw;
+
+	/* BOT §6.6.1: stall OUT on any write-phase mismatch OR on invalid CBW
+	 * (RECOVERY); for invalid CBW do not re-arm OUT — host must issue
+	 * Bulk-Only Mass Storage Reset before communication can resume. */
+	if (((cbw->field.bmCBWFlags == 0U) &&
+		 (cbw->field.dCBWDataTransferLength != 0U) &&
+		 (cdev->bot_status == USBD_MSC_STATUS_NORMAL)) ||
+		(cdev->bot_status == USBD_MSC_STATUS_RECOVERY)) {
+		usbd_ep_set_stall(dev, &cdev->ep_bulk_out);
+	}
+
+	usbd_ep_set_stall(dev, &cdev->ep_bulk_in);
+}
+
+/**
+  * @brief  Set MSC class configuration
+  * @note   This function is called within an interrupt service routine (ISR) context;
+  *         time-consuming operations (e.g., `malloc`, `usb_os_sema_take`) are not permitted.
+  * @param  dev: USB device instance
+  * @param  config: USB configuration index
+  * @retval Status
+  */
+static int usbd_msc_set_config(usb_dev_t *dev, u8 config)
+{
+	int ret = HAL_OK;
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+	usbd_ep_t *ep_bulk_in = &cdev->ep_bulk_in;
+	usbd_ep_t *ep_bulk_out = &cdev->ep_bulk_out;
+	usb_ep_info_t *info;
+	UNUSED(config);
+
+	cdev->dev = dev;
+
+	/* Init BULK IN EP */
+	info = &ep_bulk_in->info;
+	info->mps = (dev->dev_speed == USB_SPEED_HIGH) ? USBD_MSC_HS_MAX_PACKET_SIZE : USBD_MSC_FS_MAX_PACKET_SIZE;
+	usbd_ep_init(dev, ep_bulk_in);
+
+	/* Init BULK OUT EP */
+	info = &ep_bulk_out->info;
+	info->mps = (dev->dev_speed == USB_SPEED_HIGH) ? USBD_MSC_HS_MAX_PACKET_SIZE : USBD_MSC_FS_MAX_PACKET_SIZE;
+	usbd_ep_init(dev, ep_bulk_out);
+
+	cdev->bot_state = USBD_MSC_IDLE;
+	cdev->bot_status = USBD_MSC_STATUS_NORMAL;
+	cdev->scsi_sense_tail = 0U;
+	cdev->scsi_sense_head = 0U;
+	cdev->is_open = 1;
+	cdev->ro = 0;
+	cdev->phase_error = 0;
+	cdev->bot_reset_pending = 0U;
+
+	/* Prepare to receive next BULK OUT packet */
+	usbd_msc_bulk_receive(dev, (u8 *)cdev->cbw, USB_MSC_CBW_LEN);
+
+	return ret;
+}
+
+/**
+  * @brief  Clear MSC configuration
+  * @note   This function is called within an interrupt service routine (ISR) context;
+  *         time-consuming operations (e.g., `malloc`, `usb_os_sema_take`) are not permitted.
+  * @param  dev: USB device instance
+  * @param  config: USB configuration index
+  * @retval Status
+  */
+static int usbd_msc_clear_config(usb_dev_t *dev, u8 config)
+{
+	int ret = HAL_OK;
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+	usbd_ep_t *ep_bulk_in = &cdev->ep_bulk_in;
+	usbd_ep_t *ep_bulk_out = &cdev->ep_bulk_out;
+
+	UNUSED(config);
+
+	/* DeInit BULK IN EP */
+	usbd_ep_deinit(dev, ep_bulk_in);
+
+	/* DeInit BULK OUT EP */
+	usbd_ep_deinit(dev, ep_bulk_out);
+
+	cdev->bot_state  = USBD_MSC_IDLE;
+	cdev->is_open = 0;
+	cdev->phase_error = 0;
+
+	return ret;
+}
+
+/**
+  * @brief  Handle MSC specific CTRL requests
+  * @note   This function is called within an interrupt service routine (ISR) context;
+  *         time-consuming operations (e.g., `malloc`, `usb_os_sema_take`) are not permitted.
+  * @param  dev: USB device instance
+  * @param  req: USB CTRL requests
+  * @retval Status
+  */
+static int usbd_msc_setup(usb_dev_t *dev, usb_setup_req_t *req)
+{
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+	usbd_ep_t *ep0_in = &dev->ep0_in;
+	int ret = HAL_OK;
+
+	//RTK_LOGS(TAG, RTK_LOG_DEBUG, "SETUP: bmRequestType=0x%02x bRequest=0x%02x wLength=0x%04x wValue=%x\n",
+	//		 req->bmRequestType, req->bRequest, req->wLength, req->wValue);
+
+	switch (req->bmRequestType & USB_REQ_TYPE_MASK) {
+	/* Standard request */
+	case USB_REQ_TYPE_STANDARD:
+		switch (req->bRequest) {
+		case USB_REQ_GET_STATUS:
+			if (dev->dev_state == USBD_STATE_CONFIGURED) {
+				ep0_in->xfer_buf[0] = 0U;
+				ep0_in->xfer_buf[1] = 0U;
+				ep0_in->xfer_len = 2U;
+				usbd_ep_transmit(dev, ep0_in);
+			} else {
+				ret = HAL_ERR_PARA;
+			}
+			break;
+
+		case USB_REQ_GET_INTERFACE:
+			if (dev->dev_state == USBD_STATE_CONFIGURED) {
+				ep0_in->xfer_buf[0] = 0U;
+				ep0_in->xfer_len = 1U;
+				usbd_ep_transmit(dev, ep0_in);
+			} else {
+				ret = HAL_ERR_PARA;
+			}
+			break;
+
+		case USB_REQ_SET_INTERFACE:
+			if (dev->dev_state != USBD_STATE_CONFIGURED) {
+				ret = HAL_ERR_PARA;
+			}
+			break;
+
+
+		default:
+			ret = HAL_ERR_PARA;
+			break;
+		}
+		break;
+	/* Class request */
+	case USB_REQ_TYPE_CLASS:
+		switch (req->bRequest) {
+		case USB_MSC_REQUEST_GET_MAX_LUN:
+			if ((req->wValue  == 0U) && (req->wIndex == 0U) && (req->wLength == 1U) &&
+				((req->bmRequestType & USB_REQ_DIR_MASK) == USB_D2H)) {
+				ep0_in->xfer_buf[0] = 0U;
+				ep0_in->xfer_len = 1U;
+				usbd_ep_transmit(dev, ep0_in);
+			} else {
+				ret = HAL_ERR_PARA;
+			}
+			break;
+
+		case USB_MSC_REQUEST_BOT_RESET :
+			if ((req->wValue  == 0U) && (req->wIndex == 0U) && (req->wLength == 0U) &&
+				((req->bmRequestType & USB_REQ_DIR_MASK) != USB_D2H)) {
+				cdev->bot_state  = USBD_MSC_IDLE;
+				cdev->bot_status = USBD_MSC_STATUS_RECOVERY;
+				cdev->bot_reset_pending = 1U;
+				/* Prepare to receive BOT cmd */
+				usbd_msc_bulk_receive(dev, (u8 *)cdev->cbw, USB_MSC_CBW_LEN);
+			} else {
+				ret = HAL_ERR_PARA;
+			}
+			break;
+
+		default:
+			ret = HAL_ERR_PARA;
+			break;
+		}
+		break;
+
+	default:
+		ret = HAL_ERR_PARA;
+		break;
+	}
+
+	return ret;
+}
+
+/**
+  * @brief  Data sent on non-control IN endpoint
+  * @note   This function is called within an interrupt service routine (ISR) context;
+  *         time-consuming operations (e.g., `malloc`, `usb_os_sema_take`) are not permitted.
+  * @param  dev: USB device instance
+  * @param  ep_addr: endpoint address
+  * @retval Status
+  */
+static int usbd_msc_handle_ep_data_in(usb_dev_t *dev, u8 ep_addr, u8 status)
+{
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+
+	UNUSED(dev);
+	UNUSED(ep_addr);
+
+	cdev->tx_status = status;
+	usb_os_sema_give(cdev->tx_sema);
+
+	return HAL_OK;
+}
+
+/**
+  * @brief  RX process
+  * @retval Status
+  */
+static void usbd_msc_tx_process(void)
+{
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+	usb_msc_bot_cbw_t *cbw = cdev->cbw;
+	usb_dev_t *dev = cdev->dev;
+
+	usb_os_lock(usbd_msc_sd_lock);
+
+	if (cdev->tx_status == HAL_OK) {
+		switch (cdev->bot_state) {
+		case USBD_MSC_DATA_IN:
+			if (usbd_scsi_process_cmd(cdev, cbw->field.CBWCB) != HAL_OK) {
+				usbd_msc_send_csw(dev, BOT_CSW_CMD_FAILED);
+			}
+			break;
+
+		case USBD_MSC_SEND_DATA:
+		case USBD_MSC_LAST_DATA_IN:
+			if (cdev->phase_error == 1) {
+				usbd_msc_send_csw(dev, BOT_CSW_PHASE_ERROR);
+				cdev->phase_error = 0;
+			} else {
+				usbd_msc_send_csw(dev, BOT_CSW_CMD_PASSED);
+			}
+			break;
+
+		default:
+			break;
+		}
+	} else {
+		USB_DIAG(USB_LAYER_CLASS, USB_EVT_ERR_XFER, USBD_MSC_BULK_IN_EP);
+	}
+
+	usb_os_unlock(usbd_msc_sd_lock);
+}
+
+/**
+  * @brief  Data received on non-control Out endpoint
+  * @note   This function is called within an interrupt service routine (ISR) context;
+  *         time-consuming operations (e.g., `malloc`, `usb_os_sema_take`) are not permitted.
+  * @param  dev: USB device instance
+  * @param  ep_addr: endpoint address
+  * @retval Status
+  */
+static int usbd_msc_handle_ep_data_out(usb_dev_t *dev, u8 ep_addr, u32 len)
+{
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+
+	UNUSED(dev);
+	UNUSED(ep_addr);
+
+	cdev->rx_data_length = len;
+	usb_os_sema_give(cdev->rx_sema);
+
+	return HAL_OK;
+}
+
+/**
+  * @brief  RX process
+  * @retval void
+  */
+static void usbd_msc_rx_process(void)
+{
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+	usb_msc_bot_cbw_t *cbw = cdev->cbw;
+	usb_msc_bot_csw_t *csw = cdev->csw;
+	usb_dev_t *dev = cdev->dev;
+	u8 *cbwcb = cbw->field.CBWCB;
+	u32 cbw_data_len = cbw->field.dCBWDataTransferLength;
+	u32 length;
+
+	usb_os_lock(usbd_msc_sd_lock);
+
+	switch (cdev->bot_state) {
+	case USBD_MSC_IDLE:
+		/* Decode the CBW command */
+		csw->field.dCSWTag = cbw->field.dCBWTag;
+		csw->field.dCSWDataResidue = cbw_data_len;
+
+		if ((cdev->rx_data_length != USB_MSC_CBW_LEN) ||
+			(cbw->field.dCBWSignature != USB_MSC_CBW_SIGN) ||
+			((cbw->field.bmCBWFlags & 0x7FU) != 0U) ||  /* §6.2.2: bmCBWFlags reserved bits 6:0 must be 0 */
+			(cbw->field.bCBWLUN != 0U) ||  /* Only LUN 0 exists (GET_MAX_LUN reports 0) */
+			(cbw->field.bCBWCBLength < 1U) || (cbw->field.bCBWCBLength > 16U)) {
+			usbd_scsi_sense_code(cdev, SCSI_SENSE_KEY_ILLEGAL_REQUEST, SCSI_ASC_INVALID_COMMAND_OPERATION_CODE);
+			/* BOT §6.6.1: invalid CBW — use RECOVERY so abort() stalls
+			 * both endpoints and does not re-arm OUT. */
+			cdev->bot_status = USBD_MSC_STATUS_RECOVERY;
+			usbd_msc_abort(dev);
+		} else {
+			cdev->bot_status = USBD_MSC_STATUS_NORMAL;
+			if (usbd_scsi_process_cmd(cdev, cbwcb) != HAL_OK) {
+				if (cdev->phase_error == 1) {
+					usbd_msc_send_csw(dev, BOT_CSW_PHASE_ERROR);
+					cdev->phase_error = 0;
+				} else if (cbw_data_len == 0U) {
+					/* Case 1: Hn = Dn — no data stage, report failure directly */
+					usbd_msc_send_csw(dev, BOT_CSW_CMD_FAILED);
+				} else if ((cbw->field.bmCBWFlags & 0x80U) == 0U) {
+					/* Case 9: Ho > Dn — a failed OUT command (e.g. write-protected
+					 * or no-medium WRITE) consumes no data. STALL Bulk-Out to abort
+					 * the host data stage; the CSW still flows on the un-stalled
+					 * Bulk-In pipe. */
+					usbd_ep_set_stall(dev, &cdev->ep_bulk_out);
+					usbd_msc_send_csw(dev, BOT_CSW_CMD_FAILED);
+				} else {
+					/* Case 4: Hi > Dn — a failed IN command (e.g. no-medium READ)
+					 * returns no data. Bulk-In carries both the (absent) data and
+					 * the CSW, so STALL it; the CSW can only be sent once the host
+					 * clears the halt (needs core Clear-Feature support, tracked
+					 * separately). */
+					usbd_msc_abort(dev);
+				}
+			}
+			/*Burst xfer handled internally*/
+			else if ((cdev->bot_state != USBD_MSC_DATA_IN) &&
+					 (cdev->bot_state != USBD_MSC_DATA_OUT) &&
+					 (cdev->bot_state != USBD_MSC_LAST_DATA_IN)) {
+				if (cdev->data_length > 0U) {
+					length = MIN(cbw_data_len, cdev->data_length);
+					/* Residue reflects bytes actually sent (clamped), not the SCSI payload size */
+					csw->field.dCSWDataResidue -= length;
+					csw->field.bCSWStatus = BOT_CSW_CMD_PASSED;
+					cdev->bot_state = USBD_MSC_SEND_DATA;
+
+					usbd_msc_bulk_transmit(dev, cdev->data, length);
+				} else if (cdev->data_length == 0U) {
+					if ((cbw_data_len != 0U) && ((cbw->field.bmCBWFlags & 0x80U) == 0U)) {
+						/* Case 9: Ho > Dn — command produced no data but the host
+						 * declared an OUT transfer (e.g. a stubbed MODE SELECT); STALL
+						 * Bulk-Out so its parameter bytes are not mis-read as the next
+						 * CBW. The CSW flows on the un-stalled Bulk-In pipe below. */
+						usbd_ep_set_stall(dev, &cdev->ep_bulk_out);
+					}
+					usbd_msc_send_csw(dev, BOT_CSW_CMD_PASSED);
+				} else {
+					usbd_msc_abort(dev);
+				}
+			}
+		}
+		break;
+
+	case USBD_MSC_DATA_OUT:
+		if (usbd_scsi_process_cmd(cdev, cbwcb) != HAL_OK) {
+			usbd_msc_send_csw(dev, BOT_CSW_CMD_FAILED);
+		}
+
+		break;
+
+	default:
+		break;
+	}
+
+	usb_os_unlock(usbd_msc_sd_lock);
+}
+
+/**
+  * @brief  Get descriptor callback
+  * @note   This function is called within an interrupt service routine (ISR) context;
+  *         time-consuming operations (e.g., `malloc`, `usb_os_sema_take`) are not permitted.
+  * @param  dev: USB device instance
+  * @param  req: Setup request handle
+  * @param  buf: Poniter to Buffer
+  * @retval Descriptor length
+  */
+static u16 usbd_msc_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf)
+{
+	usb_speed_type_t speed = dev->dev_speed;
+	u8 *desc = NULL;
+	u16 len = 0;
+
+	dev->self_powered = USBD_MSC_SELF_POWERED;
+
+	switch (USB_HIGH_BYTE(req->wValue)) {
+
+	case USB_DESC_TYPE_DEVICE:
+		len = sizeof(usbd_msc_dev_desc);
+		usb_os_memcpy((void *)buf, (void *)usbd_msc_dev_desc, len);
+		break;
+
+	case USB_DESC_TYPE_CONFIGURATION:
+#ifndef CONFIG_USB_FS
+		if (speed == USB_SPEED_HIGH) {
+			desc = (u8 *)usbd_msc_hs_config_desc;
+			len = sizeof(usbd_msc_hs_config_desc);
+		} else
+#endif
+		{
+			desc = (u8 *)usbd_msc_fs_config_desc;
+			len = sizeof(usbd_msc_fs_config_desc);
+		}
+		usb_os_memcpy((void *)buf, (void *)desc, len);
+		buf[USB_CFG_DESC_OFFSET_TOTAL_LEN] = USB_LOW_BYTE(len);
+		buf[USB_CFG_DESC_OFFSET_TOTAL_LEN + 1] = USB_HIGH_BYTE(len);
+		break;
+
+#ifndef CONFIG_USB_FS
+	case USB_DESC_TYPE_DEVICE_QUALIFIER:
+		len = sizeof(usbd_msc_device_qualifier_desc);
+		usb_os_memcpy((void *)buf, (void *)usbd_msc_device_qualifier_desc, len);
+		break;
+
+	case USB_DESC_TYPE_OTHER_SPEED_CONFIGURATION:
+		if (speed == USB_SPEED_HIGH) {
+			desc = (u8 *)usbd_msc_fs_config_desc;
+			len = sizeof(usbd_msc_fs_config_desc);
+		} else {
+			desc = (u8 *)usbd_msc_hs_config_desc;
+			len = sizeof(usbd_msc_hs_config_desc);
+		}
+		usb_os_memcpy((void *)buf, (void *)desc, len);
+		buf[USB_CFG_DESC_OFFSET_TOTAL_LEN] = USB_LOW_BYTE(len);
+		buf[USB_CFG_DESC_OFFSET_TOTAL_LEN + 1] = USB_HIGH_BYTE(len);
+		buf[USB_CFG_DESC_OFFSET_TYPE] = USB_DESC_TYPE_OTHER_SPEED_CONFIGURATION;
+		break;
+#endif
+
+	case USB_DESC_TYPE_STRING:
+		switch (USB_LOW_BYTE(req->wValue)) {
+		case USBD_IDX_LANGID_STR:
+			len = sizeof(usbd_msc_lang_id_desc);
+			usb_os_memcpy((void *)buf, (void *)usbd_msc_lang_id_desc, len);
+			break;
+		case USBD_IDX_MFC_STR:
+			len = usbd_get_str_desc(USBD_MSC_MFG_STRING, buf);
+			break;
+		case USBD_IDX_PRODUCT_STR:
+			if (speed == USB_SPEED_HIGH) {
+				len = usbd_get_str_desc(USBD_MSC_PROD_HS_STRING, buf);
+			} else {
+				len = usbd_get_str_desc(USBD_MSC_PROD_FS_STRING, buf);
+			}
+			break;
+		case USBD_IDX_SERIAL_STR:
+			len = usbd_get_str_desc(USBD_MSC_SN_STRING, buf);
+			break;
+		case USBD_IDX_MS_OS_STR:
+			/*Not support*/
+			break;
+		/* Add customer string here */
+		default:
+			USB_DIAG(USB_LAYER_CLASS, USB_EVT_ERR_GET_DESC, 0);
+			break;
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	return len;
+}
+
+/**
+  * @brief  USB attach status change
+  * @note   This function is called within an interrupt service routine (ISR) context;
+  *         time-consuming operations (e.g., `malloc`, `usb_os_sema_take`) are not permitted.
+  * @param  dev: USB device instance
+  * @param  old_status: USB old attach status
+  * @param  status: USB attach status
+  * @retval void
+  */
+static void usbd_msc_status_changed(usb_dev_t *dev, u8 old_status, u8 status)
+{
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+
+	UNUSED(dev);
+
+	if (cdev->cb->status_changed) {
+		cdev->cb->status_changed(old_status, status);
+	}
+}
+
+static void usbd_msc_rx_thread(void *param)
+{
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+
+	UNUSED(param);
+
+	for (;;) {
+		if (usb_os_sema_take(cdev->rx_sema, USB_OS_SEMA_TIMEOUT) == HAL_OK) {
+			usbd_msc_rx_process();
+		}
+	}
+}
+
+static void usbd_msc_tx_thread(void *param)
+{
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+
+	UNUSED(param);
+
+	for (;;) {
+		if (usb_os_sema_take(cdev->tx_sema, USB_OS_SEMA_TIMEOUT) == HAL_OK) {
+			usbd_msc_tx_process();
+		}
+	}
+}
+
+/* Exported functions --------------------------------------------------------*/
+
+int usbd_msc_disk_init(void)
+{
+#ifdef CONFIG_USBD_MSC_SD_MODE
+	return SD_init();
+#else
+	return RAM_init();
+#endif
+}
+
+int usbd_msc_disk_deinit(void)
+{
+#ifdef CONFIG_USBD_MSC_SD_MODE
+	return SD_deinit();
+#else
+	return RAM_deinit();
+#endif
+}
+
+/**
+  * @brief  Initialize MSC device
+  * @retval Status
+  */
+int usbd_msc_init(const usbd_msc_cb_t *cb)
+{
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+	usbd_msc_disk_ops_t *ops = &cdev->disk_ops;
+	usbd_ep_t *ep_bulk_in = &cdev->ep_bulk_in;
+	usbd_ep_t *ep_bulk_out = &cdev->ep_bulk_out;
+	usb_ep_info_t *info;
+	int ret = HAL_OK;
+
+	if (cb == NULL) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Invalid user CB\n");
+		return HAL_ERR_PARA;
+	}
+
+	RTK_LOGS(TAG, RTK_LOG_INFO, "Init\n");
+
+	cdev->cb = cb;
+
+#ifdef CONFIG_USBD_MSC_SD_MODE
+	ops->disk_getcapacity = usb_sd_getcapacity;
+	ops->disk_read = usb_sd_readblocks;
+	ops->disk_write = usb_sd_writeblocks;
+#else
+	ops->disk_getcapacity = RAM_GetCapacity;
+	ops->disk_read = RAM_ReadBlocks;
+	ops->disk_write = RAM_WriteBlocks;
+#endif
+
+	ret = usb_os_lock_create(&usbd_msc_sd_lock);
+	if (ret != HAL_OK) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Create lock fail\n");
+		return ret;
+	}
+
+	cdev->data = (u8 *)usb_os_malloc(USBD_MSC_BUFLEN);
+	if (cdev->data == NULL) {
+		ret = HAL_ERR_MEM;
+		goto data_buf_fail;
+	}
+
+	cdev->cbw = (usb_msc_bot_cbw_t *)usb_os_malloc(USB_MSC_CBW_LEN);
+	if (cdev->cbw == NULL) {
+		ret = HAL_ERR_MEM;
+		goto cbw_fail;
+	}
+
+	cdev->csw = (usb_msc_bot_csw_t *)usb_os_malloc(USB_MSC_CSW_LEN);
+	if (cdev->csw == NULL) {
+		ret = HAL_ERR_MEM;
+		goto csw_fail;
+	}
+
+	ret = usb_os_sema_create(&cdev->rx_sema);
+	if (ret != HAL_OK) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Create RX sema fail\n");
+		goto create_rx_sema_fail;
+	}
+
+	ret = usb_os_sema_create(&cdev->tx_sema);
+	if (ret != HAL_OK) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Create TX sema fail\n");
+		goto create_tx_sema_fail;
+	}
+
+	ret = rtos_task_create(&cdev->rx_task, "usbd_msc_rx_thread", usbd_msc_rx_thread, NULL, USBD_MSC_TRX_THREAD_STACK_SIZE, USBD_MSC_RX_THREAD_PRIORITY);
+	if (ret != RTK_SUCCESS) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Create RX thread fail\n");
+		goto create_rx_thread_fail;
+	}
+
+	ret = rtos_task_create(&cdev->tx_task, "usbd_msc_tx_thread", usbd_msc_tx_thread, NULL, USBD_MSC_TRX_THREAD_STACK_SIZE, USBD_MSC_TX_THREAD_PRIORITY);
+	if (ret != RTK_SUCCESS) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Create TX thread fail\n");
+		goto create_tx_thread_fail;
+	}
+
+	info = &ep_bulk_in->info;
+	info->addr = USBD_MSC_BULK_IN_EP;
+	info->type = USB_CH_EP_TYPE_BULK;
+	ep_bulk_in->dis_zlp = 1;
+
+	info = &ep_bulk_out->info;
+	info->addr = USBD_MSC_BULK_OUT_EP;
+	info->type = USB_CH_EP_TYPE_BULK;
+
+	usbd_register_class(&usbd_msc_driver);
+
+	return HAL_OK;
+
+create_tx_thread_fail:
+	rtos_task_delete(cdev->rx_task);
+
+create_rx_thread_fail:
+	usb_os_sema_delete(cdev->tx_sema);
+
+create_tx_sema_fail:
+	usb_os_sema_delete(cdev->rx_sema);
+
+create_rx_sema_fail:
+	usb_os_mfree(cdev->csw);
+	cdev->csw = NULL;
+
+csw_fail:
+	usb_os_mfree(cdev->cbw);
+	cdev->cbw = NULL;
+
+cbw_fail:
+	usb_os_mfree(cdev->data);
+	cdev->data = NULL;
+
+data_buf_fail:
+	return ret;
+}
+
+/**
+  * @brief  De-Initialize MSC device
+  * @retval Status
+  */
+void usbd_msc_deinit(void)
+{
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+
+	RTK_LOGS(TAG, RTK_LOG_INFO, "Deinit\n");
+
+	rtos_task_delete(cdev->tx_task);
+	rtos_task_delete(cdev->rx_task);
+
+	usb_os_sema_delete(cdev->tx_sema);
+	usb_os_sema_delete(cdev->rx_sema);
+
+	usbd_unregister_class();
+
+	if (cdev->csw != NULL) {
+		usb_os_mfree(cdev->csw);
+		cdev->csw = NULL;
+	}
+
+	if (cdev->cbw != NULL) {
+		usb_os_mfree(cdev->cbw);
+		cdev->cbw = NULL;
+	}
+
+	if (cdev->data != NULL) {
+		usb_os_mfree(cdev->data);
+		cdev->data = NULL;
+	}
+
+	if (usbd_msc_sd_lock != NULL) {
+		usb_os_lock_delete(usbd_msc_sd_lock);
+		usbd_msc_sd_lock = NULL;
+	}
+}
+
+/**
+* @brief  BULK transmit
+* @param  dev: device instance
+* @param  buf: data buffer
+* @param  len: data length
+* @retval status
+*/
+int usbd_msc_bulk_transmit(usb_dev_t *dev, u8 *buf, u32 len)
+{
+	int ret = HAL_ERR_HW;
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+	usbd_ep_t *ep_bulk_in = &cdev->ep_bulk_in;
+
+	if (dev->is_ready) {
+		ep_bulk_in->xfer_buf = buf;
+		ep_bulk_in->xfer_len = len;
+		ret = usbd_ep_transmit(dev, ep_bulk_in);
+	}
+
+	return ret;
+}
+
+/**
+* @brief  BULK receive
+* @param  dev: device instance
+* @param  buf: data buffer
+* @param  len: data length
+* @retval status
+*/
+int usbd_msc_bulk_receive(usb_dev_t *dev, u8 *buf, u32 len)
+{
+	int ret = HAL_ERR_HW;
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+	usbd_ep_t *ep_bulk_out = &cdev->ep_bulk_out;
+
+	if (dev->is_ready) {
+		ep_bulk_out->xfer_buf = buf;
+		ep_bulk_out->xfer_len = len;
+		ret = usbd_ep_receive(dev, ep_bulk_out);
+	}
+
+	return ret;
+}
+
+/**
+* @brief  Send the Command Status Wrapper
+* @param  dev: device instance
+* @param  status: CSW status
+* @retval None
+*/
+void usbd_msc_send_csw(usb_dev_t *dev, u8 status)
+{
+	usbd_msc_dev_t *cdev = &usbd_msc_dev;
+	usb_msc_bot_cbw_t *cbw = cdev->cbw;
+	usb_msc_bot_csw_t *csw = cdev->csw;
+#if USBD_MSC_FIX_CV_TEST_ISSUE
+	usbd_ep_t *ep_bulk_out = &cdev->ep_bulk_out;
+#endif
+
+	csw->field.dCSWSignature = USB_MSC_CSW_SIGN;
+	csw->field.bCSWStatus = status;
+	cdev->bot_state = USBD_MSC_IDLE;
+	cdev->bot_status = USBD_MSC_STATUS_NORMAL;
+
+	usbd_msc_bulk_transmit(dev, (u8 *)csw, USB_MSC_CSW_LEN);
+
+#if USBD_MSC_FIX_CV_TEST_ISSUE
+	/* After BOT Reset, do a one-time OUT endpoint reinit for CV test compliance. */
+	if (cdev->bot_reset_pending) {
+		cdev->bot_reset_pending = 0U;
+		usbd_ep_deinit(dev, ep_bulk_out);
+		usbd_ep_init(dev, ep_bulk_out);
+	}
+#endif
+
+	/* Prepare EP to Receive next Cmd */
+	usbd_msc_bulk_receive(dev, (u8 *)cbw, USB_MSC_CBW_LEN);
+}
