@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 39264604d06cbbfff144dfddef63a93cce1f61c4
+* feat(usb): [amebapro2] add USB stack v1.0.0 driver and examples
+
 SHA-1: 58cc982aef94b498eca811daa983d9229222364b
 * fix(video): [amebapro2] fix ov12890 excessive center brightness
 
