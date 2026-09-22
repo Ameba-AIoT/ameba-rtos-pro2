@@ -1096,8 +1096,33 @@ static void media_getfile_cb(struct httpd_conn *conn)
 			}
 			//extdisk_fseek(http_file, 0, SEEK_SET);
 
+			uint32_t file_size = 0;
+#if SAVE_DISK == 0
+            extdisk_fseek(http_file, 0, SEEK_END);
+            file_size = (uint32_t)extdisk_ftell(http_file);
+            extdisk_fseek(http_file, 0, SEEK_SET);
+#elif SAVE_DISK == 1
+            ramdisk_fseek(http_file, 0, SEEK_END);
+            file_size = (uint32_t)ramdisk_ftell(http_file);
+            ramdisk_fseek(http_file, 0, SEEK_SET);
+#endif
+            WLAN_SCEN_WARN("Sending %s, size = %lu bytes\n", filename, (unsigned long)file_size);
 			// Write HTTP headers
-			httpd_response_write_header_start(conn, (char *)"200 OK", (char *)"text/plain", 0);
+			// httpd_response_write_header_start(conn, (char *)"200 OK", (char *)"image/jpeg", file_size);
+			const char *content_type = "application/octet-stream";
+			const char *dot = strrchr(filename, '.');
+			if (dot) {
+				if (strcmp(dot, ".jpg") == 0 || strcmp(dot, ".jpeg") == 0) {
+				content_type = "image/jpeg";
+				} else if (strcmp(dot, ".mp4") == 0 || strcmp(dot, ".mov") == 0) {
+				content_type = "video/mp4";
+				} else if (strcmp(dot, ".txt") == 0 || strcmp(dot, ".log") == 0) {
+				content_type = "text/plain";
+				} else if (strcmp(dot, ".bin") == 0) {
+				content_type = "application/octet-stream";
+				}
+			}
+			httpd_response_write_header_start(conn, (char *)"200 OK", (char *)content_type, file_size);
 			httpd_response_write_header(conn, (char *)"Access-Control-Allow-Origin", (char *)"*");
 			//httpd_response_write_header(conn, (char *)"Access-Control-Allow-Methods", (char *)"GET, POST, OPTIONS");
 			//httpd_response_write_header(conn, (char *)"Access-Control-Allow-Headers", (char *)"Content-Type");

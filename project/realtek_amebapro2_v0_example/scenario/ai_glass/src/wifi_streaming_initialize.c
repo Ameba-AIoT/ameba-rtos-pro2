@@ -21,6 +21,8 @@
 #define AUDIO_SRC               I2S_INTERFACE //SPORT_INTERFACE//I2S_INTERFACE //AUDIO_INTERFACE
 #define AUDIO_I2S_ROLE          I2S_SLAVE //I2S_MASTER
 
+#define QUEUE_LEN_MONITOR 0 // 1:on / 0: off
+
 #if AUDIO_SRC==SPORT_INTERFACE
 #define AUDIO_SAMPLE_RATE       48000
 #define RTSP_CH       4
@@ -39,6 +41,11 @@ static mm_context_t *streaming_rtsp2_ctx = NULL;
 //Linkers
 static mm_siso_t *siso_streaming_audio = NULL;
 static mm_miso_t *miso_streaming_video_audio_rtsp = NULL;
+
+#if QUEUE_LEN_MONITOR == 1
+// Bitrate monitor task handle
+static void *streaming_bitrate_monitor_task_handle = NULL;
+#endif
 
 static video_params_t streaming_video_params = {
     .stream_id = MAIN_STREAM_ID,
@@ -143,6 +150,109 @@ static rtsp2_params_t rtsp2_a_params = {
 		}
 	}
 };
+
+#if QUEUE_LEN_MONITOR == 1
+// Adaptive bitrate monitoring task
+// Monitors the video encoder output queue and adjusts bitrate when queue fills up
+static void streaming_bitrate_monitor_task(void *param)
+{
+    int ch = MAIN_STREAM_ID;
+    int total_len = 0;
+    int current_bps_reduced = 0;  // 0=full, 1=half, 2=quarter
+    int current_fps_dropping = 0; // 0=normal fps, 1=frame dropping active
+    int original_fps = 0;
+    
+    AI_GLASS_MSG("Bitrate monitor task started (ch=%d)\n\r", ch);
+    
+    while (1) {
+        // 1. Get remaining queue length
+        int remain_len;
+        mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_GET_REMAIN_QUEUE_LENGTH, (int)&remain_len);
+		
+        // 2. Total queue length (fps * 10 as set in init)
+        if (total_len == 0) {
+            total_len = streaming_video_params.fps * 10;
+            original_fps = streaming_video_params.fps;
+        }
+        
+        // 3. Calculate fill ratio
+        float fill_ratio = (float)(total_len - remain_len) / total_len;
+        
+		AI_GLASS_MSG("Bitrate monitor: remain_len=%d, total_len=%d, fill=%.0f%%\n\r", remain_len, total_len, fill_ratio * 100);
+		
+        // 4. Apply adaptive logic with four thresholds
+        if (fill_ratio > 0.80f) {
+            // CRITICAL: Queue > 80% full → aggressive: reduce FPS + drop frames at capture level
+            if (current_bps_reduced != 2) {
+                mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_BPS, (DEFAULT_STREAM_BPS/4));
+                // Reduce encoder FPS to 1/4 to drastically reduce frame production rate
+                mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_FPS, (original_fps / 4));
+                // Force higher QP (lower quality, smaller frames): minQp=25, maxQp=30
+                encode_rc_parm_t rc_parm;
+                memset(&rc_parm, 0, sizeof(encode_rc_parm_t));
+                rc_parm.minQp = 45;
+                rc_parm.maxQp = 51;
+                mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_SET_RCPARAM, (int)&rc_parm);
+                current_bps_reduced = 2;
+                AI_GLASS_MSG("Bitrate monitor: CRITICAL queue %.0f%% full, bps/4, fps=%d, QP=45~51\n\r", fill_ratio * 100, original_fps / 4);
+            }
+            // Drop frames at capture level: only capture 1 frame per second
+            if (!current_fps_dropping && fill_ratio > 0.90f) {
+                mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_SET_CAP_INTVL, 1);  // 1 frame per second
+                current_fps_dropping = 1;
+                AI_GLASS_MSG("Bitrate monitor: capture interval=1s (1 fps)\n\r");
+            }
+        } else if (fill_ratio > 0.60f) {
+            // WARNING: Queue > 60% full → reduce quality + reduce FPS
+            if (current_bps_reduced != 1) {
+                mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_BPS, (DEFAULT_STREAM_BPS/2));
+                // Reduce encoder FPS to half
+                mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_FPS, (original_fps / 2));
+				encode_rc_parm_t rc_parm;
+                memset(&rc_parm, 0, sizeof(encode_rc_parm_t));
+                rc_parm.minQp = 40;
+                rc_parm.maxQp = 51;
+                mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_SET_RCPARAM, (int)&rc_parm);
+                current_bps_reduced = 1;
+                AI_GLASS_MSG("Bitrate monitor: queue %.0f%% full, bps/2, fps=%d, QP=40~51\n\r", fill_ratio * 100, original_fps / 2);
+            }
+        } else if (fill_ratio > 0.40f) {
+            // MILD: Queue > 40% full → mild quality reduction, keep FPS
+            if (current_bps_reduced == 0) {
+                mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_BPS, (DEFAULT_STREAM_BPS * 3 / 4));
+				encode_rc_parm_t rc_parm;
+                memset(&rc_parm, 0, sizeof(encode_rc_parm_t));
+                rc_parm.minQp = 35;
+                rc_parm.maxQp = 51;
+                mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_SET_RCPARAM, (int)&rc_parm);
+                current_bps_reduced = 1;  // use level 1 to prevent re-entry
+                AI_GLASS_MSG("Bitrate monitor: queue %.0f%% full, bps*3/4, QP=35~51\n\r", fill_ratio * 100);
+            }
+        } else if (fill_ratio < 0.25f) {
+            // NORMAL: Queue < 25% full → restore original quality and FPS
+            if (current_bps_reduced != 0) {
+                mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_BPS, (DEFAULT_STREAM_BPS));
+                mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_FPS, original_fps);
+				encode_rc_parm_t rc_parm;
+                memset(&rc_parm, 0, sizeof(encode_rc_parm_t));
+                rc_parm.minQp = 25;
+                rc_parm.maxQp = 48;
+                mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_SET_RCPARAM, (int)&rc_parm);
+                current_bps_reduced = 0;
+                AI_GLASS_MSG("Bitrate monitor: queue %.0f%% full, restoring original bps, fps=%d, QP=25~48\n\r", fill_ratio * 100, original_fps);
+            }
+            if (current_fps_dropping) {
+                mm_module_ctrl(streaming_video_ctx, CMD_VIDEO_SET_CAP_INTVL, 0);  // restore full FPS
+                current_fps_dropping = 0;
+                AI_GLASS_MSG("Bitrate monitor: capture interval disabled, full FPS restored\n\r");
+            }
+        }
+        
+        // Sleep 100ms for faster response to queue changes
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+}
+#endif
 
 int wifi_streaming_initialize(void)
 { 
@@ -393,6 +503,14 @@ int wifi_streaming_initialize(void)
 #endif
 #endif
 
+#if QUEUE_LEN_MONITOR == 1
+	// Start adaptive bitrate monitoring task
+	if (xTaskCreate(streaming_bitrate_monitor_task, "strm_br_mon", 2048, NULL, tskIDLE_PRIORITY + 2, &streaming_bitrate_monitor_task_handle) != pdPASS) {
+		AI_GLASS_ERR("Failed to create bitrate monitor task\n\r");
+		streaming_bitrate_monitor_task_handle = NULL;
+	}
+#endif
+
 	if (ai_stream_param) {
 		free(ai_stream_param);
 	}
@@ -407,6 +525,15 @@ int wifi_streaming_initialize(void)
 
 
 void wifi_streaming_deinitialize(void) {
+
+#if QUEUE_LEN_MONITOR == 1
+	// Stop bitrate monitor task
+	if (streaming_bitrate_monitor_task_handle) {
+		vTaskDelete(streaming_bitrate_monitor_task_handle);
+		streaming_bitrate_monitor_task_handle = NULL;
+		AI_GLASS_MSG("Bitrate monitor task stopped\n\r");
+	}
+#endif
 
 	//Pause Linker
 	if (miso_streaming_video_audio_rtsp) {
