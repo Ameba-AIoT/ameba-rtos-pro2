@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 5db88926eb1845c4f1453c4ca4f4b69eaf4dbc1d
+* fix(fs): [amebapro2] switch fatfs code page from Shift-JIS 932 to 437 to shrink firmware
+
 SHA-1: 39264604d06cbbfff144dfddef63a93cce1f61c4
 * feat(usb): [amebapro2] add USB stack v1.0.0 driver and examples
 
