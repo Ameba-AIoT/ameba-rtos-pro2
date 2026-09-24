@@ -102,12 +102,14 @@ struct sensor_params_t {
 #define SENSOR_OV13B10_12M      0x58  //  |   v    |   -    |   -    |   -    |    -   |
 #define SENSOR_OV13B10_12M_SEQ  0x59  //  |   v    |   -    |   -    |   -    |    -   |
 #define SENSOR_OV12890          0x5A  //  |   v    |   v    |   -    |   -    |    -   |
-#define SENSOR_OV12890_12M      0x5B  //  |   v    |   -    |   -    |   -    |    -   |
-#define SENSOR_OV12890_12M_SEQ  0x5C  //  |   v    |   -    |   -    |   -    |    -   |
-#define SENSOR_OV50A40          0x5D  //  |   v    |   -    |   v    |   -    |    -   |
-#define SENSOR_OV50A40_50M      0x5E  //  |   v    |   -    |   v    |   -    |    -   |
-#define SENSOR_OS04D10          0x5F  //  |   v    |   -    |   -    |   -    |    -   |
-#define SENSOR_OS04E10          0x60  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OV12890_8M       0x5B  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OV12890_8M_SEQ   0x5C  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OV12890_12M      0x5D  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OV12890_12M_SEQ  0x5E  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OV50A40          0x5F  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_OV50A40_50M      0x60  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_OS04D10          0x61  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OS04E10          0x62  //  |   v    |   -    |   -    |   -    |    -   |
 /* PRIMESENSOR */
 #define SENSOR_PS5258           0x70  //  |   v    |   -    |   v    |   -    |    -   |
 #define SENSOR_PS5262           0x71  //  |   v    |   -    |   v    |   -    |    -   |
@@ -203,6 +205,8 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_OV13B10_12M]      = {4032, 3024, 10},
 	[SENSOR_OV13B10_12M_SEQ]  = {2112, 1616,  5}, //width = 2016 + 96(overlap) //height = 1512 + 104(overlap)
 	[SENSOR_OV12890]  	      = {2048, 1536, 30},
+	[SENSOR_OV12890_8M]       = {3264, 2448,  4},
+	[SENSOR_OV12890_8M_SEQ]   = {1728, 1328,  5}, //width = 1632 + 96(overlap) //height = 1224 + 104(overlap)
 	[SENSOR_OV12890_12M]      = {4032, 3024,  4},
 	[SENSOR_OV12890_12M_SEQ]  = {2112, 1616,  5}, //width = 2016 + 96(overlap) //height = 1512 + 104(overlap)
 	[SENSOR_OV50A40]          = {2048, 1536, 30},
