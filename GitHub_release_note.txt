@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: e451e83edaa069facdc656fef303238469d4be9b
+* fix(video): [amebapro2] update sensor driver & setting file
+
 SHA-1: 5db88926eb1845c4f1453c4ca4f4b69eaf4dbc1d
 * fix(fs): [amebapro2] switch fatfs code page from Shift-JIS 932 to 437 to shrink firmware
 
