@@ -610,14 +610,18 @@ static void pb_homepage_cb(struct httpd_conn *conn)
 		const char *body = \
 						   "<HTML><BODY>" \
 						   "It Works<BR>" \
-						   "<BR>" \
-						   "You can test video playback by http://192.168.xxx.xxx/video_get.mp4?filename=xxxx.mp4<BR>" \
-						   "Video file list: <BR>";
+						   "<BR>";
 
 		const char *body_end = \
 							   "</BODY></HTML>";
 
+		char body_hint[256];
+		snprintf(body_hint, sizeof(body_hint),
+				 "You can test by http://192.168.xxx.xxx%s?filename=xxxx.%s<BR>File list: <BR>",
+				 httpfs_params->request_string, httpfs_params->fileext);
+
 		body_length += strlen(body);
+		body_length += strlen(body_hint);
 		body_length += strlen(body_end);
 
 		const char *br = \
@@ -661,6 +665,7 @@ static void pb_homepage_cb(struct httpd_conn *conn)
 		httpd_response_write_header(conn, (char *)"Connection", (char *)"close");
 		httpd_response_write_header_finish(conn);
 		httpd_response_write_data(conn, (uint8_t *)body, strlen(body));
+		httpd_response_write_data(conn, (uint8_t *)body_hint, strlen(body_hint));
 		if (f_opendir(&m_dir, path) == 0) {
 			while (1) {
 				if ((f_readdir(&m_dir, &m_fileinfo) != 0) || m_fileinfo.fname[0] == 0) {
@@ -697,6 +702,72 @@ static void pb_homepage_cb(struct httpd_conn *conn)
 	httpd_conn_close(conn);
 }
 
+/* send the file as-is, without qt_faststart (ex. jpg snapshot) */
+static void httpfs_send_file(struct httpd_conn *conn, char *path, char *filename)
+{
+	FRESULT res;
+	int br;
+	int send_size = 0;
+	size_t read_size;
+
+	res = f_open(&m_file_fs, path, FA_OPEN_ALWAYS | FA_READ | FA_WRITE);
+	if (res) {
+		printf("open file (%s) fail.\n", filename);
+		return;
+	}
+
+	read_size = f_size(&m_file_fs);
+	printf("file size = %d\r\n", read_size);
+
+	// write HTTP response
+	httpd_response_write_header_start(conn, (char *)"200 OK", (char *)"text/plain", 0);
+	httpd_response_write_header(conn, (char *)"Connection", (char *)"close");
+	httpd_response_write_header_finish(conn);
+
+	while (1) {
+		res = f_read(&m_file_fs, fatfs_buf_fs, 1024, (u32 *)&br);
+		if (res) {
+			f_lseek(&m_file_fs, 0);
+			printf("Read error.\n");
+			res = f_close(&m_file_fs);
+			break;
+		}
+
+		send_size += br;
+		printf("Read %d bytes.\r\n", send_size);
+
+		if (br == 0) {
+			// close source file
+			res = f_close(&m_file_fs);
+			if (res) {
+				printf("close file (%s) fail.\n", filename);
+			}
+			printf("f_close\n");
+			printf("\n");
+
+			break;
+		} else {
+			int ret = 0;
+			int send_timeout = 3000;
+			if (conn->sock != -1) {
+				setsockopt(conn->sock, SOL_SOCKET, SO_SNDTIMEO, &send_timeout, sizeof(send_timeout));
+			}
+			ret = httpd_response_write_data(conn, fatfs_buf_fs, br);
+			if (ret <= 0) {
+				printf("ret = %d\r\n", ret);
+				res = f_close(&m_file_fs);
+				if (res) {
+					printf("close file (%s) fail.\n", filename);
+				}
+				printf("f_close\n");
+				printf("\n");
+
+				break;
+			}
+		}
+	}
+}
+
 static void pb_test_get_cb(struct httpd_conn *conn)
 {
 	// GET /test_post
@@ -724,6 +795,9 @@ static void pb_test_get_cb(struct httpd_conn *conn)
 			sprintf(&path[strlen(path)], "%s", httpfs_params->filedir);
 			sprintf(&path[strlen(path)], "/%s", filename);
 
+			if (httpfs_params->disable_fast_mp4) {
+				httpfs_send_file(conn, path, filename);
+			} else {
 #if FAST_MP4
 #if FAST_MP4_WITHOUT_FILE
 			int ret = 0;
@@ -943,6 +1017,7 @@ static void pb_test_get_cb(struct httpd_conn *conn)
 				}
 			}
 #endif
+			}
 
 		} else {
 			// HTTP/1.1 400 Bad Request

@@ -26,12 +26,12 @@
 #include "sample_h265.h"
 #define VIDEO_TYPE VIDEO_HEVC
 #define VIDEO_CODEC AV_CODEC_ID_H265
-#define SHAPSHOT_TYPE VIDEO_HEVC_JPEG
+#define SNAPSHOT_TYPE VIDEO_HEVC_JPEG
 #else
 #include "sample_h264.h"
 #define VIDEO_TYPE VIDEO_H264
 #define VIDEO_CODEC AV_CODEC_ID_H264
-#define SHAPSHOT_TYPE VIDEO_H264_JPEG
+#define SNAPSHOT_TYPE VIDEO_H264_JPEG
 #endif
 
 //#define ENABLE_META_INFO  //Enable the marco to wirte the META data to frame
@@ -45,7 +45,7 @@ static mm_context_t *httpfs_ctx        		= NULL;
 
 static video_params_t video_v1_params = {
 	.stream_id = V1_CHANNEL,
-	.type = SHAPSHOT_TYPE,
+	.type = SNAPSHOT_TYPE,
 	.bps = V1_BPS,
 	.rc_mode = V1_RCMODE,
 	.use_static_addr = 1,
@@ -66,7 +66,8 @@ static httpfs_params_t httpfs_params = {
 	.fileext = "jpg",
 	.filedir = "",
 	.request_string = "/image_get.jpg",
-	.fatfs_buf_size = 1024
+	.fatfs_buf_size = 1024,
+	.disable_fast_mp4 = 1	// jpg does not need qt_faststart
 };
 
 static TaskHandle_t snapshot_thread = NULL;
@@ -103,7 +104,7 @@ static int httpfs_response_cb(void)
 }
 
 
-void mmf2_video_example_v1_shapshot_httpfs_init(void)
+void mmf2_video_example_v1_snapshot_httpfs_init(void)
 {
 	atcmd_userctrl_init();
 
@@ -144,7 +145,7 @@ void mmf2_video_example_v1_shapshot_httpfs_init(void)
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SNAPSHOT, 0);
 	} else {
 		rt_printf("video open fail\n\r");
-		goto mmf2_video_exmaple_v1_shapshot_httpfs_fail;
+		goto mmf2_video_exmaple_v1_snapshot_httpfs_fail;
 	}
 
 	rtsp2_v1_ctx = mm_module_open(&rtsp2_module);
@@ -155,7 +156,7 @@ void mmf2_video_example_v1_shapshot_httpfs_init(void)
 		mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_STREAMMING, ON);
 	} else {
 		rt_printf("RTSP2 open fail\n\r");
-		goto mmf2_video_exmaple_v1_shapshot_httpfs_fail;
+		goto mmf2_video_exmaple_v1_snapshot_httpfs_fail;
 	}
 
 	//--------------HTTP File Server---------------
@@ -166,7 +167,7 @@ void mmf2_video_example_v1_shapshot_httpfs_init(void)
 		mm_module_ctrl(httpfs_ctx, CMD_HTTPFS_APPLY, 0);
 	} else {
 		rt_printf("HTTPFS open fail\n\r");
-		goto mmf2_video_exmaple_v1_shapshot_httpfs_fail;
+		goto mmf2_video_exmaple_v1_snapshot_httpfs_fail;
 	}
 
 	siso_video_rtsp_v1 = siso_create();
@@ -179,7 +180,7 @@ void mmf2_video_example_v1_shapshot_httpfs_init(void)
 		siso_start(siso_video_rtsp_v1);
 	} else {
 		rt_printf("siso2 open fail\n\r");
-		goto mmf2_video_exmaple_v1_shapshot_httpfs_fail;
+		goto mmf2_video_exmaple_v1_snapshot_httpfs_fail;
 	}
 
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, V1_CHANNEL);
@@ -205,12 +206,12 @@ void mmf2_video_example_v1_shapshot_httpfs_init(void)
 #endif
 
 	return;
-mmf2_video_exmaple_v1_shapshot_httpfs_fail:
+mmf2_video_exmaple_v1_snapshot_httpfs_fail:
 
 	return;
 }
 
-static const char *example = "mmf2_video_example_v1_shapshot_httpfs";
+static const char *example = "mmf2_video_example_v1_snapshot_httpfs";
 static void example_deinit(void)
 {
 	//Pause Linker
