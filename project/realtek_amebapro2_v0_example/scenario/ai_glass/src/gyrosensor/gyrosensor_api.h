@@ -18,6 +18,8 @@
 #undef AI_DEMO_MPU6050
 #define AI_DEMO_ICM42670P
 
+#define EVB_GSENSOR 0 // set 1 for EVB else default 0
+
 // ignore the accelerometer data from g-sensor
 #define IGN_ACC_DATA    1
 
@@ -112,12 +114,17 @@ int gyroscope_fifo_init(void);
 int gyroscope_fifo_read(gyro_data_t *data, uint16_t len);
 
 int gyroscope_reset_fifo(void);
+#if EVB_GSENSOR == 1
 #if defined(AI_DEMO_MPU6050)
 #define GYROSENSOR_I2C_MTR_SDA  PF_2
 #define GYROSENSOR_I2C_MTR_SCL  PF_1
 #elif defined(AI_DEMO_ICM42670P)
 #define GYROSENSOR_I2C_MTR_SDA  PE_4 
 #define GYROSENSOR_I2C_MTR_SCL  PE_3 
+#endif
+#else
+#define GYROSENSOR_I2C_MTR_SDA  PF_2 
+#define GYROSENSOR_I2C_MTR_SCL  PF_1 
 #endif
 
 #endif //#ifndef __GYROSENSOR_API_H__

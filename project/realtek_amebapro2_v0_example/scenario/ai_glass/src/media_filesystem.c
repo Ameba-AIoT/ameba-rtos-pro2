@@ -195,10 +195,7 @@ static int check_extension(const char *filename, const char *ext)
 	return strcmp(filename + len_filename - len_ext, ext) == 0;
 }
 
-// return extensions' num
-// if not exist, return -1
-static int check_valid_file_and_remove(const char *list_path, const char *filename, const char *exclude_filename, const char **extensions,
-									   uint16_t num_extensions)
+static int check_valid_file_and_remove(const char *list_path, const char *filename, const char *exclude_filename, const char **extensions, uint16_t num_extensions, struct stat *out_finfo)
 {
       // Part 1: cheap string-only checks. No disk access here.
       if (is_excluded_file(filename, SYS_COUNT_FILENAME)) {
@@ -209,11 +206,6 @@ static int check_valid_file_and_remove(const char *list_path, const char *filena
               FILE_SYS_MSG("file %s is a exclude file %s\n", filename, exclude_filename);
               return -1;
       }
-
-      // Part 2: match the extension BEFORE touching the disk.
-      // This skips the blocking stat() on every junk file
-      // (.nv12/.png/.bin/.py/...), which dominates runtime when the
-      // card holds many non-target files.
       int ext_idx = -1;
       for (int i = 0; i < num_extensions; i++) {
               if (check_extension(filename, extensions[i])) {
@@ -248,6 +240,9 @@ static int check_valid_file_and_remove(const char *list_path, const char *filena
                       return -1;
               }
               free(file_path);
+              if (out_finfo) {
+                      *out_finfo = finfo;
+              }
       }
 
       return ext_idx;
@@ -505,7 +500,7 @@ static void extdisk_get_filenum(const char *dir_path, const char **extensions, u
 					}
 				}
 			} else {
-				int extension_num = check_valid_file_and_remove(dir_path, entry->d_name, exclude_filename, extensions, num_extensions);
+				int extension_num = check_valid_file_and_remove(dir_path, entry->d_name, exclude_filename, extensions, num_extensions, NULL);
 				if (extension_num >= 0) {
 					ext_counts[extension_num]++;
 				}
@@ -566,44 +561,27 @@ static cJSON *create_json_folder_object(const char *list_path, const char *folde
 	return folder_obj;
 }
 
-static cJSON *create_json_file_object(const char *list_path, const char *filename)
+static cJSON *create_json_file_object(const char *filename, const struct stat *finfo)
 {
 	cJSON *folder_obj = cJSON_CreateObject();
 	cJSON_AddStringToObject(folder_obj, "type", "file");
 	cJSON_AddStringToObject(folder_obj, "name", filename);
 
-	// NOTE: use heap, not a stack buffer, for the path. PATH_MAX is 4096,
-	// and this is called recursively by get_filelist(), so a path buffer on
-	// the stack overflows the (small) HTTP handler task stack -> hardfault.
-	struct stat finfo = {0};
-	char *file_path = malloc(PATH_MAX + 1);
-	if (file_path) {
-		snprintf(file_path, PATH_MAX + 1, "%s/%s", list_path, filename);
-
-		int res = stat(file_path, &finfo);
-		if (res == 0) {
-			cJSON_AddNumberToObject(folder_obj, "file_size", (double)finfo.st_size);
-			char utctime_buffer[30] = {0};
-			time_transfer_to_string_utcform(finfo.st_mtime, utctime_buffer, sizeof(utctime_buffer));
-			cJSON_AddStringToObject(folder_obj, "time", (const char *)utctime_buffer);
-		} else {
-			FILE_SYS_WARN("Failed to get file %s info (error: %d)\n", file_path, res);
-		}
-
-		free(file_path);
+	if (finfo) {
+		cJSON_AddNumberToObject(folder_obj, "file_size", (double)finfo->st_size);
+		char utctime_buffer[30] = {0};
+		time_transfer_to_string_utcform(finfo->st_mtime, utctime_buffer, sizeof(utctime_buffer));
+		cJSON_AddStringToObject(folder_obj, "time", (const char *)utctime_buffer);
 	}
 	return folder_obj;
 }
 
-static cJSON *get_filelist(const char *list_path, const char *folder_name, uint16_t *file_number, const char **extensions, uint16_t num_extensions, const char *exclude_filename)
+static cJSON *get_filelist(const char *list_path, const char *folder_name, uint16_t *file_number, const char **extensions, uint16_t num_extensions, const char *exclude_filename, uint16_t max_files)
 {
 	DIR *file_dir;
 	char *filename;
 	dirent *entry;
 
-	// NOTE: use heap for the sub-dir path, not a stack buffer. PATH_MAX is
-	// 4096 and this function recurses per sub-directory; a 4KB stack buffer
-	// here overflows the (small) HTTP handler task stack -> hardfault.
 	uint8_t *sub_dir_path = malloc(PATH_MAX + 1);
 
 	cJSON *filelist_obj = create_json_folder_object(list_path, folder_name);
@@ -616,6 +594,11 @@ static cJSON *get_filelist(const char *list_path, const char *folder_name, uint1
 		cJSON *contents = cJSON_CreateArray();
 		// each folder
 		for (;;) {
+			if (max_files && (*file_number >= max_files)) {
+				FILE_SYS_MSG("reach max file number %u, stop listing\r\n", max_files);
+				break;
+			}
+
 			// read directory
 			entry = readdir(file_dir);
 
@@ -631,13 +614,13 @@ static cJSON *get_filelist(const char *list_path, const char *folder_name, uint1
 			if (entry->d_type == DT_DIR) {
 				if (sub_dir_path) {
 					if (snprintf((char *)sub_dir_path, PATH_MAX + 1, "%s/%s", list_path, entry->d_name) < (PATH_MAX + 1)) {
-						cJSON_AddItemToArray(contents, get_filelist((const char *)sub_dir_path, (const char *)entry->d_name, file_number, extensions, num_extensions,
-											 exclude_filename));
+						cJSON_AddItemToArray(contents, get_filelist((const char *)sub_dir_path, (const char *)entry->d_name, file_number, extensions, num_extensions, exclude_filename, max_files));
 					}
 				}
 			} else {
-				if (check_valid_file_and_remove(list_path, entry->d_name, exclude_filename, extensions, num_extensions) >= 0) {
-					cJSON *file_obj = create_json_file_object(list_path, entry->d_name);
+				struct stat finfo = {0};
+				if (check_valid_file_and_remove(list_path, entry->d_name, exclude_filename, extensions, num_extensions, &finfo) >= 0) {
+					cJSON *file_obj = create_json_file_object(entry->d_name, &finfo);
 					if (file_obj != NULL) {
 						cJSON_AddItemToArray(contents, file_obj);
 						(*file_number)++;
@@ -645,7 +628,7 @@ static cJSON *get_filelist(const char *list_path, const char *folder_name, uint1
 						FILE_SYS_WARN("get file %s failed\r\n", entry->d_name);
 					}
 				} else {
-					FILE_SYS_WARN("file %s is not valid\r\n", entry->d_name);
+					FILE_SYS_MSG("file %s is not valid\r\n", entry->d_name);
 				}
 			}
 		}
@@ -661,13 +644,13 @@ endoffun:
 	return filelist_obj;
 }
 
-cJSON *extdisk_get_filelist(const char *list_path, uint16_t *file_number, const char **extensions, uint16_t num_extensions, const char *exclude_filename)
+cJSON *extdisk_get_filelist(const char *list_path, uint16_t *file_number, const char **extensions, uint16_t num_extensions, const char *exclude_filename, uint16_t max_files)
 {
 	if (!ai_glass_extdisk_done && !ai_glass_ramdisk_done) {
 		FILE_SYS_WARN("No disk initialized yet\r\n");
 		return 0;
 	}
-	
+
 	const char *tag = get_active_tag();
     if (!tag) {
 		return NULL;
@@ -678,7 +661,7 @@ cJSON *extdisk_get_filelist(const char *list_path, uint16_t *file_number, const 
 
 	*file_number = 0;
 
-	return get_filelist(ai_glass_path, ai_glass_path, file_number, extensions, num_extensions, exclude_filename);
+	return get_filelist(ai_glass_path, ai_glass_path, file_number, extensions, num_extensions, exclude_filename, max_files);
 }
 
 const char *extdisk_get_filesystem_tag_name(void)

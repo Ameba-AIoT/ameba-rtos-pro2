@@ -47,7 +47,7 @@ int extdisk_save_file_cntlist(void);
 int extdisk_delete_bin_files(void);
 
 void extdisk_count_filenum(const char *dir_path, const char **extensions, uint16_t *ext_counts, uint16_t num_extensions, const char *exclude_filename);
-cJSON *extdisk_get_filelist(const char *list_path, uint16_t *file_number, const char **extensions, uint16_t num_extensions, const char *exclude_filename);
+cJSON *extdisk_get_filelist(const char *list_path, uint16_t *file_number, const char **extensions, uint16_t num_extensions, const char *exclude_filename, uint16_t max_files);
 const char *extdisk_get_filesystem_tag_name(void);
 int extdisk_reset_file_cntlist(void);
 

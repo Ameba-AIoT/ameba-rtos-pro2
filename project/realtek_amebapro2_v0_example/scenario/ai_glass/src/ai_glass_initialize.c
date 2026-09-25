@@ -511,7 +511,7 @@ static int ota_file_exists(char *version_str, char ota_versions[2][16])
 	const char *extensions[] = {OTA_FILE_EXTENSION};
 
 	// Get file list in JSON format
-	cJSON *file_list = extdisk_get_filelist("/", &file_count, extensions, 1, NULL);
+	cJSON *file_list = extdisk_get_filelist("/", &file_count, extensions, 1, NULL, 0);
 
 	if (!file_list) {
 		AI_GLASS_ERR("OTA check file: Unable to retrieve file list.\n");
@@ -3041,13 +3041,14 @@ static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 	uartpacket_t *query_pkt = (uartpacket_t *) & (param->uart_pkt);
 	uint8_t mode = query_pkt->data_buf[0];
 	uint8_t sensor_flag = 0;
+	uint8_t storage_flag = 0;
 	AI_GLASS_INFO("Mode: %d\r\n", mode);
 	if (mode == 1) {
 		uint8_t g_camera_cfg_buf[512];
 		size_t length = uart_serialize_camera_config(g_camera_cfg_buf, sizeof(g_camera_cfg_buf), &g_camera_cfg);
 
 		// Call your existing UART response function
-		int status = uart_resp_get_wifi_parameter(param, g_camera_cfg_buf, length, sensor_flag, enable_gsensor);
+		int status = uart_resp_get_wifi_parameter(param, g_camera_cfg_buf, length, sensor_flag, enable_gsensor, storage_flag);
 
 		// Debug print
 		print_camera_config(&g_camera_cfg);
@@ -3065,7 +3066,7 @@ static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 		printf("[TEST] (1) "MAC_FMT"",MAC_ARG(pbuf));
 		
 		// Call your existing UART response function
-		int status = uart_resp_get_wifi_parameter(param, pbuf, length, sensor_flag, enable_gsensor);
+		int status = uart_resp_get_wifi_parameter(param, pbuf, length, sensor_flag, enable_gsensor, storage_flag);
 
 		if (status == 0) {
 			printf("CameraConfig sent successfully (%lu bytes)\n", length);
@@ -3081,9 +3082,13 @@ static void ai_glass_get_wifi_parameter(uartcmdpacket_t *param) {
 			sensor_flag = 2;
 		}
 #if SAVE_DISK == 0
-	ai_glass_init_external_disk();
+		ai_glass_init_external_disk();
+		storage_flag = extdisk_get_init_status();
+#elif SAVE_DISK == 1 
+		ai_glass_init_ram_disk();
+		storage_flag = ramdisk_get_init_status();
 #endif
-        int status = uart_resp_get_wifi_parameter(param, dummy, length, sensor_flag, enable_gsensor);
+        int status = uart_resp_get_wifi_parameter(param, dummy, length, sensor_flag, enable_gsensor, storage_flag);
 
         if (status == 0) {
             printf("Sensor status sent successfully\n");

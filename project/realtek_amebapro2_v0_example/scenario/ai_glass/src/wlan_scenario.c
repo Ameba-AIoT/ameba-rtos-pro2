@@ -410,18 +410,31 @@ static void media_list_cb(struct httpd_conn *conn)
 
 	// GET homepage
 	if (httpd_request_is_method(conn, (char *)"GET")) {
+		uint16_t mp4_num = extdisk_get_filecount(SYS_COUNT_FILM_LABEL);
+		uint16_t snapshot_num = extdisk_get_filecount(SYS_COUNT_PIC_LABEL);
+		uint16_t total_num = mp4_num + snapshot_num;
+		printf("Total file num = %u\r\n", total_num);
+		uint16_t list_limit = 0;
+		if (total_num > 500) {
+			list_limit = 500;
+			printf("Total %u > 500, list only %u files this round\r\n", total_num, list_limit);
+		}
+
 		const char *extensions[] = { ".mp4", ".csv", ".jpeg", ".jpg", ".txt"};
 		uint16_t num_extensions = sizeof(extensions) / sizeof(extensions[0]);
-		cJSON *list_json = extdisk_get_filelist("", &file_num, extensions, num_extensions, "ai_snapshot.jpg");
+		cJSON *list_json = extdisk_get_filelist("", &file_num, extensions, num_extensions, "ai_snapshot.jpg", list_limit);
 		WLAN_SCEN_MSG("file_num=%d\n", file_num);
 		if (list_json != NULL) {
-			file_list = cJSON_Print(list_json);
-			WLAN_SCEN_MSG("json len=%d\n", strlen(file_list));
+			file_list = cJSON_PrintUnformatted(list_json);
 			cJSON_Delete(list_json);
-			WLAN_SCEN_MSG("%s\r\n", file_list);
-		} else {
-			WLAN_SCEN_MSG("file list is NULL\n");
 		}
+		if (file_list == NULL) {
+			WLAN_SCEN_ERR("file list is NULL\n");
+			httpd_response_bad_request(conn, (char *)"Bad Request: Unable to get the file list\r\n");
+			goto medialist_end;
+		}
+		WLAN_SCEN_MSG("json len=%d\n", strlen(file_list));
+		WLAN_SCEN_MSG("%s\r\n", file_list);
 		// Save filelist to EMMC
 		extdisk_save_file_cntlist();
 		uint32_t file_list_len = strlen(file_list);
@@ -462,6 +475,11 @@ static void media_list_cb(struct httpd_conn *conn)
 		httpd_response_method_not_allowed(conn, NULL);
 	}
 
+medialist_end:
+	if (file_list) {
+		free(file_list);
+		file_list = NULL;
+	}
 	httpd_conn_close(conn);
 }
 
