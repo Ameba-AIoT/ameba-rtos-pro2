@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: bbb10a27932bd2c2e342cf202e1fe280f2c4ec8a
+* fix(video): [amebapro2] update GC4663 and GC4023 IQ configurations
+
 SHA-1: e451e83edaa069facdc656fef303238469d4be9b
 * fix(video): [amebapro2] update sensor driver & setting file
 
