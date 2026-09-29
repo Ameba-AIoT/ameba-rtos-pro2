@@ -63,19 +63,19 @@
         },
         "fw1":{
             "start_addr" : "0x60000",
-            "length" : "0x400000",
+            "length" : "0x42E000",
             "type": "PT_FW1",
             "valid": true
         },
 		"iq":{
-            "start_addr" : "0x460000",
-            "length" : "0xC0000",
+            "start_addr" : "0x48E000",
+            "length" : "0x64000",
             "type": "PT_ISP_IQ",
             "valid": true
         },
         "fw2":{
-            "start_addr" : "0x520000",
-            "length" : "0x400000",
+            "start_addr" : "0x4F2000",
+            "length" : "0x42E000",
             "type": "PT_FW2",
             "valid": true
         },
