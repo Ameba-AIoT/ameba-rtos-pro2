@@ -133,6 +133,22 @@ icmp_input(struct pbuf *p, struct netif *inp)
       MIB2_STATS_INC(mib2.icmpinechoreps);
       break;
     case ICMP_ECHO:
+/* Realtek added to filter ping from network addr or different subset */
+#if LWIP_ICMP_FILTER_SRC
+      src = ip4_current_src_addr();
+      if ((ip4_addr_get_u32(src) & ip4_addr_get_u32(netif_ip4_netmask(inp))) == ip4_addr_get_u32(src)) {
+        LWIP_DEBUGF(ICMP_DEBUG, ("icmp_input: dropping ping from network address\n"));
+        pbuf_free(p);
+        return;
+      }
+      if (!ip4_addr_netcmp(src, netif_ip4_addr(inp), netif_ip4_netmask(inp))) {
+        LWIP_DEBUGF(ICMP_DEBUG, ("icmp_input: dropping ping from different subnet\n"));
+        pbuf_free(p);
+        return;
+      }
+#endif
+/* Added by Realtek end */
+
       MIB2_STATS_INC(mib2.icmpinechos);
       src = ip4_current_dest_addr();
       /* multicast destination address? */
