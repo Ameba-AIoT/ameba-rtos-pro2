@@ -99,9 +99,6 @@ list (
 	"${sdk_root}/component/file_system/littlefs"
 	"${sdk_root}/component/file_system/littlefs/r2.41"
 	
-	"${sdk_root}/component/audio/3rdparty/faac/libfaac"
-	"${sdk_root}/component/audio/3rdparty/faac/include"
-	
 	"${sdk_root}/component/audio/3rdparty/haac"
 	"${sdk_root}/component/media/muxer"
 	

@@ -12,10 +12,6 @@
 #include "module_aac.h"
 #include "mmf2_dbg.h"
 
-#include "psych.h"
-#include "faac.h"
-#include "faac_api.h"
-
 //------------------------------------------------------------------------------
 //AAD open function
 static int aachandle_Open(aac_ctx_t *ctx)

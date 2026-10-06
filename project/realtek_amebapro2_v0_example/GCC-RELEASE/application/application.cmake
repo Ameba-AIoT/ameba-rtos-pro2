@@ -34,7 +34,6 @@ include(./libaec.cmake OPTIONAL)
 endif()
 include(./libhttp.cmake OPTIONAL)
 include(./libsdcard.cmake OPTIONAL)
-include(./libfaac.cmake OPTIONAL)
 include(./libhaac.cmake OPTIONAL)
 include(./libfdkaac.cmake OPTIONAL)
 include(./libmuxer.cmake OPTIONAL)
@@ -949,7 +948,6 @@ list(
 	${sdk_root}/component/wifi/wpa_supplicant/src
 	${sdk_root}/component/wifi/driver/src/core/option
 	${sdk_root}/component/ssl/ssl_ram_map/rom
-	${sdk_root}/component/audio/3rdparty/faac/libfaac
 	${prj_root}/component/file_system/fatfs/r0.14
 	${sdk_root}/component/soc/8735b/fwlib/rtl8735b/lib/source/ram/video/osd
 	${sdk_root}/component/video/osd2
@@ -1029,7 +1027,6 @@ list(
 	${videolib}
 	mmf
 	sdcard
-	faac
 	haac
 	fdkaac
 	muxer
