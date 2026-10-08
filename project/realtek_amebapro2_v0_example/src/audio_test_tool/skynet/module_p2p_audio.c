@@ -12,8 +12,6 @@
 #include "module_p2p_audio.h"
 #include "mmf2_dbg.h"
 
-#include "psych.h"
-
 #include "SKYNET_IOTAPI.h"
 #include "SKYNET_APP.h"
 
