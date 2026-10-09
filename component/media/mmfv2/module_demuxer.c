@@ -347,9 +347,16 @@ int demuxer_control(void *p, int cmd, int arg)
 	case CMD_DEMUXER_OPEN: // open the file with setting file name
 		memset(ctx->file_name, 0, 128);
 		//mm_printf("%s \r\n", ctx->fatfs_params.drv);
-		strncpy(ctx->file_name, ctx->fatfs_params.drv, strlen(ctx->fatfs_params.drv));
+		//strncpy(ctx->file_name, ctx->fatfs_params.drv, strlen(ctx->fatfs_params.drv));
 		//mm_printf("mp4_demuxer->filename = %s\r\n", ctx->file_name);
-		sprintf(ctx->file_name + strlen(ctx->fatfs_params.drv), "%s", ctx->params.record_file_name);
+		//snprintf(ctx->file_name + strlen(ctx->fatfs_params.drv), (sizeof(ctx->file_name) - strlen(ctx->fatfs_params.drv)-1), "%s", ctx->params.record_file_name);
+		int str_len = strlen(ctx->fatfs_params.drv) + strlen(ctx->params.record_file_name);
+		ret = snprintf(ctx->file_name, sizeof(ctx->file_name), "%s%s", ctx->fatfs_params.drv, ctx->params.record_file_name);
+		if (ret != str_len) {
+			mm_printf("The name length exceeds the buffer %d\r\n", str_len);
+			ret = -1;
+			return ret;
+		}
 		mm_printf("mp4_demuxer->filename = %s\r\n", ctx->file_name);
 
 		mp4_demuxer_open(ctx->mp4_demuxer_ctx, ctx->file_name);
@@ -460,7 +467,14 @@ void *demuxer_destroy(void *p)
 		if (ctx->demuxer_sema) {
 			vSemaphoreDelete(ctx->demuxer_sema);
 		}
+		// Release the frame memory pool allocated by CMD_DEMUXER_INIT_MEM_POOL to avoid memory leaks
+		if (ctx->mem_pool) {
+			memory_deinit(ctx->mem_pool);
+			ctx->mem_pool = NULL;
+		}
 		if (ctx->mp4_demuxer_ctx) {
+			// Make sure the track buffers / m_file opened by mp4_demuxer_open() are released even if the caller never sent CMD_DEMUXER_CLOSE.
+			mp4_demuxer_close(ctx->mp4_demuxer_ctx);
 			free(ctx->mp4_demuxer_ctx);
 		}
 
