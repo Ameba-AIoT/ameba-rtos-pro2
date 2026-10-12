@@ -63,8 +63,9 @@ struct sensor_params_t {
 #define SENSOR_GC4693           0x29  //  |   v    |   v    |   -    |   -    |    v   |
 #define SENSOR_GC4693_HD        0x2A  //  |   v    |   v    |   -    |   -    |    v   |
 #define SENSOR_GC5035           0x2B  //  |   v    |   v    |   v    |   -    |    -   |
-#define SENSOR_GC05A2           0x2C  //  |   v    |   -    |   v    |   -    |    -   |
-#define SENSOR_GC8613_FHD       0x2D  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_GC02M1			0x2C  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_GC05A2           0x2D  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_GC8613_FHD       0x2E  //  |   v    |   -    |   -    |   -    |    -   |
 /* SONY */
 #define SENSOR_IMX307           0x30  //  |   v    |   -    |   v    |   v    |    -   |
 #define SENSOR_IMX327           0x31  //  |   v    |   -    |   v    |   v    |    -   |
@@ -94,22 +95,23 @@ struct sensor_params_t {
 #define SENSOR_OV2735           0x50  //  |   v    |   v    |   v    |   -    |    -   |
 #define SENSOR_OV5647           0x51  //  |   v    |   -    |   -    |   -    |    -   |
 #define SENSOR_OV5693           0x52  //  |   v    |   -    |   -    |   -    |    -   |
-#define SENSOR_OV9734           0x53  //  |   v    |   -    |   v    |   -    |    -   |
-#define SENSOR_OV9734_SD        0x54  //  |   v    |   -    |   v    |   -    |    -   |
-#define SENSOR_OS02H10          0x55  //  |   v    |   v    |   v    |   v    |    -   |
-#define SENSOR_OS04A10          0x56  //  |   v    |   -    |   v    |   -    |    -   |
-#define SENSOR_OV13B10          0x57  //  |   v    |   v    |   -    |   -    |    -   |
-#define SENSOR_OV13B10_12M      0x58  //  |   v    |   -    |   -    |   -    |    -   |
-#define SENSOR_OV13B10_12M_SEQ  0x59  //  |   v    |   -    |   -    |   -    |    -   |
-#define SENSOR_OV12890          0x5A  //  |   v    |   v    |   -    |   -    |    -   |
-#define SENSOR_OV12890_8M       0x5B  //  |   v    |   -    |   -    |   -    |    -   |
-#define SENSOR_OV12890_8M_SEQ   0x5C  //  |   v    |   -    |   -    |   -    |    -   |
-#define SENSOR_OV12890_12M      0x5D  //  |   v    |   -    |   -    |   -    |    -   |
-#define SENSOR_OV12890_12M_SEQ  0x5E  //  |   v    |   -    |   -    |   -    |    -   |
-#define SENSOR_OV50A40          0x5F  //  |   v    |   -    |   v    |   -    |    -   |
-#define SENSOR_OV50A40_50M      0x60  //  |   v    |   -    |   v    |   -    |    -   |
-#define SENSOR_OS04D10          0x61  //  |   v    |   -    |   -    |   -    |    -   |
-#define SENSOR_OS04E10          0x62  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OV7251           0x53  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OV9734           0x54  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_OV9734_SD        0x55  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_OS02H10          0x56  //  |   v    |   v    |   v    |   v    |    -   |
+#define SENSOR_OS04A10          0x57  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_OV13B10          0x58  //  |   v    |   v    |   -    |   -    |    -   |
+#define SENSOR_OV13B10_12M      0x59  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OV13B10_12M_SEQ  0x5A  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OV12890          0x5B  //  |   v    |   v    |   -    |   -    |    -   |
+#define SENSOR_OV12890_8M       0x5C  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OV12890_8M_SEQ   0x5D  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OV12890_12M      0x5E  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OV12890_12M_SEQ  0x5F  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OV50A40          0x60  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_OV50A40_50M      0x61  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_OS04D10          0x62  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OS04E10          0x63  //  |   v    |   -    |   -    |   -    |    -   |
 /* PRIMESENSOR */
 #define SENSOR_PS5258           0x70  //  |   v    |   -    |   v    |   -    |    -   |
 #define SENSOR_PS5262           0x71  //  |   v    |   -    |   v    |   -    |    -   |
@@ -166,6 +168,7 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_GC4693]           = {2560, 1440, 24},
 	[SENSOR_GC4693_HD]        = {1280,  720, 20},
 	[SENSOR_GC5035]           = {2592, 1944, 15},
+	[SENSOR_GC02M1]           = {1600, 1200, 30},
 	[SENSOR_GC05A2]           = {2592, 1944, 15},
 	[SENSOR_GC8613_FHD]       = {1920, 1080, 30},
 	/* SONY */
@@ -197,6 +200,7 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_OV2735]           = {1920, 1080, 30},
 	[SENSOR_OV5647]           = {2592, 1944, 15},
 	[SENSOR_OV5693]           = {2592, 1944, 15},
+	[SENSOR_OV7251]           = { 640,  480, 30},
 	[SENSOR_OV9734]           = {1280,  720, 30},
 	[SENSOR_OV9734_SD]        = { 640,  360, 60},
 	[SENSOR_OS02H10]          = {1920, 1080, 30},
