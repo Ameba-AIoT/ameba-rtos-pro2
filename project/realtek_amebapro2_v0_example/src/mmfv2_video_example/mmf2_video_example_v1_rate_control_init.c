@@ -28,8 +28,10 @@
 *****************************************************************************/
 
 #define V1_CHANNEL 0
-#define V1_BPS 1*1024*1024
+#define V1_BPS 2*1024*1024
 #define V1_RCMODE 2 // 1: CBR, 2: VBR
+#define BPS_STBL_CTRL_MAX_RATIO 1.2
+#define BPS_STBL_CTRL_MIN_RATIO 0.9
 #define USE_H265 0
 #if USE_H265
 #include "sample_h265.h"
@@ -67,8 +69,8 @@ static rtsp2_params_t rtsp2_v1_params = {
 
 #ifdef BPS_STABLE_CONTROL
 static bps_stbl_ctrl_param_t bps_stbl_ctrl_v1_params = {
-	.maximun_bitrate = (uint32_t)(V1_BPS * 1.2),
-	.minimum_bitrate = (uint32_t)(V1_BPS * 0.8),
+	.maximun_bitrate = (uint32_t)(V1_BPS * BPS_STBL_CTRL_MAX_RATIO),
+	.minimum_bitrate = (uint32_t)(V1_BPS * BPS_STBL_CTRL_MIN_RATIO),
 	.target_bitrate = (uint32_t)(V1_BPS),
 	.sampling_time = 2000,
 };
@@ -294,13 +296,13 @@ static void bitrate_change(void *arg)
 	if (argc > 2) {
 		printf("BC=target_bitrate\r\n");
 		return;
-	} else if(argc == 1) {
+	} else if (argc == 1) {
 		bps_stbl_ctrl_v1_params.target_bitrate = 512 * 1024;
 	} else {
 		bps_stbl_ctrl_v1_params.target_bitrate = atoi((char const *)argv[1]);
 	}
-	bps_stbl_ctrl_v1_params.maximun_bitrate = bps_stbl_ctrl_v1_params.target_bitrate * 1.2;
-	bps_stbl_ctrl_v1_params.minimum_bitrate = bps_stbl_ctrl_v1_params.target_bitrate * 0.8;
+	bps_stbl_ctrl_v1_params.maximun_bitrate = bps_stbl_ctrl_v1_params.target_bitrate * BPS_STBL_CTRL_MAX_RATIO;
+	bps_stbl_ctrl_v1_params.minimum_bitrate = bps_stbl_ctrl_v1_params.target_bitrate * BPS_STBL_CTRL_MIN_RATIO;
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_BPS, bps_stbl_ctrl_v1_params.target_bitrate);
 	mm_module_ctrl(video_v1_ctx, CMD_VIDEO_SET_BPS_STBL_CTRL_PARAMS, (int)&bps_stbl_ctrl_v1_params);
 }
