@@ -59,7 +59,7 @@ static uint8_t read_buf[TOTAL_LEN] = {0};
 static int terminate_signal = 0;
 
 //FOR HTTP DOWNLOAD
-#define HTTP_DATA_BUF_SIZE      4096
+#define HTTP_DATA_BUF_SIZE      16384
 
 static uint8_t data_buf[HTTP_DATA_BUF_SIZE] = {0};
 static uint8_t delete_file_after_upload = DELETE_FILE_AFTER_UPLOAD;
@@ -86,13 +86,15 @@ static uint8_t delete_file_after_upload = DELETE_FILE_AFTER_UPLOAD;
 #define TASK_NOTIFY_COMPLETED_MASK  (WRITE_TASK_COMPLETED_BIT | READ_TASK_COMPLETED_BIT)
 
 // For Queue method
-#define QUEUE_LENGTH            8
-#define QUEUE_ITEM_SIZE         HTTP_DATA_BUF_SIZE
+#define QUEUE_LENGTH            6
+#define QUEUE_ITEM_SIZE         HTTP_DATA_BUF_SIZE      // 16KB: one full TLS record per chunk
+#define FILE_TRANSFER_CHUNK     QUEUE_ITEM_SIZE
 
 typedef struct {
-	int id;
-	uint8_t fileread;
-	uint8_t message[QUEUE_ITEM_SIZE];
+	uint8_t *data;       // pointer into transfer buffer pool (NULL for EOF/error marker)
+	uint16_t len;        // bytes valid at data
+	uint8_t eof;         // 1 = last chunk or transfer end, no more reads
+	uint8_t error;       // 1 = read failed, abort transfer
 } file_msg_t;
 
 typedef struct {
@@ -108,6 +110,81 @@ static QueueHandle_t file_queue = NULL;
 static TaskHandle_t core_taskhandle = NULL;
 static TaskHandle_t read_taskhandle = NULL;
 static TaskHandle_t send_taskhandle = NULL;
+
+// Transfer buffer pool: payload is heap-allocated so Sender/Receiver keep small
+// stacks (chunk no longer lives on the task stack as it used to).
+#define FILE_TRANSFER_POOL_SIZE        (QUEUE_LENGTH + 2)   // 2 extra slots for in-flight buffers
+static uint8_t **transfer_pool = NULL;   // array of ptrs, each to a FILE_TRANSFER_CHUNK buffer
+static QueueHandle_t transfer_pool_queue = NULL;
+
+static int transfer_pool_create(void)
+{
+	transfer_pool = (uint8_t **)rtw_malloc(sizeof(uint8_t *) * FILE_TRANSFER_POOL_SIZE);
+	if (transfer_pool == NULL) {
+		return -1;
+	}
+	transfer_pool_queue = xQueueCreate(FILE_TRANSFER_POOL_SIZE, sizeof(uint8_t *));
+	if (transfer_pool_queue == NULL) {
+		rtw_mfree((u8 *)transfer_pool, 0);
+		transfer_pool = NULL;
+		return -1;
+	}
+	for (int i = 0; i < FILE_TRANSFER_POOL_SIZE; i++) {
+		transfer_pool[i] = (uint8_t *)rtw_malloc(FILE_TRANSFER_CHUNK);
+		if (transfer_pool[i] == NULL) {
+			while (--i >= 0) {
+				rtw_mfree((u8 *)transfer_pool[i], 0);
+			}
+			vQueueDelete(transfer_pool_queue);
+			transfer_pool_queue = NULL;
+			rtw_mfree((u8 *)transfer_pool, 0);
+			transfer_pool = NULL;
+			return -1;
+		}
+		xQueueSend(transfer_pool_queue, &transfer_pool[i], 0);
+	}
+	return 0;
+}
+
+static void transfer_pool_destroy(void)
+{
+	if (transfer_pool_queue != NULL) {
+		vQueueDelete(transfer_pool_queue);
+		transfer_pool_queue = NULL;
+	}
+	if (transfer_pool != NULL) {
+		for (int i = 0; i < FILE_TRANSFER_POOL_SIZE; i++) {
+			if (transfer_pool[i]) {
+				rtw_mfree((u8 *)transfer_pool[i], 0);
+				transfer_pool[i] = NULL;
+			}
+		}
+		rtw_mfree((u8 *)transfer_pool, 0);
+		transfer_pool = NULL;
+	}
+}
+
+static uint8_t *transfer_pool_get(void)
+{
+	uint8_t *buf = NULL;
+	BaseType_t wait = pdFALSE;
+
+	// If Sender already asked to stop, don't keep reading / don't stall forever.
+	if (critical_process_started == 0) {
+		return NULL;
+	}
+	if (xQueueReceive(transfer_pool_queue, &buf, wait) != pdPASS) {
+		return NULL;
+	}
+	return buf;
+}
+
+static void transfer_pool_put(uint8_t *buf)
+{
+	if (buf) {
+		xQueueSend(transfer_pool_queue, &buf, 0);
+	}
+}
 
 volatile int flag = 0;
 
@@ -450,8 +527,8 @@ static void media_list_cb(struct httpd_conn *conn)
 		uint32_t sent = 0;
 		while (sent < file_list_len) {
 			uint32_t chunk_size = file_list_len - sent;
-			if (chunk_size >= HTTP_DATA_BUF_SIZE*4) {
-				chunk_size = HTTP_DATA_BUF_SIZE*4;  // cap to 4KB per send
+			if (chunk_size >= HTTP_DATA_BUF_SIZE) {
+				chunk_size = HTTP_DATA_BUF_SIZE;  // cap to 4KB per send
 			}
 			int ret = httpd_response_write_data(conn, (uint8_t *)file_list + sent, chunk_size);
 			if (ret <= 0) {
@@ -566,11 +643,11 @@ static void http_file_read_thread(void *pvParameters)
 {
 	FILE *http_file = (FILE *)pvParameters;
 	file_msg_t msg = {0};
-	uint32_t notifyValue;
+	uint32_t notifyValue = 0;
 	int send_success = 1;
 #if SAVE_DISK == 0
 		extdisk_fseek(http_file, 0, SEEK_SET);
-#elif SAVE_DISK == 1 
+#elif SAVE_DISK == 1
 		ramdisk_fseek(http_file, 0, SEEK_SET);
 #endif
 	while (1) {
@@ -584,50 +661,78 @@ static void http_file_read_thread(void *pvParameters)
 			}
 		}
 
-		// Read data from the file
-		if (msg.fileread == 0) {
+		// Get a free 16KB chunk buffer from the pool (heap, not task stack)
+		uint8_t *chunk = transfer_pool_get();
+		if (chunk == NULL) {
+			// No free buffer right now; yield and retry so the Sender can drain
+			// the queue. If the transfer was cancelled meanwhile, stop.
+			vTaskDelay(1);
+			if (critical_process_started == 0) {
+				break;
+			}
+			continue;
+		}
+
+		int br;
 #if SAVE_DISK == 0
-			int br = extdisk_fread(msg.message, 1, QUEUE_ITEM_SIZE, http_file);
-#elif SAVE_DISK == 1 
-			int br = ramdisk_fread(msg.message, 1, QUEUE_ITEM_SIZE, http_file);
+		br = extdisk_fread(chunk, 1, FILE_TRANSFER_CHUNK, http_file);
+#elif SAVE_DISK == 1
+		br = ramdisk_fread(chunk, 1, FILE_TRANSFER_CHUNK, http_file);
 #endif
-			
-			if (br < 0) {
-				WLAN_SCEN_ERR("[Reader Task] Read ERROR\r\n");
-				WLAN_SCEN_ERR("[Reader Task] Send notify READ_STATUS_ERROR to Writer Task Handle for error\r\n");
-				if (send_taskhandle) {
-					xTaskNotify(send_taskhandle, TASK_NOTIFY_ERROR, eSetValueWithOverwrite); // Notify error
+		if (br < 0) {
+			transfer_pool_put(chunk);
+			WLAN_SCEN_ERR("[Reader Task] Read ERROR\r\n");
+			WLAN_SCEN_ERR("[Reader Task] Send notify READ_STATUS_ERROR to Writer Task Handle for error\r\n");
+			if (send_taskhandle) {
+				xTaskNotify(send_taskhandle, TASK_NOTIFY_ERROR, eSetValueWithOverwrite); // Notify error
+			}
+			send_success = 0;
+			critical_process_started = 0;
+			break;
+		}
+
+		// Fill in the message metadata. EOF is ALWAYS propagated via the queue
+		// (including an exact-multiple-of-chunk file, where br would be 0 here)
+		// so the Sender is guaranteed to unblock.
+		if (br == 0) {
+			transfer_pool_put(chunk);
+			msg.data = NULL;
+			msg.len = 0;
+			msg.eof = 1;
+			msg.error = 0;
+		} else {
+			msg.data = chunk;
+			msg.len = (uint16_t)br;
+			msg.eof = (br < FILE_TRANSFER_CHUNK);   // short read == last chunk
+			msg.error = 0;
+			WLAN_SCEN_INFO("[Reader Task] read %d bytes\r\n", br);
+		}
+
+		if (file_queue) {
+			if (xQueueSend(file_queue, &msg, portMAX_DELAY) != pdPASS) {
+				WLAN_SCEN_ERR("[Reader Task] enqueue message fail\r\n");
+				// Return the chunk only if the reader still owns it (EOF marker
+				// carries data==NULL and the buffer was already returned above).
+				if (msg.data != NULL) {
+					transfer_pool_put(chunk);
 				}
 				send_success = 0;
 				critical_process_started = 0;
 				break;
 			}
-
-			if (br == 0) { // EOF detected
-				WLAN_SCEN_MSG("[Reader Task] EOF Detected\r\n");
-				WLAN_SCEN_MSG("[Reader Task] Send notify 0 to Writer Task Handle for EOF\r\n");
-				msg.id = 0;
-				if (file_queue) {
-					xQueueSend(file_queue, &msg, portMAX_DELAY);
-				}
-				break;
-			}
-
-			// Fill in the message metadata
-			msg.fileread = 1;
-			msg.id = br; // Use the number of bytes read as the ID
-		}
-
-		if (file_queue) {
-			if (xQueueSend(file_queue, &msg, 20) != pdPASS) {
-				WLAN_SCEN_INFO("[Reader Task] enqueue message full\r\n");
-			} else {
-				msg.fileread = 0;
-			}
 		} else {
 			WLAN_SCEN_ERR("[Reader Task] Queue is not valid.\r\n");
+			if (msg.data != NULL) {
+				transfer_pool_put(chunk);
+			}
 			send_success = 0;
 			critical_process_started = 0;
+			break;
+		}
+
+		if (msg.eof) {
+			WLAN_SCEN_MSG("[Reader Task] EOF Detected\r\n");
+			WLAN_SCEN_MSG("[Reader Task] Send notify 0 to Writer Task Handle for EOF\r\n");
 			break;
 		}
 	}
@@ -655,32 +760,54 @@ static void http_file_send_thread(void *pvParameters)
 	// 	setsockopt(conn->sock, SOL_SOCKET, SO_SNDTIMEO, &send_timeout, sizeof(send_timeout));
 	// }
 
+	int send_timeout = 3000;
+	if (conn->sock != -1) {
+		// Set send timeout once up-front; no need to re-apply per chunk.
+		setsockopt(conn->sock, SOL_SOCKET, SO_SNDTIMEO, &send_timeout, sizeof(send_timeout));
+	}
+
 	while (1) {
 		if (xQueueReceive(file_queue, &rcv_msg, portMAX_DELAY) == pdPASS) {
-			if (rcv_msg.id == 0) {
+			if (rcv_msg.eof) {
+				// EOF chunk is the last one: send it, then stop.
+				total_bw += rcv_msg.len;
+				if (rcv_msg.len > 0) {
+					int ret = httpd_response_write_data(conn, rcv_msg.data, rcv_msg.len);
+					if (ret <= 0) {
+						writer_status = WRITE_STATUS_ERROR;
+						WLAN_SCEN_ERR("[WRITER TASK] httpd_response_write_data ret = %d\r\n", ret);
+						xTaskNotify(read_taskhandle, TASK_NOTIFY_WERROR, eSetValueWithOverwrite);
+						rcv_success = 0;
+					} else {
+						if (!started) {
+							start_time = mm_read_mediatime_ms();
+							started = 1;
+						}
+						total_bytes_sent += ret;
+					}
+				}
+				transfer_pool_put(rcv_msg.data);
 				writer_status = WRITE_STATUS_EOF;
 				WLAN_SCEN_MSG("Get total queued bytes = %d\r\n", total_bw);
 				break;
 			}
-			total_bw += rcv_msg.id;
-			int send_timeout = 3000;
-			if (conn->sock != -1) {
-				setsockopt(conn->sock, SOL_SOCKET, SO_SNDTIMEO, &send_timeout, sizeof(send_timeout));
-			}
-			int ret = httpd_response_write_data(conn, rcv_msg.message, rcv_msg.id);
+			total_bw += rcv_msg.len;
+			int ret = httpd_response_write_data(conn, rcv_msg.data, rcv_msg.len);
+			// Buffer is owned by the pool again once handed off; return it after
+			// the (blocking) TLS write so the Reader can reuse it.
+			transfer_pool_put(rcv_msg.data);
 			if (ret <= 0) {
 				writer_status = WRITE_STATUS_ERROR;
 				WLAN_SCEN_ERR("[WRITER TASK] httpd_response_write_data ret = %d\r\n", ret);
 				xTaskNotify(read_taskhandle, TASK_NOTIFY_WERROR, eSetValueWithOverwrite);
 				rcv_success = 0;
 				break;
-			} else if (ret > 0) {
-				if (!started) {
-					start_time = mm_read_mediatime_ms();
-					started = 1;
-				}
-				total_bytes_sent += ret;
 			}
+			if (!started) {
+				start_time = mm_read_mediatime_ms();
+				started = 1;
+			}
+			total_bytes_sent += ret;
 		} else {
 			WLAN_SCEN_ERR("[WRITER TASK] xQueueReceive fail\r\n");
 			xTaskNotify(read_taskhandle, TASK_NOTIFY_ERROR, eSetValueWithOverwrite);
@@ -1156,19 +1283,29 @@ static void media_getfile_cb(struct httpd_conn *conn)
 				goto http_end;
 			}
 
+			if (transfer_pool_create() != 0) {
+				WLAN_SCEN_WARN("Failed to create transfer buffer pool.\r\n");
+				vQueueDelete(file_queue);
+				file_queue = NULL;
+				transfer_file_normal_internal(conn, http_file);
+				goto http_end;
+			}
+
 			core_taskhandle = xTaskGetCurrentTaskHandle();
 
-			if (xTaskCreate(http_file_read_thread, "Receiver", 8192, (void *)http_file, 5, &read_taskhandle) != pdPASS) {
+			if (xTaskCreate(http_file_read_thread, "Receiver", 16384, (void *)http_file, 5, &read_taskhandle) != pdPASS) {
 				WLAN_SCEN_WARN("Failed to create ReaderTask\n");
+				transfer_pool_destroy();
 				transfer_file_normal_internal(conn, http_file);
 				vQueueDelete(file_queue);
 				file_queue = NULL;
 				goto http_end;
 			}
 
-			if (xTaskCreate(http_file_send_thread, "Sender", 8192, (void *)conn, 5, &send_taskhandle) != pdPASS) {
+			if (xTaskCreate(http_file_send_thread, "Sender", 16384, (void *)conn, 5, &send_taskhandle) != pdPASS) {
 				WLAN_SCEN_WARN("Failed to create WriterTask\n");
 				vTaskDelete(read_taskhandle);
+				transfer_pool_destroy();
 				vQueueDelete(file_queue);
 				file_queue = NULL;
 				transfer_file_normal_internal(conn, http_file);
@@ -1184,6 +1321,7 @@ static void media_getfile_cb(struct httpd_conn *conn)
 
 			vQueueDelete(file_queue);
 			file_queue = NULL;
+			transfer_pool_destroy();
 			send_taskhandle = NULL;
 			read_taskhandle = NULL;
 			// extdisk_fseek(http_file, 0, SEEK_END); 
