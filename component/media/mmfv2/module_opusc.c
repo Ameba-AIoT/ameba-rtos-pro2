@@ -52,6 +52,23 @@ static void set_expected_duration(void* p)
 }
 */
 
+// Simple linear interpolation resampler: 16k -> 48k
+static int resample_16k_to_48k(const int16_t *in, int in_samples, int16_t *out) {
+    int out_samples = in_samples * 3;
+    for (int i = 0; i < in_samples - 1; i++) {
+        int16_t s0 = in[i];
+        int16_t s1 = in[i+1];
+        out[3*i + 0] = s0;
+        out[3*i + 1] = s0 + (s1 - s0) / 3;
+        out[3*i + 2] = s0 + (2*(s1 - s0)) / 3;
+    }
+    // duplicate last sample
+    out[out_samples - 3] = in[in_samples - 1];
+    out[out_samples - 2] = in[in_samples - 1];
+    out[out_samples - 1] = in[in_samples - 1];
+    return out_samples;
+}
+
 int opusc_handle(void *p, void *input, void *output)
 {
 	opusc_ctx_t *ctx = (opusc_ctx_t *)p;
@@ -73,8 +90,24 @@ int opusc_handle(void *p, void *input, void *output)
 	if (ctx->cache_idx + input_item->size >= ctx->max_cache_size) {
 		mm_printf("[OPUSC WARN] opusd data cache overflow %d + %d >= %d, drop the input\r\n", ctx->cache_idx, input_item->size, ctx->max_cache_size);
 	} else {
-		memcpy(ctx->cache + ctx->cache_idx, (void *)input_item->data_addr, input_item->size);
-		ctx->cache_idx += input_item->size;
+		 if (ctx->params.sample_rate > 16000) {
+            // --- Resample 16k -> 48k before caching ---
+            static int16_t resample_buf[4096 * 3]; // adjust size as needed
+			 int bytes_per_sample = ctx->params.bit_length / 8; // 2 for 16‑bit PCM
+            int in_samples = input_item->size / bytes_per_sample; // 16-bit mono
+            int out_samples = resample_16k_to_48k((int16_t *)input_item->data_addr, in_samples, resample_buf);
+            int out_bytes = out_samples * sizeof(int16_t);
+
+            if (ctx->cache_idx + out_bytes < ctx->max_cache_size) {
+                memcpy(ctx->cache + ctx->cache_idx, resample_buf, out_bytes);
+                ctx->cache_idx += out_bytes;
+            } else {
+                mm_printf("[OPUSC WARN] cache overflow after resample\n");
+            }
+        } else {
+			memcpy(ctx->cache + ctx->cache_idx, (void *)input_item->data_addr, input_item->size);
+			ctx->cache_idx += input_item->size;
+		}
 	}
 
 	if (ctx->params.use_framesize == 0) {

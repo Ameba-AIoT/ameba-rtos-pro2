@@ -12,6 +12,9 @@
 #define MAX_BOX_CHILD 8
 #define RBUF_SIZE 1024
 
+#define MAX_METADATA_SAMPLES 4096
+#define MAX_METADATA_SAMPLE_SIZE 512 
+
 typedef struct _mp4root {
 	unsigned int video_len;
 	unsigned int audio_len;
@@ -66,11 +69,16 @@ typedef struct _mp4_context mp4_context, *pmp4_context;
 
 // Callback types
 typedef int (*udta_box_callback_t)(unsigned char *udta_buf, pmp4_context mp4_ctx);
+typedef int (*meta_trak_box_callback_t)(unsigned char *moov_buf, pmp4_context mp4_ctx);
 
 // Structure to hold the callback
 typedef struct {
 	udta_box_callback_t udta_box_cb;  // Callback function
 } udta_callback_t;
+
+typedef struct {
+	meta_trak_box_callback_t meta_trak_box_cb;  // Callback function
+} meta_trak_callback_t;
 
 typedef struct mp4_timelapse_params_s {
 	uint32_t capture_interval;
@@ -97,6 +105,8 @@ typedef struct mp4_param_s {
 	uint32_t append_header;
 	unsigned char *udta_buf;
 	int udta_buf_size;
+	unsigned char *trak_buf;
+	int trak_buf_size;
 } mp4_params_t;
 
 typedef struct _mp4_context {
@@ -187,8 +197,18 @@ typedef struct _mp4_context {
 	int	append_header;//0:Don't add the sps/pps 1:Add the info
 	unsigned    char *udta_box;
 	int udta_size;
+	unsigned    char *trak_box;
+	int trak_size;
 	udta_callback_t callback;
 	mp4_timelapse_params_t timelapse_params;
+	meta_trak_callback_t meta_trak_callback;
+	unsigned int *metadata_buffer_index;
+    unsigned int *metadata_buffer_size;
+    unsigned int *metadata_timestamp_buffer;
+    unsigned char *metadata_data;  // ring of metadata sample payloads (MAX_METADATA_SAMPLES * MAX_METADATA_SAMPLE_SIZE)
+    unsigned int metadata_size;   // capacity (num samples)
+    unsigned int metadata_len;    // number of samples buffered this file
+    unsigned int metadata_write_index; // number of metadata samples already flushed to mdat
 } mp4_context, *pmp4_context;
 
 void mp4_muxer_init(pmp4_context mp4_ctx);

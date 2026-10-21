@@ -21,6 +21,8 @@
 
 #define CMD_OPUSC_APPLY                 MM_MODULE_CMD(0x20)  // for hardware module
 
+#define OPUSC_UPSAMPLE_16K_TO_48K 0
+
 typedef struct opusc_param_s {
 	uint32_t sample_rate;	// 8000
 	uint32_t channel;		// 1

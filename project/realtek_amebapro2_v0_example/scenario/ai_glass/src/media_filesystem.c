@@ -909,7 +909,13 @@ int extdisk_filesystem_init(const char *disk_tag, int vfs_type, int interface)
 	snprintf(ai_glass_extdisk_tag, MAX_TAG_LEN, "%s:/", disk_tag);
 	FILE_SYS_MSG("ai glass get extdisk name %s\r\n", ai_glass_extdisk_tag);
 	FILE_SYS_MSG("ai glass extdisk time %lu\r\n", mm_read_mediatime_ms());
-	vfs_user_register(disk_tag, vfs_type, interface); // cost about 100ms for SD card, 150ms for EMMC card
+	int ret = vfs_user_register(disk_tag, vfs_type, interface); // cost about 100ms for SD card, 150ms for EMMC card
+	if (ret < 0) {
+		FILE_SYS_ERR("extdisk register/mount fail ret = %d\r\n", ret);
+		memset(ai_glass_extdisk_tag, 0, MAX_TAG_LEN);
+		xSemaphoreGive(extdisk_mutex);
+		return ret;
+	}
 	char ai_glass_path[MAX_FILE_LEN] = {0};
 	snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_extdisk_tag, SYS_COUNT_FILENAME);
 	filecount_object = parser_file_cntlist_json(ai_glass_path);
@@ -960,7 +966,13 @@ int ramdisk_filesystem_init(const char *disk_tag)
 	snprintf(ai_glass_ramdisk_tag, MAX_TAG_LEN, "%s:/", disk_tag);
 	FILE_SYS_MSG("ai glass get ramdisk name %s\r\n", ai_glass_ramdisk_tag);
 	FILE_SYS_MSG("ai glass ramdisk time %lu\r\n", mm_read_mediatime_ms());
-	vfs_user_register(disk_tag, VFS_FATFS, VFS_INF_RAM); // cost about 10ms for RAM disk
+	int ret = vfs_user_register(disk_tag, VFS_FATFS, VFS_INF_RAM); // cost about 10ms for RAM disk
+	if (ret < 0) {
+		FILE_SYS_ERR("ramdisk register/mount fail ret = %d\r\n", ret);
+		memset(ai_glass_ramdisk_tag, 0, MAX_TAG_LEN);
+		xSemaphoreGive(ramdisk_mutex);
+		return ret;
+	}
 	char ai_glass_path[MAX_FILE_LEN] = {0};
     snprintf(ai_glass_path, sizeof(ai_glass_path), "%s%s", ai_glass_ramdisk_tag, SYS_COUNT_FILENAME);
     filecount_object = parser_file_cntlist_json(ai_glass_path);

@@ -31,7 +31,7 @@
 #define GYRO_SAVE_SET_STOP      0x20
 
 // Configuration
-#define ENABLE_GET_GSENSOR_INFO 0
+#define ENABLE_GET_GSENSOR_INFO 1
 
 // Whole g-sensor data
 // we do not need raw data of the g-sensor
@@ -76,6 +76,12 @@ typedef struct {
     float rs_readout_time_ms;
     LdcParams ldc_params;
 } CameraConfig;
+
+typedef struct {
+    double tscale;
+    double gscale;          
+    double timestamp_base_sec;
+} imuconfig;
 
 // 10^6 scaling factor
 #define FLOAT_SCALE 1000000

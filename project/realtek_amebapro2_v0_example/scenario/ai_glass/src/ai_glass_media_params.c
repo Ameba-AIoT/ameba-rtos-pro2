@@ -1229,10 +1229,56 @@ void media_update_preinit_isp_ae(void)
 {
 	int ae_exposure_time = 0;
 	int ae_gain = 0;
+	int wait_ae_timeout = 2000;
 	isp_get_exposure_time(&ae_exposure_time);
 	isp_get_ae_gain(&ae_gain);
+	int wait_time = 0;
+	uint64_t last_etgain = 0;
+	uint64_t etgain = (uint64_t)ae_exposure_time * ae_gain;
+	// Blank floor: driver clamps any exposure < 300us to 300 and gain to 1x (256).
+	// A dead/failed-reopen channel (VOE_OPEN_CMD 0x206 fail) sits here forever.
+	int at_blank_floor = (ae_exposure_time <= 300 && ae_gain <= 256);
+	int ae_moved = 0;
+	
+#define AE_STABLE_HITS   2
+	int stable_hits = 0;
+
+	while (1) {
+		AI_GLASS_INFO("[AE] wait=%dms exp=%d gain=%d\r\n", wait_time, ae_exposure_time, ae_gain);
+		if (last_etgain > 0 && etgain > 0) {
+            if (etgain == last_etgain) {
+                stable_hits++;
+            } else {
+                stable_hits = 0;
+            }
+        }
+		if (stable_hits >= AE_STABLE_HITS) {
+			break;
+		}
+		vTaskDelay(100);
+		wait_time += 100;
+		last_etgain = etgain;
+		isp_get_exposure_time(&ae_exposure_time);
+		isp_get_ae_gain(&ae_gain);
+		etgain = (uint64_t)ae_exposure_time * ae_gain;
+		if (etgain != last_etgain) {
+			ae_moved = 1;
+		}
+		if (wait_time >= wait_ae_timeout) {
+			AI_GLASS_ERR("wait ae stable timeout\r\n");
+			break;
+		}
+	}
+	if (ae_moved && wait_time >= wait_ae_timeout) {
+		AI_GLASS_ERR("[AE] timed out, using last (time=%d gain=%d)\r\n", ae_exposure_time, ae_gain);
+	}
+	if (at_blank_floor && !ae_moved) {
+		AI_GLASS_ERR("AE stuck at blank floor (time=%d gain=%d), keeping cached AE\r\n", ae_exposure_time, ae_gain);
+		return;
+	}
 	ai_glass_pre_init_params.isp_ae_init_exposure = ae_exposure_time;
 	ai_glass_pre_init_params.isp_ae_init_gain = ae_gain;
+	AI_GLASS_MSG("[AE] cached (time=%d gain=%d) after %dms\r\n", ae_exposure_time, ae_gain, wait_time);
 }
 void media_update_preinit_isp_awb(void)
 {

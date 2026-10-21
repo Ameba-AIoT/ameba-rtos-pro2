@@ -103,7 +103,7 @@ static void event_cb(inv_imu_sensor_event_t *evt)
 		_gyro_data[_gyro_data_widx].dps[2] = convert_gyro(evt->gyro[2], GYRO_FS);
 
 		//TODO: every gyro data must sync with video's timestamp
-		_gyro_data[_gyro_data_widx].timestamp = (uint32_t) gyrots;
+		_gyro_data[_gyro_data_widx].timestamp = gyrots;
 		gyrots += gyroUpdateInterval;
 		_gyro_data_widx++;
 		if (_gyro_data_widx >= _gyro_data_len) {
@@ -157,7 +157,7 @@ int gyroscope_fifo_read(gyro_data_t *data, uint16_t len)
 		//data[i].dps_raw[2] = gs_gyro_raw[i][2];
 
 		//TODO: every gyro data must sync with video's timestamp
-		data[i].timestamp = (uint32_t) timestamp;
+		data[i].timestamp = timestamp;
 		timestamp += gyroUpdateInterval;
 	}
 
@@ -166,7 +166,6 @@ int gyroscope_fifo_read(gyro_data_t *data, uint16_t len)
 	_gyro_data = data;
 	_gyro_data_len = len;
 	_gyro_data_widx = 0;
-	gyrots = 0.0;
 	int ret = icm42670p_read_fifo(event_cb);
 	if (ret >= 0) {
 		//printf("icm42670p_read_fifo: %d\r\n", ret);
@@ -177,7 +176,6 @@ int gyroscope_fifo_read(gyro_data_t *data, uint16_t len)
 	_gyro_data = NULL;
 	_gyro_data_len = 0;
 	_gyro_data_widx = 0;
-	gyrots = 0.0;
 	return ret;
 #endif
 	return -5;

@@ -16,6 +16,14 @@
 #include "faac.h"
 #include "faac_api.h"
 
+#if AAC_UPSAMPLE_16K_TO_48K
+static int16_t aac_upsample_prev = 0;	// last input sample of previous page, for interpolation across pages
+#endif
+
+void *aac_new_item(void *p);
+void *aac_del_item(void *p, void *d);
+void *aac_rsz_item(void *p, void *d, int len);
+
 //------------------------------------------------------------------------------
 //AAD open function
 static int aachandle_Open(aac_ctx_t *ctx)
@@ -133,21 +141,69 @@ int aac_handle(void *p, void *input, void *output)
 	// set timestamp to 1st sample (cache head)
 	output_item->timestamp -= 1000 * (ctx->cache_idx / 2) / ctx->params.sample_rate;
 
-	if (ctx->cache_idx + input_item->size >= ctx->max_cache_size) {
-		mm_printf("[AAC WARN] aac data cache overflow %d + %d >= %d, drop the input\r\n", ctx->cache_idx, input_item->size, ctx->max_cache_size);
-	} else {
-		memcpy(ctx->cache + ctx->cache_idx, (void *)input_item->data_addr, input_item->size);
-		ctx->cache_idx += input_item->size;
-	}
+#if AAC_UPSAMPLE_16K_TO_48K
+	if (ctx->params.sample_rate == 48000) {
+		// 16k -> 48k linear interpolation, written directly into cache
+		int in_samples = input_item->size / 2;
+		int out_bytes = in_samples * 3 * 2;
+		if (ctx->cache_idx + out_bytes >= ctx->max_cache_size) {
+			mm_printf("[AAC WARN] aac data cache overflow %d + %d >= %d, drop the input\r\n", ctx->cache_idx, out_bytes, ctx->max_cache_size);
+		} else {
+			int16_t *in = (int16_t *)input_item->data_addr;
+			int16_t *out = (int16_t *)(ctx->cache + ctx->cache_idx);
+			for (int i = 0; i < in_samples; i++) {
+				int s0 = (i == 0) ? aac_upsample_prev : in[i - 1];
+				int s1 = in[i];
+				out[3 * i + 0] = s0 + (s1 - s0) / 3;
+				out[3 * i + 1] = s0 + 2 * (s1 - s0) / 3;
+				out[3 * i + 2] = s1;
+			}
+			if (in_samples > 0) {
+				aac_upsample_prev = in[in_samples - 1];
+			}
+			ctx->cache_idx += out_bytes;
+		}
+	} else
+#endif
+		if (ctx->cache_idx + input_item->size >= ctx->max_cache_size) {
+			mm_printf("[AAC WARN] aac data cache overflow %d + %d >= %d, drop the input\r\n", ctx->cache_idx, input_item->size, ctx->max_cache_size);
+		} else {
+			memcpy(ctx->cache + ctx->cache_idx, (void *)input_item->data_addr, input_item->size);
+			ctx->cache_idx += input_item->size;
+		}
 
-	if (ctx->cache_idx >= ctx->params.channel * ctx->enc_info.frameLength * 2) {
+	// Encode every complete frame in cache. When more than one frame is cached (e.g. after upsample),
+	// earlier frames go to extra items pushed to output_ready here, and the last frame goes to
+	// output_item which the linker pushes after return, so frame order is kept.
+	int frame_bytes = ctx->params.channel * ctx->enc_info.frameLength * 2;
+	uint32_t head_ts = output_item->timestamp;
+	mm_context_t *mctx = (mm_context_t *)ctx->parent;
+	int frame_idx = 0;
+
+	while (ctx->cache_idx >= frame_bytes) {
+		mm_queue_item_t *item = output_item;
+		int is_extra = 0;
+		int item_size = 0;
+
+		if (ctx->cache_idx >= 2 * frame_bytes && xQueueReceive(mctx->output_recycle, (void *)&item, 0) == pdTRUE) {
+			// recycled dynamic item has no buffer, allocate one like the linker does
+			item->data_addr = (uint32_t)aac_new_item(ctx);
+			if (item->data_addr) {
+				item->ref_sema = output_item->ref_sema;
+				is_extra = 1;
+			} else {
+				xQueueSend(mctx->output_recycle, (void *)&item, 0);
+				item = output_item;
+			}
+		}
+
 		AACENC_ERROR err;
 		AACENC_BufDesc in_buf = { 0 }, out_buf = { 0 };
 		AACENC_InArgs in_args = { 0 };
 		AACENC_OutArgs out_args = { 0 };
 
 		int in_identifier = IN_AUDIO_DATA;
-		int in_size = ctx->params.channel * ctx->enc_info.frameLength * 2;
+		int in_size = frame_bytes;
 		int in_elem_size = 2;
 
 		in_args.numInSamples = ctx->params.channel * ctx->enc_info.frameLength;
@@ -162,7 +218,7 @@ int aac_handle(void *p, void *input, void *output)
 		int out_elem_size = 1;
 
 		out_buf.numBufs = 1;
-		out_buf.bufs = (void **) & (output_item->data_addr);
+		out_buf.bufs = (void **) & (item->data_addr);
 		out_buf.bufferIdentifiers = (INT *)&out_identifier;
 		out_buf.bufSizes = (INT *)&out_size;
 		out_buf.bufElSizes = (INT *)&out_elem_size;
@@ -175,12 +231,31 @@ int aac_handle(void *p, void *input, void *output)
 			}
 			printf("Encoding failed 0x%x\r\n", err);
 		} else {
-			frame_size = out_args.numOutBytes;
+			item_size = out_args.numOutBytes;
 		}
 
-		ctx->cache_idx -= ctx->params.channel * ctx->enc_info.frameLength * 2;
+		// timestamp of 1st sample of this frame
+		item->timestamp = head_ts + frame_idx * ctx->enc_info.frameLength * 1000 / ctx->params.sample_rate;
+		item->size = item_size;
+		item->type = AV_CODEC_ID_MP4A_LATM;
+		item->index = 0;
+		frame_idx++;
+
+		ctx->cache_idx -= frame_bytes;
 		if (ctx->cache_idx > 0) {
-			memmove(ctx->cache, ctx->cache + ctx->params.channel * ctx->enc_info.frameLength * 2, ctx->cache_idx);
+			memmove(ctx->cache, ctx->cache + frame_bytes, ctx->cache_idx);
+		}
+
+		if (!is_extra) {
+			frame_size = item_size;
+			break;
+		}
+		if (item_size > 0) {
+			item->data_addr = (uint32_t)aac_rsz_item(ctx, (void *)item->data_addr, item_size);
+			xQueueSend(mctx->output_ready, (void *)&item, 0xFFFFFFFF);
+		} else {
+			item->data_addr = (uint32_t)aac_del_item(ctx, (void *)item->data_addr);
+			xQueueSend(mctx->output_recycle, (void *)&item, 0);
 		}
 	}
 
@@ -208,6 +283,13 @@ static int aacmodule_apply(void *p)
 			return -1;
 		}
 		ctx->max_cache_size = ctx->params.channel * ctx->enc_info.frameLength * 2 + 1500;
+#if AAC_UPSAMPLE_16K_TO_48K
+		if (ctx->params.sample_rate == 48000) {
+			// one input page becomes 3x bytes after upsample
+			ctx->max_cache_size = ctx->params.channel * ctx->enc_info.frameLength * 2 + 1500 * 3;
+			aac_upsample_prev = 0;
+		}
+#endif
 		ctx->cache = (uint8_t *)malloc(ctx->max_cache_size);	// 1500 max audio page size
 		if (!ctx->cache) {
 			// This should never happened

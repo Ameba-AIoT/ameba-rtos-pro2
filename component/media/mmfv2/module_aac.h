@@ -20,6 +20,9 @@
 
 #define CMD_AAC_APPLY               MM_MODULE_CMD(0x20)  // for hardware module
 
+// Experiment: input PCM is 16k/16bit/mono, upsample x3 in AAC module when encoder sample_rate is 48000
+#define AAC_UPSAMPLE_16K_TO_48K 0
+
 //AAC header type
 typedef enum {
 	AAC_TYPE_RAW    = TT_MP4_RAW,   // For AAC raw pqacket

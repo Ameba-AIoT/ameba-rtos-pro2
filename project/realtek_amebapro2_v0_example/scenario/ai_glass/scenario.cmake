@@ -69,7 +69,7 @@ list(
 list(
     APPEND scn_sources
     ${CMAKE_CURRENT_LIST_DIR}/src/gyrosensor/gyrosensor_api.c
-
+    ${CMAKE_CURRENT_LIST_DIR}/src/gyrosensor/gyrosensor_data_box.c
     ${CMAKE_CURRENT_LIST_DIR}/src/gyrosensor/mpu6050/src/driver_mpu6050.c
     ${CMAKE_CURRENT_LIST_DIR}/src/gyrosensor/mpu6050/interface/driver_mpu6050_interface_template.c
     ${CMAKE_CURRENT_LIST_DIR}/src/gyrosensor/mpu6050/example/driver_mpu6050_basic.c
@@ -120,6 +120,7 @@ list(
     ${CMAKE_CURRENT_LIST_DIR}/src/gyrosensor/icm42670p/src
     ${CMAKE_CURRENT_LIST_DIR}/src/common_basics/include
     ${CMAKE_CURRENT_LIST_DIR}/src/spi
+    ${CMAKE_CURRENT_LIST_DIR}/src/stabilize
 )
 
 list(

@@ -81,6 +81,25 @@ int mp4_control(void *p, int cmd, int arg)
 			memset(mp4_muxer->udta_box, 0, mp4_muxer->udta_size);
 		}
 
+		// Set the trak_size
+		if (ctx->params.trak_buf_size != 0) {
+			mp4_muxer->trak_size = ctx->params.trak_buf_size;
+			if (mp4_muxer->trak_size == 0) {
+				printf("ERROR: Allocation of trak_buf_size failed\n");
+				return -1; // Exit with error if allocation fails.
+			}
+		}
+
+		// Set the trak_box
+		if (ctx->params.trak_buf != NULL) {
+			mp4_muxer->trak_box = ctx->params.trak_buf;
+			if (mp4_muxer->trak_box == NULL) {
+				printf("ERROR: Allocation of trak_box failed\n");
+				return -1; // Exit with error if allocation fails.
+			}
+			memset(mp4_muxer->trak_box, 0, mp4_muxer->trak_size);
+		}
+
 		mp4_muxer->sample_rate = ctx->params.sample_rate;
 		mp4_muxer->channel_count = ctx->params.channel;
 
@@ -196,6 +215,14 @@ int mp4_control(void *p, int cmd, int arg)
 		// Assign the udta_box callback
 		if (params->udta_box_cb != NULL) {
 			mp4_muxer->callback.udta_box_cb = params->udta_box_cb;
+		}
+	}
+	break;
+	case CMD_MP4_SET_META_TRAK_CALLBACK: {
+		meta_trak_callback_t *params = (meta_trak_callback_t *)arg;
+		// Assign the metadata trak box callback
+		if (params->meta_trak_box_cb != NULL) {
+			mp4_muxer->meta_trak_callback.meta_trak_box_cb = params->meta_trak_box_cb;
 		}
 	}
 	break;

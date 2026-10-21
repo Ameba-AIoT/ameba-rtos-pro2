@@ -27,8 +27,23 @@
 #define AUDIO_SAMPLE_RATE       48000
 #define RTSP_CH       4
 #else
-#define AUDIO_SAMPLE_RATE       16000
 #define RTSP_CH       1
+#if AAC_UPSAMPLE_16K_TO_48K == 1
+
+#define AUDIO_SAMPLE_RATE       48000 // 48000
+#define i2S_SAMPLE_RATE       	16000 // 48000
+
+#if AUDIO_SRC==AUDIO_INTERFACE
+
+#define AUDIO_I_SAMPLE_RATE     16000 // 48000
+
+#endif
+
+#else
+
+#define AUDIO_SAMPLE_RATE       16000 // 48000
+
+#endif
 #endif
 
 //Modules
@@ -311,7 +326,15 @@ int wifi_streaming_initialize(void)
 	memcpy((void *)&audio_params, (void *)&default_audio_params, sizeof(audio_params_t));
 	if (streaming_audio_ctx) {
 		mm_module_ctrl(streaming_audio_ctx, CMD_AUDIO_GET_PARAMS, (int)&audio_params);
+#if AAC_UPSAMPLE_16K_TO_48K == 1
+
+		audio_params.sample_rate = audio_samplerate2index(AUDIO_I_SAMPLE_RATE);
+
+#else
+
 		audio_params.sample_rate = audio_samplerate2index(AUDIO_SAMPLE_RATE);
+
+#endif
 		mm_module_ctrl(streaming_audio_ctx, CMD_AUDIO_SET_PARAMS, (int)&audio_params);
 		mm_module_ctrl(streaming_audio_ctx, MM_CMD_SET_QUEUE_LEN, 6); //queue size can be smaller 160ms
 		mm_module_ctrl(streaming_audio_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_STATIC);
@@ -323,7 +346,15 @@ int wifi_streaming_initialize(void)
 	streaming_audio_ctx = mm_module_open(&i2s_module);
 	if (streaming_audio_ctx) {
 		mm_module_ctrl(streaming_audio_ctx, CMD_I2S_GET_PARAMS, (int)&i2s_params);
+#if AAC_UPSAMPLE_16K_TO_48K == 1
+
+		i2s_params.sample_rate = i2s_samplerate2index(i2S_SAMPLE_RATE);
+
+#else
+
 		i2s_params.sample_rate = i2s_samplerate2index(AUDIO_SAMPLE_RATE);
+
+#endif
 		i2s_params.i2s_direction = I2S_RX_ONLY;
 		i2s_params.i2s_role = AUDIO_I2S_ROLE;
 		//i2s_params.pin_group_num = 0;
