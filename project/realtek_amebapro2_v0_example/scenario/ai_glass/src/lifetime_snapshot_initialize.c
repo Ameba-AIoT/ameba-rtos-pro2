@@ -21,7 +21,7 @@
 #include "avcodec.h"
 #include "librtsremosaic.h"
 #include <ainr.h>
-
+#include "stabilize/stabilize_config.h"
 
 // Definition of LIFE SNAPSHOT STATUS
 #define LIFESNAP_IDLE   0x00
@@ -173,14 +173,14 @@ static ExifParams param = {
 	.gps_longitude = 121.568,               // Longitude (e.g., 121.568 for 121?X 34' 5" East)
 	.gps_altitude = 43.2,                   // Altitude in meters (e.g., 43.2 meters above sea level)
 	.has_gps = 1,                           // GPS information present (1 = true, 0 = false)
-	.orientation_fx = 2067.8193,            // 8 significant values, user can modify from orientation_fx to orientation_k3
-	.orientation_fy = 2062.6142,
-	.orientation_cx = 2003.5674,
-	.orientation_cy = 1546.6035,
-	.orientation_k0 = 0.21387498,
-	.orientation_k1 = 0.75066905,
-	.orientation_k2 = -0.56982254,
-	.orientation_k3 = -0.29913265,
+	.orientation_fx = g_camera_calib_keys[0].value, // 8 significant values, user can modify from orientation_fx to orientation_k3
+    .orientation_fy = g_camera_calib_keys[1].value,
+    .orientation_cx = g_camera_calib_keys[2].value,
+    .orientation_cy = g_camera_calib_keys[3].value,
+    .orientation_k0 = g_camera_calib_keys[4].value,
+    .orientation_k1 = g_camera_calib_keys[5].value,
+    .orientation_k2 = g_camera_calib_keys[6].value,
+    .orientation_k3 = g_camera_calib_keys[7].value,
 	.orientation_output_scale = 1.0,
 	.has_orientation = 1,
 	.metering = ""                        // Random metering magic word will be generated for EXIF
@@ -1347,10 +1347,6 @@ int lifetime_hr_snapshot_initialize(isp_info_sync_t *isp_info)
 		printf("lfsnap_status :%d , burst_count:%d\r\n",lfsnap_status, burst_count);
 		lfsnap_status = LIFESNAP_START;
 		total_burst = 1;
-	}
-	if (isp_values_initialized == 1) {
-		AI_GLASS_MSG("isp_values_initialized =%d\n\r",isp_values_initialized);
-		lfsnap_status = LIFESNAP_START;
 	}
 	return 0;
 endoflifesnapshot:

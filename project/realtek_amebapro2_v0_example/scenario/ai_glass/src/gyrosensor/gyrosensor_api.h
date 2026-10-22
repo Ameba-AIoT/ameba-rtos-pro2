@@ -31,7 +31,7 @@
 #define GYRO_SAVE_SET_STOP      0x20
 
 // Configuration
-#define ENABLE_GET_GSENSOR_INFO 1
+#define ENABLE_GET_GSENSOR_INFO 0
 
 // Whole g-sensor data
 // we do not need raw data of the g-sensor

@@ -71,6 +71,7 @@
 
 unsigned char current_sensor_id = USE_SENSOR;  // Default sensor
 int sensor_idx = -1;
+int isp_values_stale = 0;
 
 //streaming
 #define IS_VALID_STREAM_TYPE(value) \
@@ -1520,4 +1521,60 @@ int media_clear_flash(uint8_t option)
  
     free(clear_buf);
     return MEDIA_OK;
+}
+
+void reopen_voe_after_deinit(void)
+{
+    video_boot_stream_t *isp_fcs_info;
+    video_get_fcs_info(&isp_fcs_info);
+    
+    // Re-open VOE (same as initial_media_parameters but WITHOUT CMD_VIDEO_PRE_INIT_PARM)
+    video_voe_presetting(1, 176, 144, 1024 * 1024, 1, 1, 
+                         sensor_params[current_sensor_id].sensor_width, 
+                         sensor_params[current_sensor_id].sensor_height,
+                         MAX_RECORD_BPS, 1, 1,
+                         sensor_params[current_sensor_id].sensor_width, 
+                         sensor_params[current_sensor_id].sensor_height, 
+                         MAX_RECORD_BPS, 1, 0, 0, 0);
+    
+    video_fake_params.bps = isp_fcs_info->video_params[OPEN_STREAM].bps;
+    video_fake_params.width = isp_fcs_info->video_params[OPEN_STREAM].width;
+    video_fake_params.height = isp_fcs_info->video_params[OPEN_STREAM].height;
+    video_fake_params.fps = isp_fcs_info->video_params[OPEN_STREAM].fps;
+    video_fake_params.gop = isp_fcs_info->video_params[OPEN_STREAM].gop;
+    video_fake_ctx = mm_module_open(&video_module);
+    if (video_fake_ctx) {
+        video_pre_init_params_t reopen_params;
+        media_get_preinit_isp_data(&reopen_params);
+        reopen_params.isp_ae_enable = 0;
+        reopen_params.isp_awb_enable = 0;
+		reopen_params.isp_init_enable = 1;
+		reopen_params.init_isp_items.init_brightness = 0;
+		reopen_params.init_isp_items.init_contrast = 50;
+		reopen_params.init_isp_items.init_flicker = 2;
+		reopen_params.init_isp_items.init_hdr_mode = 0;
+		reopen_params.init_isp_items.init_mirrorflip = 0xf0; // no flip and no mirror
+		reopen_params.init_isp_items.init_saturation = 50;
+		reopen_params.init_isp_items.init_wdr_level = 50;
+		reopen_params.init_isp_items.init_wdr_mode = 2;
+		reopen_params.init_isp_items.init_mipi_mode = 0;
+		reopen_params.voe_dbg_disable = !APP_VOE_LOG_EN;
+		reopen_params.isp_init_raw = 0;
+		reopen_params.isp_raw_mode_tnr_dis = 0;
+		reopen_params.video_drop_enable = 0;
+		reopen_params.dyn_iq_mode = 0;
+		reopen_params.init_max_dyn_region_en = 1;
+		reopen_params.sens_pwr_dis = 0;
+		reopen_params.isp_gain_mode = 0;
+		
+        mm_module_ctrl(video_fake_ctx, CMD_VIDEO_PRE_INIT_PARM, (int)&reopen_params);
+        
+        mm_module_ctrl(video_fake_ctx, CMD_VIDEO_SET_PARAMS, (int)&video_fake_params);
+        mm_module_ctrl(video_fake_ctx, MM_CMD_SET_QUEUE_LEN, 60);
+        mm_module_ctrl(video_fake_ctx, MM_CMD_INIT_QUEUE_ITEMS, MMQI_FLAG_DYNAMIC);
+        mm_module_ctrl(video_fake_ctx, CMD_VIDEO_APPLY, OPEN_CHANNEL);
+
+        isp_values_stale = 0;
+       
+    }
 }

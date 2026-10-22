@@ -83,7 +83,6 @@ static uint8_t temp_rfile_name[MAX_FILENAME_SIZE] = {0};
 volatile uint8_t bt_progress;
 
 volatile int critical_process_started = 0;
-int isp_values_initialized = 0;
 
 // Funtion Prototype
 static void ai_glass_deinit_external_disk(void);
@@ -2110,6 +2109,9 @@ lifetimesnapshot:
 				AI_GLASS_INFO("isp_red_gain = %u\r\n", isp_info.isp_red_gain);
 				AI_GLASS_INFO("isp_blue_gain = %u\r\n", isp_info.isp_blue_gain);
 			}
+			if (isp_values_stale) {
+				reopen_voe_after_deinit();
+			}
 			int ret = lifetime_snapshot_initialize(&isp_info);
 			if (ret == 0) {
 				uint8_t file_name_length = snapshot_param[0];
@@ -3677,18 +3679,10 @@ void fLFSNAPSHOT(void *arg)
 #endif
 	AI_GLASS_MSG("Process LIFETIME SNAPSHOT\r\n");
 	int ret = 0;
-	if (isp_values_initialized == 0) {
-        ret = lifetime_snapshot_initialize(&isp_info);
-    } else {
-		video_pre_init_params_t init_params = {0};
-		// Second run and later: reuse cached values
-        memset(&init_params, 0x00, sizeof(video_pre_init_params_t));
-        media_get_preinit_isp_data(&init_params);
-        AI_GLASS_INFO("Reusing cached ISP values: isp_gain:%d\r\n", init_params.isp_gain);
-
-        // Go straight to HR snapshot init
-        ret = lifetime_hr_snapshot_initialize(&isp_info);
+	if (isp_values_stale) {
+		reopen_voe_after_deinit();
 	}
+	ret = lifetime_snapshot_initialize(&isp_info);
 
 	if (ret == 0) {
 		char temp_record_filename_buffer[160] = {0};
@@ -3732,7 +3726,6 @@ void fLFSNAPSHOT(void *arg)
 		while (lifetime_snapshot_deinitialize()) {
 			vTaskDelay(1);
 		}
-		isp_values_initialized = 1;
 		AI_GLASS_MSG("lifetime snapshot deinit done = %lu\r\n", mm_read_mediatime_ms());
 	} else if (ret == -2) {
 		status = AI_GLASS_BUSY;
