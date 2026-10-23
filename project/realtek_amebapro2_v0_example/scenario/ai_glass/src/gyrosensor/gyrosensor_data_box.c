@@ -44,7 +44,7 @@ int tkhd_box_metadata(unsigned char *moov_buf, pmp4_context mp4_ctx)
 
     // Duration based on first/last metadata sample timestamps (in 90kHz ticks)
     if (mp4_ctx->metadata_len > 0) {
-        unsigned int duration = mp4_ctx->metadata_timestamp_buffer[mp4_ctx->metadata_len - 1] - mp4_ctx->metadata_timestamp_buffer[0];
+        unsigned int duration = mp4_ctx->video_timestamp_buffer[mp4_ctx->root.video_len - 1] - mp4_ctx->metadata_timestamp_buffer[0];
         Save32BigEndian(duration, moov_buf + 28);
     } else {
         Save32BigEndian(0, moov_buf + 28);
@@ -266,7 +266,7 @@ int mdhd_box_metadata(unsigned char *moov_buf, pmp4_context mp4_ctx)
 
     // duration based on metadata timestamps (in 90kHz ticks)
     if (mp4_ctx->metadata_len > 0) {
-        unsigned int duration = mp4_ctx->metadata_timestamp_buffer[mp4_ctx->metadata_len - 1] - mp4_ctx->metadata_timestamp_buffer[0];
+        unsigned int duration = mp4_ctx->video_timestamp_buffer[mp4_ctx->root.video_len - 1] - mp4_ctx->metadata_timestamp_buffer[0];
         Save32BigEndian(duration, moov_buf + moov_position + 24);
     } else {
         Save32BigEndian(0, moov_buf + moov_position + 24);

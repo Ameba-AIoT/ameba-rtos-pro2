@@ -428,45 +428,44 @@ static void imu_pack_sample(uint8_t *buf, size_t *offset, uint32_t ts, const flo
 
 void gyro_read_gsensor(void *parm)
 {
-      static uint32_t last_sys_ts = 0;
-      uint32_t current_sys_ts = mm_read_mediatime_ms();
+    static uint32_t last_sys_ts = 0;
+	static uint32_t gyro_offset = 0;
+    uint32_t current_sys_ts = mm_read_mediatime_ms();
 
-      int read_cnt = gyroscope_fifo_read(gdata, GYRO_FIFO_MAX);
-      if (read_cnt <= 0) {
-              return;
-      }
-      if (read_cnt > GYRO_FIFO_MAX) {
-              read_cnt = GYRO_FIFO_MAX;
-      }
+    int read_cnt = gyroscope_fifo_read(gdata, GYRO_FIFO_MAX);
+    if (read_cnt <= 0) {
+        return;
+    }
+    if (read_cnt > GYRO_FIFO_MAX) {
+        read_cnt = GYRO_FIFO_MAX;
+    }
 
-      // Initialize reference point
-      if (last_sys_ts == 0) {
-              last_sys_ts = current_sys_ts - (read_cnt * 1000 / GYRO_ODR_HZ);
-      }
-      float actual_interval = (float)(current_sys_ts - last_sys_ts) / read_cnt;
+    // Initialize reference point
+    if (last_sys_ts == 0) {
+        last_sys_ts = current_sys_ts - (read_cnt * 1000 / GYRO_ODR_HZ);
+    }
+    float actual_interval = (float)(current_sys_ts - last_sys_ts) / read_cnt;
 
-      int mett_ready = imu_mp4_mett_ready();
+    int mett_ready = imu_mp4_mett_ready();
 
-      mp4_context *mp4_muxer = NULL;
-      if (lr_mp4_ctx != NULL) {
-              mp4_ctx_t *mp4_module_ctx = (mp4_ctx_t *)(lr_mp4_ctx->priv);
-              mp4_muxer = (mp4_context *)(mp4_module_ctx->mp4_muxer);
-      }
-      if (mett_ready && !imu_prev_mett_ready) {
-              if (imu_pre_roll_cnt > 0 && mp4_muxer) {
-                      imu_pre_roll_flush(mp4_muxer);
-              }
-              imu_len = 0;   // any partial live chunk from before is stale
-      } else if (!mett_ready && imu_prev_mett_ready) {
-              if (imu_len > 0 && mp4_muxer) {
-                      mp4_muxer_write_metadata(mp4_muxer, imu_buf, (unsigned int)imu_len, imu_chunk_first_ts);
-              }
-              imu_len = 0;
-      }
-      imu_prev_mett_ready = mett_ready;
+    mp4_context *mp4_muxer = NULL;
+    if (lr_mp4_ctx != NULL) {
+        mp4_ctx_t *mp4_module_ctx = (mp4_ctx_t *)(lr_mp4_ctx->priv);
+        mp4_muxer = (mp4_context *)(mp4_module_ctx->mp4_muxer);
+    }
 
-      for (int i = 0; i < read_cnt; i++) {
-        gdata[i].timestamp = (float)last_sys_ts + (i * actual_interval);
+	// Align gyro start with first video frame
+    if (gyro_offset == 0 && video_first_ts > 0) {
+        gyro_offset = last_sys_ts;   // reset gyro base to current system time
+    }
+
+    for (int i = 0; i < read_cnt; i++) {
+    	// gdata[i].timestamp = (float)last_sys_ts + (i * actual_interval);
+		float raw_ts = (float)last_sys_ts + (i * actual_interval);
+		gdata[i].timestamp = raw_ts - gyro_offset;
+
+        // skip until muxer is ready
+        if (!mett_ready) continue;
 
         double ts_ms = (imu_cfg.timestamp_base_sec + gdata[i].timestamp * imu_cfg.tscale) * 1000.0;
 		uint32_t ts = (uint32_t)ts_ms;
@@ -493,14 +492,6 @@ void gyro_read_gsensor(void *parm)
 		// dps_scaled[1] =  gdata[i].dps[0] * gyro_scale;
 		// dps_scaled[2] =  gdata[i].dps[2] * gyro_scale;
 
-        if (!mett_ready) {
-            uint8_t one[IMU_SAMPLE_SIZE];
-            size_t off = 0;
-            imu_pack_sample(one, &off, ts, gdata[i].dps);
-            imu_pre_roll_put(ts, one);
-            continue;
-        }
-
         if (imu_len == 0) {
             imu_chunk_first_ts = ts;
         }
@@ -512,9 +503,9 @@ void gyro_read_gsensor(void *parm)
             }
             imu_len = 0;
         }
-      }
+    }
 
-      last_sys_ts = current_sys_ts;
+    last_sys_ts = current_sys_ts;
 }
 
 static void vGensorTimeCallbackMett(TimerHandle_t xTimer)
