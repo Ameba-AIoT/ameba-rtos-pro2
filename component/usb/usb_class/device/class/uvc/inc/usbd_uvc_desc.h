@@ -70,8 +70,13 @@ extern struct usb_interface_assoc_descriptor uvc_iad;
 extern struct usb_interface_descriptor uvc_control_intf;
 extern struct usb_interface_descriptor uvc_streaming_intf_alt0;
 extern struct usb_interface_descriptor uvc_streaming_intf_alt1;
-DECLARE_UVC_INPUT_HEADER_DESCRIPTOR(1, 4);
-extern struct UVC_INPUT_HEADER_DESCRIPTOR(1, 4) uvc_input_header;
+/* DECLARE_UVC_INPUT_HEADER_DESCRIPTOR(bControlSize, bNumFormats): sized for the
+ * 5 formats the uvcd example can advertise (NV16/NV12/MJPEG/H264/HEVC). The
+ * example derives bNumFormats/bLength from its UVCD_* switches, so a reduced
+ * format set still describes a correctly-sized descriptor.
+ */
+DECLARE_UVC_INPUT_HEADER_DESCRIPTOR(1, 5);
+extern struct UVC_INPUT_HEADER_DESCRIPTOR(1, 5) uvc_input_header;
 extern struct usb_descriptor_header *usbd_uvc_descriptors_FS[];
 extern struct usb_descriptor_header *usbd_uvc_descriptors_HS[];
 extern struct uvc_streaming_control probe;

@@ -6,7 +6,14 @@
 #include "example_media_uvcd.h"
 #define JPEG_HEIGHT 1080
 #define JPEG_WIDTH  1920
-struct UVC_INPUT_HEADER_DESCRIPTOR(1, 4) uvc_input_header = {
+/* This example advertises a single MJPEG format, so bLength is
+ * 13 + (bControlSize * bNumFormats) = 14 and only bmaControls[0] is ever
+ * transmitted; usb_copy_descriptors_*() copy bLength bytes and drop the rest.
+ * The (1, 5) arity comes from the shared DECLARE_ in usbd_uvc_desc.h, which
+ * sizes for the multi-format uvcd example - it is a type bound here, not a
+ * claim that five formats are advertised.
+ */
+struct UVC_INPUT_HEADER_DESCRIPTOR(1, 5) uvc_input_header = {
 	.bLength = UVC_DT_INPUT_HEADER_SIZE(1, 1),
 	.bDescriptorType = USB_DT_CS_INTERFACE,
 	.bDescriptorSubType = UVC_VS_INPUT_HEADER,
@@ -20,9 +27,6 @@ struct UVC_INPUT_HEADER_DESCRIPTOR(1, 4) uvc_input_header = {
 	.bTriggerUsage  = 0,
 	.bControlSize  = 1,
 	.bmaControls[0][0]  = 0,
-	.bmaControls[1][0]  = 0,
-	.bmaControls[2][0]  = 0,
-	.bmaControls[3][0]  = 0,
 };
 
 struct uvc_format_mjpeg uvc_format_mjpg = {

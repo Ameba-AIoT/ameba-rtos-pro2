@@ -11,11 +11,14 @@
  * Device descriptor
  */
 
-struct UVC_INPUT_HEADER_DESCRIPTOR(1, 4) uvc_input_header = {
-	.bLength		= UVC_DT_INPUT_HEADER_SIZE(1, 4),
+/* bNumFormats must match the number of format descriptors actually emitted, so
+ * it follows the UVCD_* switches the same way the descriptor arrays below do.
+ */
+struct UVC_INPUT_HEADER_DESCRIPTOR(1, 5) uvc_input_header = {
+	.bLength		= UVC_DT_INPUT_HEADER_SIZE(1, UVCD_NUM_FORMATS),
 	.bDescriptorType	= USB_DT_CS_INTERFACE,
 	.bDescriptorSubType	= UVC_VS_INPUT_HEADER,
-	.bNumFormats		= 4,
+	.bNumFormats		= UVCD_NUM_FORMATS,
 	.wTotalLength		= 0,//69, /* dynamic */
 	.bEndpointAddress	= 0, /* dynamic */
 	.bmInfo			= 0,
@@ -28,6 +31,7 @@ struct UVC_INPUT_HEADER_DESCRIPTOR(1, 4) uvc_input_header = {
 	.bmaControls[1][0]	= 0,
 	.bmaControls[2][0]	= 0,
 	.bmaControls[3][0]	= 0,
+	.bmaControls[4][0]	= 0,
 };
 
 struct uvc_format_uncompressed uvc_format_yuy2 = {
@@ -122,7 +126,7 @@ struct uvc_format_framebased uvc_format_h265 = {
 	.bVariableSize          = 1,
 };
 
-// Note: FRAME_INTV_0/1/2 must be distinct values
+// FRAME_INTV_0/1/2 must be distinct values
 #define FRAME_INTV_0 VALUE_FPS(SENSOR_FPS)
 #define FRAME_INTV_1 (FRAME_INTV_0 * 2)
 #define FRAME_INTV_2 (FRAME_INTV_0 * 3)
@@ -354,7 +358,7 @@ struct UVC_FRAME_MJPEG(3) uvc_frame_mjpg_1080p = {
 	.wHeight		= cpu_to_le16(MAX_H),
 	.dwMinBitRate		= cpu_to_le32(MAX_W *MAX_H * 9),
 	.dwMaxBitRate		= cpu_to_le32(MAX_W *MAX_H * 27),
-	.dwMaxVideoFrameBufferSize	= cpu_to_le32(460800),
+	.dwMaxVideoFrameBufferSize	= cpu_to_le32(MAX_W *MAX_H * 3 / 2),
 	.dwDefaultFrameInterval	= cpu_to_le32(FRAME_INTV_0),
 	.bFrameIntervalType	= 3,
 	.dwFrameInterval[0]	= cpu_to_le32(FRAME_INTV_0),
@@ -370,7 +374,7 @@ struct UVC_FRAME_MJPEG(3) uvc_frame_mjpg_1080p = {
 	.wHeight		= cpu_to_le16(1080),
 	.dwMinBitRate		= cpu_to_le32(18432000),
 	.dwMaxBitRate		= cpu_to_le32(55296000),
-	.dwMaxVideoFrameBufferSize	= cpu_to_le32(460800),
+	.dwMaxVideoFrameBufferSize	= cpu_to_le32(1920 * 1080 * 3 / 2),
 	.dwDefaultFrameInterval	= cpu_to_le32(FRAME_INTV_0),
 	.bFrameIntervalType	= 3,
 	.dwFrameInterval[0]	= cpu_to_le32(FRAME_INTV_0),

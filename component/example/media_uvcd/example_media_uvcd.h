@@ -22,6 +22,10 @@ void example_media_uvcd(void);
 #define UVCD_H264 1
 #define UVCD_H265 1
 
+// Number of formats actually advertised - VS Input Header's bNumFormats/bLength
+// must match the format descriptors the UVCD_* switches above let through.
+#define UVCD_NUM_FORMATS (UVCD_YUY2 + UVCD_NV12 + UVCD_MJPG + UVCD_H264 + UVCD_H265)
+
 void example_tuning_rtsp_video_v2_init(void);
 
 #endif /* MMF2_EXAMPLE_H */
