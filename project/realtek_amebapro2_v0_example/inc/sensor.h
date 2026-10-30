@@ -61,9 +61,10 @@ struct sensor_params_t {
 #define SENSOR_GC4653           0x27  //  |   v    |   v    |   v    |   -    |    v   |
 #define SENSOR_GC4663           0x28  //  |   v    |   v    |   v    |   v    |    v   |
 #define SENSOR_GC4693           0x29  //  |   v    |   v    |   -    |   -    |    v   |
-#define SENSOR_GC5035           0x2A  //  |   v    |   v    |   v    |   -    |    -   |
-#define SENSOR_GC05A2           0x2B  //  |   v    |   -    |   v    |   -    |    -   |
-#define SENSOR_GC8613_FHD       0x2C  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_GC4693_HD        0x2A  //  |   v    |   v    |   -    |   -    |    v   |
+#define SENSOR_GC5035           0x2B  //  |   v    |   v    |   v    |   -    |    -   |
+#define SENSOR_GC05A2           0x2C  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_GC8613_FHD       0x2D  //  |   v    |   -    |   -    |   -    |    -   |
 /* SONY */
 #define SENSOR_IMX307           0x30  //  |   v    |   -    |   v    |   v    |    -   |
 #define SENSOR_IMX327           0x31  //  |   v    |   -    |   v    |   v    |    -   |
@@ -105,14 +106,16 @@ struct sensor_params_t {
 #define SENSOR_OV12890_12M_SEQ  0x5C  //  |   v    |   -    |   -    |   -    |    -   |
 #define SENSOR_OV50A40          0x5D  //  |   v    |   -    |   v    |   -    |    -   |
 #define SENSOR_OV50A40_50M      0x5E  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_OS04D10          0x5F  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OS04E10          0x60  //  |   v    |   -    |   -    |   -    |    -   |
 /* PRIMESENSOR */
-#define SENSOR_PS5258           0x60  //  |   v    |   -    |   v    |   -    |    -   |
-#define SENSOR_PS5262           0x61  //  |   v    |   -    |   v    |   -    |    -   |
-#define SENSOR_PS5268           0x62  //  |   v    |   -    |   v    |   -    |    -   |
-#define SENSOR_PS5270           0x63  //  |   v    |   v    |   v    |   -    |    -   |
-#define SENSOR_PS5270_HDR       0x64  //  |   v    |   v    |   v    |   -    |    -   |
-#define SENSOR_PS5420           0x65  //  |   v    |   v    |   v    |   -    |    -   |
-#define SENSOR_PS5420_HDR       0x66  //  |   v    |   v    |   v    |   -    |    -   |
+#define SENSOR_PS5258           0x70  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_PS5262           0x71  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_PS5268           0x72  //  |   v    |   -    |   v    |   -    |    -   |
+#define SENSOR_PS5270           0x73  //  |   v    |   v    |   v    |   -    |    -   |
+#define SENSOR_PS5270_HDR       0x74  //  |   v    |   v    |   v    |   -    |    -   |
+#define SENSOR_PS5420           0x75  //  |   v    |   v    |   v    |   -    |    -   |
+#define SENSOR_PS5420_HDR       0x76  //  |   v    |   v    |   v    |   -    |    -   |
 
 
 
@@ -159,6 +162,7 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_GC4653]           = {2560, 1440, 24},
 	[SENSOR_GC4663]           = {2560, 1440, 24},  //HDR Mode fps=20
 	[SENSOR_GC4693]           = {2560, 1440, 24},
+	[SENSOR_GC4693_HD]        = {1280,  720, 20},
 	[SENSOR_GC5035]           = {2592, 1944, 15},
 	[SENSOR_GC05A2]           = {2592, 1944, 15},
 	[SENSOR_GC8613_FHD]       = {1920, 1080, 30},
@@ -170,7 +174,7 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_IMX471_12M]       = {4032, 3024,  5},
 	[SENSOR_IMX471_12M_SEQ]   = {2032, 3024,  5}, //width = 2016 + 16(overlap)
 	[SENSOR_IMX681]           = {2000, 1500, 30},
-	[SENSOR_IMX681_5M]        = {2592, 1944,  4},
+	[SENSOR_IMX681_5M]        = {2560, 1920, 30},
 	[SENSOR_IMX681_12M]       = {4016, 3012,  4},
 	[SENSOR_IMX681_12M_SEQ]   = {2128, 1604,  4}, //width = 2008 + 120(overlap) //height = 1506 + 98(overlap)
 	[SENSOR_IMX775]           = {2592, 1944, 15},
@@ -199,10 +203,12 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_OV13B10_12M]      = {4032, 3024, 10},
 	[SENSOR_OV13B10_12M_SEQ]  = {2112, 1616,  5}, //width = 2016 + 96(overlap) //height = 1512 + 104(overlap)
 	[SENSOR_OV12890]  	      = {2048, 1536, 30},
-	[SENSOR_OV12890_12M]      = {4032, 3024,  8},
+	[SENSOR_OV12890_12M]      = {4032, 3024,  4},
 	[SENSOR_OV12890_12M_SEQ]  = {2112, 1616,  5}, //width = 2016 + 96(overlap) //height = 1512 + 104(overlap)
 	[SENSOR_OV50A40]          = {2048, 1536, 30},
 	[SENSOR_OV50A40_50M]      = {2048, 1536, 30},
+	[SENSOR_OS04D10]          = {2560, 1440, 24},
+	[SENSOR_OS04E10]          = {1944, 1944, 20},
 	/* PRIMESENSOR */
 	[SENSOR_PS5258]           = {1920, 1080, 30},
 	[SENSOR_PS5262]           = {1920, 1080, 30},
