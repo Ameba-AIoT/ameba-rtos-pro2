@@ -360,43 +360,67 @@ static void sport_pattern_feeder_task(void *arg)
         return;
     }
 
+	const uint32_t frame_bytes = sport_pattern_params.frame_samples *
+                                 sport_pattern_params.channels *
+                                 sport_pattern_params.slot_bytes; // 10240 bytes
+    const uint32_t batch_frames = 12; // 122,880 bytes per SD read
+    uint8_t *sd_cache = (uint8_t *)malloc(frame_bytes * batch_frames);
+    mm_queue_item_t *item = (mm_queue_item_t *)sport_module.new_item(ctx);
+    if (!sd_cache || !item) {
+        printf("Failed to allocate sport feeder cache\n");
+        if (sd_cache) free(sd_cache);
+        if (item) sport_module.del_item(ctx, item);
+        extdisk_fclose(pcm_file);
+        return;
+    }
+
+    size_t cache_valid = 0;
+    size_t cache_offset = 0;
+    uint32_t start_time_ms = mm_read_mediatime_ms();
+    uint64_t total_samples_sent = 0;
+
     while (sport_test_data_running) {
-        mm_queue_item_t *item = (mm_queue_item_t *)sport_module.new_item(ctx);
-        if (item) {
-            uint8_t *ptr = (uint8_t *)item->data_addr;
-
-            // Read one frame block (e.g. 10240 bytes) directly from file
-            size_t bytes_read = extdisk_fread(ptr, 1,
-                                              sport_pattern_params.frame_samples *
-                                              sport_pattern_params.channels *
-                                              sport_pattern_params.slot_bytes,
-                                              pcm_file);
-
-            if (bytes_read == 0) {
-                // Loop back to start of file when EOF
+        if (cache_offset + frame_bytes > cache_valid) {
+            cache_valid = extdisk_fread(sd_cache, 1, frame_bytes * batch_frames, pcm_file);
+            cache_offset = 0;
+            if (cache_valid < frame_bytes) {
                 extdisk_fseek(pcm_file, 0, SEEK_SET);
                 continue;
             }
-
-            item->size      = bytes_read;
-            item->timestamp = mm_read_mediatime_ms();
-            item->type      = sport_pattern_params.output_codec_id;
-
-            if ((++count % 100) == 1) {
-                printf("[SPORT PATTERN] Streaming PCM file: frame %d size=%lu\n",
-                       count, (unsigned long)item->size);
-            }
-
-            if (ctx->rtsp_ctx) {
-                rtsp2_module.handle(ctx->rtsp_ctx->priv, item, NULL);
-            }
-
-            sport_module.del_item(ctx, item);
         }
 
-        vTaskDelay(pdMS_TO_TICKS(20));
+        memcpy((void *)item->data_addr, sd_cache + cache_offset, frame_bytes);
+        cache_offset += frame_bytes;
+
+        item->size      = frame_bytes;
+        item->timestamp = mm_read_mediatime_ms();
+        item->type      = sport_pattern_params.output_codec_id;
+
+        if ((++count % 100) == 1) {
+            printf("[SPORT PATTERN] Streaming PCM file: frame %d size=%lu\n",
+                   count, (unsigned long)item->size);
+        }
+
+        if (ctx->rtsp_ctx) {
+            rtsp2_module.handle(ctx->rtsp_ctx->priv, item, NULL);
+        }
+
+        total_samples_sent += sport_pattern_params.frame_samples;
+        uint32_t target_elapsed_ms = (uint32_t)((total_samples_sent * 1000ULL) / sport_pattern_params.sample_rate);
+        uint32_t now_ms = mm_read_mediatime_ms();
+        uint32_t actual_elapsed_ms = now_ms - start_time_ms;
+
+        if (target_elapsed_ms > actual_elapsed_ms) {
+            vTaskDelay(pdMS_TO_TICKS(target_elapsed_ms - actual_elapsed_ms));
+        } else if (actual_elapsed_ms - target_elapsed_ms > 20) {
+            // Re-sync clock if SD card read or RTSP play handshake stalled > 20ms
+            start_time_ms = now_ms;
+            total_samples_sent = 0;
+        }
     }
 
+    sport_module.del_item(ctx, item);
+    free(sd_cache);
     extdisk_fclose(pcm_file);
 }
 

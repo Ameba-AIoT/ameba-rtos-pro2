@@ -29,7 +29,7 @@ int rtsp2_handle(void *p, void *input, void *output)
 
 	struct stream_context *stream_ctx = NULL;
 	struct rtp_object *payload = NULL;
-	printf("[RTSP2 DEBUG] got input type=%d size=%u\n", input_item->type, input_item->size);
+	//printf("[RTSP2 DEBUG] got input type=%d size=%u\n", input_item->type, input_item->size);
 
 	// get channel
 	for (int i = 0; i < rtsp->nb_streams; i++) {
@@ -88,16 +88,16 @@ int rtsp2_handle(void *p, void *input, void *output)
 	// 			(samples[f*4+3] << 8) >> 8);
 	// 	}
 	// }
-	if (input_item->type == 8) {
-		uint8_t *bytes = (uint8_t *)payload->data;
+	// if (input_item->type == 8) {
+	// 	uint8_t *bytes = (uint8_t *)payload->data;
 
-		// Print first 32 bytes in hex
-		printf("[RTSP2 AUDIO] Hex dump: ");
-		for (int i = 0; i < 32 && i < payload->len; i++) {
-			printf("%02X ", bytes[i]);
-		}
-		printf("\n");
-	}
+	// 	// Print first 32 bytes in hex
+	// 	printf("[RTSP2 AUDIO] Hex dump: ");
+	// 	for (int i = 0; i < 32 && i < payload->len; i++) {
+	// 		printf("%02X ", bytes[i]);
+	// 	}
+	// 	printf("\n");
+	// }
 
 	//printf("ts: %8x\n\r", payload->timestamp);
 	/* because we will fill&send a complete frame in single rtp object, set both fs & fe to 1 and fd to 0*/

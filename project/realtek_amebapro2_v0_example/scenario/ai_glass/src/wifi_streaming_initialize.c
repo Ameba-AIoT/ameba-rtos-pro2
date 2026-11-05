@@ -374,7 +374,7 @@ int wifi_streaming_initialize(void)
         sport_params.sport_ch_num      = CH_4;
         sport_params.sport_ch_len      = SPORT_CL_32BIT;   // 32-bit slots
         sport_params.sport_data_len    = SPORT_DL_24BIT;   // 24-bit valid data
-        sport_params.sport_word_length = 24;
+        sport_params.sport_word_length = 32;
         sport_params.sport_format      = SPORT_I2S;
 		sport_params.sport_role        = SPORT_SLAVE_MODE;
 		sport_params.rx_channel_select = SPORT_CH_SEL_ALL;
