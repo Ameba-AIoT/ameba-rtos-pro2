@@ -1201,8 +1201,8 @@ void main(void)
 							uint16_t ip_len = (((uint16_t) ip_header[2]) << 8) | ((uint16_t) ip_header[3]);
 
 							uint16_t tcp_payload_len = ip_len - 20 - 20;
-							tcp_resume_seqno = *((uint32_t *)(rtl8735b_read_ssl_conuter_report() + 16));
-							tcp_resume_ackno = *((uint32_t *)(rtl8735b_read_ssl_conuter_report() + 20)) - tcp_payload_len;
+							tcp_resume_seqno = *((uint32_t *)(rtl8735b_read_ssl_conuter_reportv2() + 16));
+							tcp_resume_ackno = *((uint32_t *)(rtl8735b_read_ssl_conuter_reportv2() + 20)) - tcp_payload_len;
 							printf("\ntcp_resume_seqno=%u, tcp_resume_ackno=%u \n\r", tcp_resume_seqno, tcp_resume_ackno);
 							uint32_t wakeup_eth_packet_len = 6 + 6 + (ip_len + 2);
 							uint8_t *wakeup_eth_packet = (uint8_t *) malloc(wakeup_eth_packet_len);
@@ -1276,8 +1276,8 @@ void main(void)
 				if (lwip_check_tcp_resume() == 1) {
 					tcp_resume = 1;
 
-					tcp_resume_seqno = *((uint32_t *)(rtl8735b_read_ssl_conuter_report() + 16));
-					tcp_resume_ackno = *((uint32_t *)(rtl8735b_read_ssl_conuter_report() + 20));
+					tcp_resume_seqno = *((uint32_t *)(rtl8735b_read_ssl_conuter_reportv2() + 16));
+					tcp_resume_ackno = *((uint32_t *)(rtl8735b_read_ssl_conuter_reportv2() + 20));
 					printf("\ntcp_resume_seqno=%u, tcp_resume_ackno=%u \n\r", tcp_resume_seqno, tcp_resume_ackno);
 				}
 #endif
@@ -1304,7 +1304,7 @@ void main(void)
 #if SSL_KEEPALIVE
 			ssl_resume = 1;
 
-			uint8_t *ssl_counter = rtl8735b_read_ssl_conuter_report();
+			uint8_t *ssl_counter = rtl8735b_read_ssl_conuter_reportv2();
 			uint8_t ssl_resume_out_ctr[8];
 			uint8_t ssl_resume_in_ctr[8];
 			memcpy(ssl_resume_out_ctr, ssl_counter, 8);

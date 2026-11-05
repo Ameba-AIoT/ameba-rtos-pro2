@@ -106,6 +106,9 @@ uint8_t *rtl8735b_read_packet_with_index(uint32_t *size, uint8_t index);
 //dump the buffer of ssl resume info as bellow
 //IV value, decode key value, etm or not, ssl in counter, ssl out counter
 uint8_t *rtl8735b_read_ssl_conuter_report(void);
+//dump the buffer of ssl resume info as bellow
+//IV value, decode key value, etm or not, ssl in counter, ssl out counter
+uint8_t *rtl8735b_read_ssl_conuter_reportv2(void);
 //select wowlan fw version
 //param@
 //uint8_t ka                    wowlan fw version, and the version is as bellow
