@@ -46,6 +46,10 @@
 #define UART_BAUDRATE               2000000 //115200 //2000000 //3750000 //4000000
 #define POWER_DOWN_TIMEOUT          700     // 700ms
 #define UART_PROTOCAL_VERSION       1
+// BT SoC FW OTA is a WiFi-SoC -> BT-SoC UART transfer that does NOT go through the
+// BT link to the phone, so it must not follow the phone-negotiated picture size
+// (which is limited by the BT link MTU and can be very small, e.g. 12 bytes).
+#define BT_OTA_UART_PACKET_SIZE     965     // 0x3C0 payload (960) + EMPTY_PACKET_LEN
 
 // Definition for STA mode
 #define MAX_SSID_LEN                33
@@ -1506,16 +1510,19 @@ static void ai_glass_resp_bt_fw_upgrade(uartcmdpacket_t *param)
     // Check version match before proceeding
     if (heap_ota_version_matches(info.upgradetype, version_str)) {
 
-        uint16_t tmp_uart_pic_size = uart_service_get_pic_size() - EMPTY_PACKET_LEN;
+        // Fixed OTA chunk size, independent of the phone-negotiated pic_size.
+        uint16_t tmp_uart_pic_size = BT_OTA_UART_PACKET_SIZE - EMPTY_PACKET_LEN;
         uint32_t file_size = g_heap_ota_data->bt_length;
         uint32_t offset = 0;
         uint16_t data_length = 0;
-        uint8_t data_buffer[1541] = {0};
+        uint8_t data_buffer[BT_OTA_UART_PACKET_SIZE] = {0};
 
 #if UPDATE_UPGRADE_PROGRESS_TO_8773
         int total_bytes_sent = 0;
         uart_resp_get_sys_upgrade((uint8_t)2, (uint8_t)0);
         AI_GLASS_MSG("BT FW File_size: %lu\r\n", file_size);
+        AI_GLASS_INFO("BT OTA chunk size: %u (negotiated pic_size: %u, not used)\r\n",
+                      tmp_uart_pic_size, uart_service_get_pic_size());
 #endif
 
         while (1) {
