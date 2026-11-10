@@ -89,7 +89,12 @@
 #if CONFIG_USE_POLARSSL
 #include <polarssl/md5.h>
 #elif CONFIG_USE_MBEDTLS
+#include "mbedtls/version.h"
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER >= 0x04000000)
+#include <mbedtls/private/md5.h>
+#else
 #include <mbedtls/md5.h>
+#endif
 #endif
 
 #ifndef LWIP_IPV4
