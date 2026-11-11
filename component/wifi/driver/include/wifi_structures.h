@@ -563,6 +563,8 @@ struct  wifi_user_conf {
 	unsigned char wifi_11r_enabled;
 
 	unsigned char wifi_custome_efem_t;
+
+	unsigned char wifi_tssi_adc_clk_mode;
 } ;
 extern  struct wifi_user_conf wifi_user_config;
 
