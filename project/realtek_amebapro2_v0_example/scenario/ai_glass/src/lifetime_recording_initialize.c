@@ -55,6 +55,7 @@ static TimerHandle_t gsensor_timer = NULL;
 static gyro_data_list_t gyro_list = {NULL, NULL};
 static int exdisk_gyro_status = GYRO_SAVE_IDLE;
 static gyro_data_t gdata[100] = {0};
+static lr_gyro_init_failed = 0;
 #endif
 
 static char life_recording_name[128] = {0};
@@ -430,10 +431,18 @@ void gyro_read_gsensor(void *parm)
 {
     static uint32_t last_sys_ts = 0;
 	static uint32_t gyro_offset = 0;
+	static int err_cnt = 0;
     uint32_t current_sys_ts = mm_read_mediatime_ms();
 
     int read_cnt = gyroscope_fifo_read(gdata, GYRO_FIFO_MAX);
-    if (read_cnt <= 0) {
+    if (read_cnt < 0) {
+		if (++err_cnt >= 10) {
+            lr_gyro_init_failed = 1;
+        }
+        return;
+    }
+	err_cnt = 0;
+	if (read_cnt == 0) {
         return;
     }
     if (read_cnt > GYRO_FIFO_MAX) {
@@ -454,6 +463,8 @@ void gyro_read_gsensor(void *parm)
         mp4_muxer = (mp4_context *)(mp4_module_ctx->mp4_muxer);
     }
 
+	uint32_t video_first_ts = mp4_muxer->video_timestamp_first;
+	
 	// Align gyro start with first video frame
     if (gyro_offset == 0 && video_first_ts > 0) {
         gyro_offset = last_sys_ts;   // reset gyro base to current system time
@@ -510,12 +521,15 @@ void gyro_read_gsensor(void *parm)
 
 static void vGensorTimeCallbackMett(TimerHandle_t xTimer)
 {
-      gyro_read_gsensor(NULL);
-      if (gsensor_timer != NULL) {
-              if (xTimerStart(gsensor_timer, 0) != pdPASS) {
-                      AI_GLASS_INFO("Reload G-sensor read timer\r\n");
-              }
-      }
+	if (lr_gyro_init_failed) {
+        return;
+    }
+    gyro_read_gsensor(NULL);
+    if (gsensor_timer != NULL && !lr_gyro_init_failed) {
+        if (xTimerStart(gsensor_timer, 0) != pdPASS) {
+            AI_GLASS_INFO("Reload G-sensor read timer\r\n");
+        }
+    }
 }
 
 /* udta_box_cb: build the full udta box (calib only). */
@@ -772,6 +786,9 @@ static void print_gyro_data_list(gyro_data_list_t *list)
 {
 	gyro_data_node_t *head = list->head;
 	gyro_data_node_t *tail = list->tail;
+	if (head == NULL || tail == NULL) {
+		return;
+	}
 	AI_GLASS_MSG("head Timestamp: %lu\r\n", head->data.timestamp);
 	AI_GLASS_MSG("tail Timestamp: %lu\r\n", tail->data.timestamp);
 }
@@ -970,8 +987,10 @@ int lifetime_recording_initialize(uint8_t record_filename_length, const char *fi
 #if ENABLE_GET_GSENSOR_INFO
 	AI_GLASS_MSG("================start initial g-sensor========================== = %lu\r\n", mm_read_mediatime_ms());
 	// Initial G-sensor
+	lr_gyro_init_failed = 0;
 	if (lr_gyro_init()) {
-		goto lifetime_recording_initialize_fail;
+		//goto lifetime_recording_initialize_fail;
+		lr_gyro_init_failed =1;
 	}
 	AI_GLASS_MSG("================initial g-sensor done========================== = %lu\r\n", mm_read_mediatime_ms());
 #if GSENSOR_RECORD_FAST
@@ -1078,25 +1097,27 @@ int lifetime_recording_initialize(uint8_t record_filename_length, const char *fi
 	if (lr_mp4_ctx) {
 
 #if GYRO_USE_MODE == 1
-		/* camera-calib udta buffer (must be set BEFORE SET_PARAMS) */
-		lr_mp4_params.udta_buf = (unsigned char *)malloc(CAMERA_CALIB_UDTA_SIZE);
-		if (lr_mp4_params.udta_buf == NULL) {
-			AI_GLASS_ERR("malloc udta_buf failed\n\r");
-			goto lifetime_recording_initialize_fail;
-		}
-		memset(lr_mp4_params.udta_buf, 0, CAMERA_CALIB_UDTA_SIZE);
-		lr_mp4_params.udta_buf_size = CAMERA_CALIB_UDTA_SIZE;
+		if (!lr_gyro_init_failed) {
+			/* camera-calib udta buffer (must be set BEFORE SET_PARAMS) */
+			lr_mp4_params.udta_buf = (unsigned char *)malloc(CAMERA_CALIB_UDTA_SIZE);
+			if (lr_mp4_params.udta_buf == NULL) {
+				AI_GLASS_ERR("malloc udta_buf failed\n\r");
+				goto lifetime_recording_initialize_fail;
+			}
+			memset(lr_mp4_params.udta_buf, 0, CAMERA_CALIB_UDTA_SIZE);
+			lr_mp4_params.udta_buf_size = CAMERA_CALIB_UDTA_SIZE;
 
-		/* metadata (mett) trak box buffer - the app builds the trak into this
-		   buffer (via the meta-trak callback) at stop time, then the muxer
-		   memcpy's it into moov (mirrors the udta box). */
-		lr_mp4_params.trak_buf = (unsigned char *)malloc(META_TRAK_BOX_SIZE);
-		if (lr_mp4_params.trak_buf == NULL) {
-			AI_GLASS_ERR("malloc trak_buf failed\n\r");
-			goto lifetime_recording_initialize_fail;
+			/* metadata (mett) trak box buffer - the app builds the trak into this
+			buffer (via the meta-trak callback) at stop time, then the muxer
+			memcpy's it into moov (mirrors the udta box). */
+			lr_mp4_params.trak_buf = (unsigned char *)malloc(META_TRAK_BOX_SIZE);
+			if (lr_mp4_params.trak_buf == NULL) {
+				AI_GLASS_ERR("malloc trak_buf failed\n\r");
+				goto lifetime_recording_initialize_fail;
+			}
+			memset(lr_mp4_params.trak_buf, 0, META_TRAK_BOX_SIZE);
+			lr_mp4_params.trak_buf_size = META_TRAK_BOX_SIZE;
 		}
-		memset(lr_mp4_params.trak_buf, 0, META_TRAK_BOX_SIZE);
-		lr_mp4_params.trak_buf_size = META_TRAK_BOX_SIZE;
 #endif
 
 		mm_module_ctrl(lr_mp4_ctx, CMD_MP4_SET_PARAMS, (int)&lr_mp4_params);
@@ -1113,19 +1134,21 @@ int lifetime_recording_initialize(uint8_t record_filename_length, const char *fi
 		mm_module_ctrl(lr_mp4_ctx, CMD_MP4_START, lr_mp4_params.record_file_num);
 
 #if GYRO_USE_MODE == 1
-		/* register the udta callback */
-		udta_callback_t udta_params;
-		memset(&udta_params, 0, sizeof(udta_callback_t));
-		udta_params.udta_box_cb = camera_calib_set_udta;
-		mm_module_ctrl(lr_mp4_ctx, CMD_MP4_SET_UDAT_CALLBACK, (int)&udta_params);
+		if (!lr_gyro_init_failed) {
+			/* register the udta callback */
+			udta_callback_t udta_params;
+			memset(&udta_params, 0, sizeof(udta_callback_t));
+			udta_params.udta_box_cb = camera_calib_set_udta;
+			mm_module_ctrl(lr_mp4_ctx, CMD_MP4_SET_UDAT_CALLBACK, (int)&udta_params);
 
-		/* register the metadata trak callback - build the mett trak box from
-		   gyrosensor_data_box.c (trak_box_metadata), replacing the muxer-built
-		   one. Runs inside Set_moov_box_all via CMD_MP4_SET_META_TRAK_CALLBACK. */
-		meta_trak_callback_t meta_params;
-		memset(&meta_params, 0, sizeof(meta_trak_callback_t));
-		meta_params.meta_trak_box_cb = trak_box_metadata;
-		mm_module_ctrl(lr_mp4_ctx, CMD_MP4_SET_META_TRAK_CALLBACK, (int)&meta_params);
+			/* register the metadata trak callback - build the mett trak box from
+			gyrosensor_data_box.c (trak_box_metadata), replacing the muxer-built
+			one. Runs inside Set_moov_box_all via CMD_MP4_SET_META_TRAK_CALLBACK. */
+			meta_trak_callback_t meta_params;
+			memset(&meta_params, 0, sizeof(meta_trak_callback_t));
+			meta_params.meta_trak_box_cb = trak_box_metadata;
+			mm_module_ctrl(lr_mp4_ctx, CMD_MP4_SET_META_TRAK_CALLBACK, (int)&meta_params);
+		}
 #endif
 
 	} else {
@@ -1249,15 +1272,17 @@ void lifetime_recording_deinitialize(void)
 	lr_video_ctx = NULL;
 
 #if GYRO_USE_MODE == 1
-	if (lr_mp4_params.udta_buf) {
-		free(lr_mp4_params.udta_buf);
-		lr_mp4_params.udta_buf = NULL;
-		lr_mp4_params.udta_buf_size = 0;
-	}
-	if (lr_mp4_params.trak_buf) {
-		free(lr_mp4_params.trak_buf);
-		lr_mp4_params.trak_buf = NULL;
-		lr_mp4_params.trak_buf_size = 0;
+	if (!lr_gyro_init_failed) {
+		if (lr_mp4_params.udta_buf) {
+			free(lr_mp4_params.udta_buf);
+			lr_mp4_params.udta_buf = NULL;
+			lr_mp4_params.udta_buf_size = 0;
+		}
+		if (lr_mp4_params.trak_buf) {
+			free(lr_mp4_params.trak_buf);
+			lr_mp4_params.trak_buf = NULL;
+			lr_mp4_params.trak_buf_size = 0;
+		}
 	}
 #endif
 

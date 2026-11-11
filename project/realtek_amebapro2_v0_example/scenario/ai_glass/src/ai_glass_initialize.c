@@ -496,6 +496,39 @@ static void parser_snapshot_pkt2param(ai_glass_snapshot_param_t *snap_buf, uint8
 	}
 }
 
+void ota_unlock_flash(void)
+{
+    if (sys_get_boot_sel() != 0) {
+        return;
+    }
+
+    flash_t flash;
+
+    AI_GLASS_INFO("Unlock flash\r\n");
+
+    device_mutex_lock(RT_DEV_LOCK_FLASH);
+
+    // reset BP0, BP1, BP2
+    uint8_t sr1 = flash_get_status(&flash);
+    if (sr1 & (0x4 | 0x8 | 0x10)) {
+        flash_set_status(&flash, sr1 & ~(0x4 | 0x8 | 0x10));
+    }
+
+    // reset CMP
+    uint8_t sr2 = flash_get_status2(&flash);
+    if (sr2 & 0x40) {
+        flash_set_status2(&flash, sr2 & ~(0x40));
+    }
+
+    // reset WPS
+    uint8_t sr3 = flash_get_status3(&flash);
+    if (sr3 & 0x4) {
+        flash_set_status3(&flash, sr3 & ~(0x4));
+    }
+
+    device_mutex_unlock(RT_DEV_LOCK_FLASH);
+}
+
 //Check OTA files exists
 static int ota_file_exists(char *version_str, char ota_versions[2][16])
 {
@@ -752,12 +785,14 @@ static int clear_ota_signature(void)
 			return 0;
 		}
 
+		ota_unlock_flash();
+
 		// need to enter critical section to prevent executing the XIP code at first sector after we erase it.
 		device_mutex_lock(RT_DEV_LOCK_FLASH);
 		flash_stream_read(&flash, next_fw_addr, buf_size, pbuf);
 		// NOT the first byte of ota signature to make it invalid
 		pbuf[0] = ~(pbuf[0]);
-		flash_erase_sector(&flash, next_fw_addr); 
+		flash_erase_sector(&flash, next_fw_addr);
 		flash_burst_write(&flash, next_fw_addr, buf_size, pbuf);
 		device_mutex_unlock(RT_DEV_LOCK_FLASH);
 
@@ -930,7 +965,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 		AI_GLASS_INFO("WIFI version to be upgrade to: %s\r\n", version_str);
 
 		if (heap_ota_version_matches(info.upgradetype, version_str)) {
-			
+			ota_unlock_flash();
 			int ret = -1;
 				ret = heap_update_ota(g_heap_ota_data->wifi_data, g_heap_ota_data->wifi_length);
 				ota_register_status_callback(NULL); 
@@ -994,7 +1029,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 		AI_GLASS_INFO("Bootloader and WIFI version to be upgrade to: %s\r\n", version_str);
 
 		if (heap_ota_version_matches(info.upgradetype, version_str)) {
-
+			ota_unlock_flash();
 			int ret = -1;
 			ret = heap_update_boot_ota(g_heap_ota_data->boot_data, g_heap_ota_data->boot_length);
 			if (!ret) {
@@ -1056,7 +1091,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 		AI_GLASS_INFO("NN and WIFI version to be upgrade to: %s\r\n", version_str);
 
 		if (heap_ota_version_matches(info.upgradetype, version_str)) {
-
+			ota_unlock_flash();
 			int ret = -1;
 			ret = heap_update_nn_ota(g_heap_ota_data->nn_data, g_heap_ota_data->nn_length);
 			if (!ret) {
@@ -1118,6 +1153,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 		AI_GLASS_INFO("NN, BOOT and WIFI version to be upgrade to: %s\r\n", version_str);
 
 		if (heap_ota_version_matches(info.upgradetype, version_str)) {
+			ota_unlock_flash();
 			int ret = -1;
 			ret = heap_update_boot_ota(g_heap_ota_data->boot_data, g_heap_ota_data->boot_length);
 			if (!ret) {
@@ -1194,6 +1230,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 		AI_GLASS_INFO("ISP IQ and WIFI version to be upgrade to: %s\r\n", version_str);
 
 		if (heap_ota_version_matches(info.upgradetype, version_str)) {
+			ota_unlock_flash();
 			int ret = -1;
 			ret = heap_update_isp_iq_ota(g_heap_ota_data->isp_iq_data, g_heap_ota_data->isp_iq_length);
 			if (!ret) {
@@ -1254,6 +1291,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 		AI_GLASS_INFO("ISP IQ, BOOT and WIFI version to be upgrade to: %s\r\n", version_str);
 
 		if (heap_ota_version_matches(info.upgradetype, version_str)) {
+			ota_unlock_flash();
 			int ret = -1;
 			ret = heap_update_boot_ota(g_heap_ota_data->boot_data, g_heap_ota_data->boot_length);
 			if (!ret) {
@@ -1330,6 +1368,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 		AI_GLASS_INFO("NN, ISP IQ and WIFI version to be upgrade to: %s\r\n", version_str);
 
 		if (heap_ota_version_matches(info.upgradetype, version_str)) {
+			ota_unlock_flash();
 			int ret = -1;
 			ret = heap_update_nn_ota(g_heap_ota_data->nn_data, g_heap_ota_data->nn_length);
 			if (!ret) {
@@ -1406,6 +1445,7 @@ static void ai_glass_get_set_sys_upgrade(uartcmdpacket_t *param)
 		AI_GLASS_INFO("NN, BOOT, ISP IQ and WIFI version to be upgrade to: %s\r\n", version_str);
 
 		if (heap_ota_version_matches(info.upgradetype, version_str)) {
+			ota_unlock_flash();
 			int ret = -1;
 			ret = heap_update_boot_ota(g_heap_ota_data->boot_data, g_heap_ota_data->boot_length);
 			if (!ret) {

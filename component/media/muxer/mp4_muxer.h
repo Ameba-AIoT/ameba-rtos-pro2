@@ -12,7 +12,7 @@
 #define MAX_BOX_CHILD 8
 #define RBUF_SIZE 1024
 
-#define MAX_METADATA_SAMPLES 4096
+#define MAX_METADATA_SAMPLES 128
 #define MAX_METADATA_SAMPLE_SIZE 512 
 
 typedef struct _mp4root {

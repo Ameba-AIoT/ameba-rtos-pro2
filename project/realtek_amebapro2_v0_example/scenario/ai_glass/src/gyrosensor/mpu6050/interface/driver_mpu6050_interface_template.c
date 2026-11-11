@@ -46,12 +46,21 @@
 
 static i2c_t i2cmaster;
 static int mpu6050_inited = 0;
+static int i2c_bus_inited = 0;
+static volatile int i2c_err_flag = 0;
 #define MPU6050_I2C_MTR_SDA PF_2 //PE_4
 #define MPU6050_I2C_MTR_SCL PF_1 //PE_3
 #define MPU6050_I2C_BUS_CLK 400000 //一定要 400KHz, 否則無法跟上 FIFO 1000Hz 的速度
 
 static xSemaphoreHandle i2c_rx_done_sema = NULL;
 static xSemaphoreHandle i2c_tx_done_sema = NULL;
+
+static void i2c_master_err_callback(void *userdata)
+{
+	i2c_err_flag = 1;
+	xSemaphoreGiveFromISR(i2c_tx_done_sema, NULL);
+	xSemaphoreGiveFromISR(i2c_rx_done_sema, NULL);
+}
 
 static void i2c_master_rxc_callback(void *userdata)
 {
@@ -76,12 +85,20 @@ uint8_t mpu6050_interface_iic_init(void)
 	if (mpu6050_inited == 1) {
 		return 0;
 	}
-	i2c_rx_done_sema = xSemaphoreCreateBinary();
-	i2c_tx_done_sema = xSemaphoreCreateBinary();
-	i2c_init(&i2cmaster, MPU6050_I2C_MTR_SDA, MPU6050_I2C_MTR_SCL);
-	i2c_frequency(&i2cmaster, MPU6050_I2C_BUS_CLK);
-	i2c_set_user_callback(&i2cmaster, I2C_RX_COMPLETE, i2c_master_rxc_callback);
-	i2c_set_user_callback(&i2cmaster, I2C_TX_COMPLETE, i2c_master_txc_callback);
+	if (i2c_bus_inited == 0) {
+		i2c_rx_done_sema = xSemaphoreCreateBinary();
+		i2c_tx_done_sema = xSemaphoreCreateBinary();
+		i2c_init(&i2cmaster, MPU6050_I2C_MTR_SDA, MPU6050_I2C_MTR_SCL);
+		if (i2cmaster.i2c_adp.status == I2CStatusUninitial) {
+			printf("MPU6050: i2c_init failed (pin conflict or init error)\r\n");
+			return 1;
+		}
+		i2c_frequency(&i2cmaster, MPU6050_I2C_BUS_CLK);
+		i2c_set_user_callback(&i2cmaster, I2C_RX_COMPLETE, i2c_master_rxc_callback);
+		i2c_set_user_callback(&i2cmaster, I2C_TX_COMPLETE, i2c_master_txc_callback);
+		i2c_set_user_callback(&i2cmaster, I2C_ERR_OCCURRED, i2c_master_err_callback);
+		i2c_bus_inited = 1;
+	}
 	mpu6050_inited = 1;
 	return 0;
 }
@@ -91,12 +108,20 @@ uint8_t mpu6050_interface_iic_init_with_pin(uint32_t sda, uint32_t scl)
 	if (mpu6050_inited == 1) {
 		return 0;
 	}
-	i2c_rx_done_sema = xSemaphoreCreateBinary();
-	i2c_tx_done_sema = xSemaphoreCreateBinary();
-	i2c_init(&i2cmaster, sda, scl);
-	i2c_frequency(&i2cmaster, MPU6050_I2C_BUS_CLK);
-	i2c_set_user_callback(&i2cmaster, I2C_RX_COMPLETE, i2c_master_rxc_callback);
-	i2c_set_user_callback(&i2cmaster, I2C_TX_COMPLETE, i2c_master_txc_callback);
+	if (i2c_bus_inited == 0) {
+		i2c_rx_done_sema = xSemaphoreCreateBinary();
+		i2c_tx_done_sema = xSemaphoreCreateBinary();
+		i2c_init(&i2cmaster, sda, scl);
+		if (i2cmaster.i2c_adp.status == I2CStatusUninitial) {
+			printf("MPU6050: i2c_init failed (pin conflict or init error)\r\n");
+			return 1;
+		}
+		i2c_frequency(&i2cmaster, MPU6050_I2C_BUS_CLK);
+		i2c_set_user_callback(&i2cmaster, I2C_RX_COMPLETE, i2c_master_rxc_callback);
+		i2c_set_user_callback(&i2cmaster, I2C_TX_COMPLETE, i2c_master_txc_callback);
+		i2c_set_user_callback(&i2cmaster, I2C_ERR_OCCURRED, i2c_master_err_callback);
+		i2c_bus_inited = 1;
+	}
 	mpu6050_inited = 1;
 	return 0;
 }
@@ -114,6 +139,8 @@ uint8_t mpu6050_interface_iic_deinit(void)
 		return 0;
 	}
 	i2c_reset(&i2cmaster);
+	mpu6050_inited = 0;
+	i2c_bus_inited = 0;
 	return 0;
 }
 
@@ -130,11 +157,35 @@ uint8_t mpu6050_interface_iic_deinit(void)
  */
 uint8_t mpu6050_interface_iic_read(uint8_t addr, uint8_t reg, uint8_t *buf, uint16_t len)
 {
-	i2c_write(&i2cmaster, addr, (char const *)&reg, 1, 1);
-	xSemaphoreTake(i2c_tx_done_sema, portMAX_DELAY);
+	hal_i2c_adapter_t *phal_i2c_adapter = (hal_i2c_adapter_t *)(&i2cmaster.i2c_adp);
 
-	i2c_read(&i2cmaster, addr, (char *)buf, len, 1);
-	xSemaphoreTake(i2c_rx_done_sema, portMAX_DELAY);
+	i2c_err_flag = 0;
+	xSemaphoreTake(i2c_tx_done_sema, 0);
+
+	phal_i2c_adapter->tx_dat.addr = addr;
+	phal_i2c_adapter->tx_dat.buf = (const uint8_t *)&reg;
+	phal_i2c_adapter->tx_dat.len = 1;
+	phal_i2c_adapter->tx_dat.mst_stop = 1;
+	if (hal_i2c_send(phal_i2c_adapter) != HAL_OK) {
+		return 1;
+	}
+	if (xSemaphoreTake(i2c_tx_done_sema, pdMS_TO_TICKS(50)) != pdTRUE || i2c_err_flag) {
+		return 1;
+	}
+
+	i2c_err_flag = 0;
+	xSemaphoreTake(i2c_rx_done_sema, 0);
+
+	phal_i2c_adapter->rx_dat.addr = addr;
+	phal_i2c_adapter->rx_dat.buf = buf;
+	phal_i2c_adapter->rx_dat.len = len;
+	phal_i2c_adapter->rx_dat.mst_stop = 1;
+	if (hal_i2c_receive(phal_i2c_adapter) != HAL_OK) {
+		return 1;
+	}
+	if (xSemaphoreTake(i2c_rx_done_sema, pdMS_TO_TICKS(50)) != pdTRUE || i2c_err_flag) {
+		return 1;
+	}
 
 	return 0;
 }
@@ -152,6 +203,7 @@ uint8_t mpu6050_interface_iic_read(uint8_t addr, uint8_t reg, uint8_t *buf, uint
  */
 uint8_t mpu6050_interface_iic_write(uint8_t addr, uint8_t reg, uint8_t *buf, uint16_t len)
 {
+	hal_i2c_adapter_t *phal_i2c_adapter = (hal_i2c_adapter_t *)(&i2cmaster.i2c_adp);
 	uint8_t data[64] = {0};
 	data[0] = reg;
 	if (len > 63) {
@@ -162,8 +214,19 @@ uint8_t mpu6050_interface_iic_write(uint8_t addr, uint8_t reg, uint8_t *buf, uin
 		data[i + 1] = buf[i];
 	}
 
-	i2c_write(&i2cmaster, addr, (char const *)data, len + 1, 1);
-	xSemaphoreTake(i2c_tx_done_sema, portMAX_DELAY);
+	i2c_err_flag = 0;
+	xSemaphoreTake(i2c_tx_done_sema, 0);
+
+	phal_i2c_adapter->tx_dat.addr = addr;
+	phal_i2c_adapter->tx_dat.buf = (const uint8_t *)data;
+	phal_i2c_adapter->tx_dat.len = len + 1;
+	phal_i2c_adapter->tx_dat.mst_stop = 1;
+	if (hal_i2c_send(phal_i2c_adapter) != HAL_OK) {
+		return 1;
+	}
+	if (xSemaphoreTake(i2c_tx_done_sema, pdMS_TO_TICKS(50)) != pdTRUE || i2c_err_flag) {
+		return 1;
+	}
 	return 0;
 }
 

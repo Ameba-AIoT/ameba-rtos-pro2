@@ -160,13 +160,11 @@ int stsc_box_metadata(unsigned char *moov_buf, pmp4_context mp4_ctx)
 {
     int size = 0;
     int moov_position = 0;
-    size = create_box_full(moov_buf + moov_position, "stsc", 16 + 12 * mp4_ctx->metadata_len, 0, 1);
-    Save32BigEndian(mp4_ctx->metadata_len, moov_buf + moov_position + 12);
-    for (unsigned int i = 0; i < mp4_ctx->metadata_len; i++) {
-        Save32BigEndian(i + 1, moov_buf + moov_position + 16 + 12 * i); // first_chunk
-        Save32BigEndian(1, moov_buf + moov_position + 20 + 12 * i); // samples_per_chunk
-        Save32BigEndian(1, moov_buf + moov_position + 24 + 12 * i); // sample_description_index
-    }
+    size = create_box_full(moov_buf + moov_position, "stsc", 16 + 12 * 1, 0, 0);
+    Save32BigEndian(1, moov_buf + moov_position + 12); // entry_count = 1
+    Save32BigEndian(1, moov_buf + moov_position + 16); // first_chunk = 1
+    Save32BigEndian(1, moov_buf + moov_position + 20); // samples_per_chunk = 1
+    Save32BigEndian(1, moov_buf + moov_position + 24); // sample_description_index = 1
     moov_position += size;
     return moov_position;
 }
@@ -181,6 +179,7 @@ int stsz_box_metadata(unsigned char *moov_buf, pmp4_context mp4_ctx)
     int size = 0;
     int moov_position = 0;
     size = create_box_full(moov_buf + moov_position, "stsz", 20 + 4 * mp4_ctx->metadata_len, 0, 0);
+    Save32BigEndian(0, moov_buf + moov_position + 12);
     Save32BigEndian(mp4_ctx->metadata_len, moov_buf + moov_position + 16); // sample_count
     for (unsigned int i = 0; i < mp4_ctx->metadata_len; i++) {
         Save32BigEndian(mp4_ctx->metadata_buffer_size[i], moov_buf + moov_position + 20 + 4 * i); // entry_size

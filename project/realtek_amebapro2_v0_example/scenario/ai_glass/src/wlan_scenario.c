@@ -324,6 +324,7 @@ static void ota_httpc_process_thread(void *param)
 {
 	int ret = -1;
 
+	ota_unlock_flash();
 	ret = http_update_ota((char *)ota_server_host, ota_server_port, (char *)"api/uploadfile");
 
 	http_ota_status = OTA_STATE_DOWNLOAD_FW_COMPLETED;

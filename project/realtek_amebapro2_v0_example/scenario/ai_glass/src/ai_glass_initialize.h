@@ -18,6 +18,7 @@ extern EventGroupHandle_t s_lifetime_event;
 
 extern void ai_glass_init_external_disk(void);
 extern void ai_glass_init_ram_disk(void);
+void ota_unlock_flash(void);
 
 #define EXTDISK_LOG   0
 #if EXTDISK_LOG

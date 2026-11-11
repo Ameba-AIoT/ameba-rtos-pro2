@@ -5,6 +5,7 @@
 #include "video_boot.h"
 #include "ai_glass_dbg.h"
 #include "isp_ctrl_api.h"
+#include "ai_glass_initialize.h"
 
 #define OPEN_CHANNEL        0
 #define OPEN_STREAM         STREAM_V1
@@ -695,6 +696,7 @@ static int media_update_record_params_to_flash(const ai_glass_record_param_t *pa
 
 	memcpy(record_buf + 4, params, sizeof(ai_glass_record_param_t));
 
+	ota_unlock_flash();
 	ftl_common_write(flash_addr, record_buf, FLASH_REC_BLOCK_SIZE);
 	memset(record_buf, 0xff, FLASH_REC_BLOCK_SIZE);
 	ftl_common_read(flash_addr, record_buf, FLASH_REC_BLOCK_SIZE);
@@ -732,6 +734,7 @@ static int media_update_ai_snapshot_params_to_flash(const ai_glass_snapshot_para
 	ai_snap_buf[5] = 'P';
 
 	memcpy(ai_snap_buf + 6, params, sizeof(ai_glass_snapshot_param_t));
+	ota_unlock_flash();
 	ftl_common_write(flash_addr, ai_snap_buf, FLASH_AI_SNAP_BLOCK_SIZE);
 	memset(ai_snap_buf, 0xff, FLASH_AI_SNAP_BLOCK_SIZE);
 	ftl_common_read(flash_addr, ai_snap_buf, FLASH_AI_SNAP_BLOCK_SIZE);
@@ -770,6 +773,7 @@ static int media_update_life_snapshot_params_to_flash(const ai_glass_snapshot_pa
 	lifetime_snap_buf[7] = 'P';
 
 	memcpy(lifetime_snap_buf + 8, params, sizeof(ai_glass_snapshot_param_t));
+	ota_unlock_flash();
 	ftl_common_write(flash_addr, lifetime_snap_buf, FLASH_LIFE_SNAP_BLOCK_SIZE);
 	memset(lifetime_snap_buf, 0xff, FLASH_LIFE_SNAP_BLOCK_SIZE);
 	ftl_common_read(flash_addr, lifetime_snap_buf, FLASH_LIFE_SNAP_BLOCK_SIZE);
@@ -809,6 +813,7 @@ static int media_update_stream_params_to_flash(const ai_glass_stream_param_t *pa
 
     memcpy(stream_buf + 4, params, sizeof(ai_glass_stream_param_t));
 
+    ota_unlock_flash();
     ftl_common_write(flash_addr, stream_buf, FLASH_STREAM_BLOCK_SIZE);
     memset(stream_buf, 0xFF, FLASH_STREAM_BLOCK_SIZE);
     ftl_common_read(flash_addr, stream_buf, FLASH_STREAM_BLOCK_SIZE);
@@ -854,6 +859,7 @@ static int media_update_wifi_params_to_flash(const ai_glass_wifi_param_t *params
     // Write full struct (channel + SSID + password)
     memcpy(wifi_buf + 6, params, sizeof(ai_glass_wifi_param_t));
 
+    ota_unlock_flash();
     ftl_common_write(flash_addr, wifi_buf, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
 
     memset(wifi_buf, 0xff, FLASH_WIFI_CHANNEL_BLOCK_SIZE);
@@ -1241,7 +1247,7 @@ void media_update_preinit_isp_ae(void)
 	int at_blank_floor = (ae_exposure_time <= 300 && ae_gain <= 256);
 	int ae_moved = 0;
 	
-#define AE_STABLE_HITS   2
+#define AE_STABLE_HITS   1
 	int stable_hits = 0;
 
 	while (1) {
@@ -1503,6 +1509,7 @@ int media_clear_flash(uint8_t option)
     memset(clear_buf, 0xFF, FLASH_LIFE_SNAP_BLOCK_SIZE); // all erased
  
     if (sys_get_boot_sel() == 0) {
+        ota_unlock_flash();
         if (option & CLEAR_AI_SNAPSHOT) {
             ftl_common_write(FLASH_AI_SNAP_BLOCK_BASE, clear_buf, FLASH_AI_SNAP_BLOCK_SIZE);
             AI_GLASS_MSG("[FLASH] Cleared AI snapshot block\r\n");

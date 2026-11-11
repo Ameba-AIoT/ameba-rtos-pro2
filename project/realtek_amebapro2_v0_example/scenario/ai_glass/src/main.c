@@ -101,8 +101,9 @@ void fMPMODE(void *arg)
     }
     
     g_mp_mode = mode;
-    
+
     // Save to flash
+    ota_unlock_flash();
     ftl_common_write(FLASH_MP_MODE_BLOCK_BASE, &g_mp_mode, sizeof(g_mp_mode));
     
     printf("OK: MP mode set to %d, Auto reboot\r\n", g_mp_mode);

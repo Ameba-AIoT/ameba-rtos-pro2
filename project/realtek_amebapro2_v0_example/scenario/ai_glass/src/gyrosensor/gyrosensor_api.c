@@ -128,13 +128,14 @@ int gyroscope_fifo_read(gyro_data_t *data, uint16_t len)
 		return -2;
 	}
 	if (gyroscope_inited == 0) {
-		if (gyroscope_fifo_init() != 0) {
-			return -3;
-		}
+	
+		return -3;
+		
 	}
 	if (mpu6050_fifo_read(gs_accel_raw, gs_accel_g,
 						  gs_gyro_raw, gs_gyro_dps, &len) != 0) {
 		printf("mpu6050 fifo read failed\r\n");
+		gyroscope_inited = 0;
 		return -4;
 	}
 

@@ -11,6 +11,8 @@
 
 static i2c_t i2cmaster;
 static int icm42670p_inited = 0;
+static int i2c_bus_inited = 0;
+static volatile int i2c_err_flag = 0;
 #define ICM42670P_I2C_ADDR 0x68
 #define ICM42670P_I2C_MTR_SDA PF_2 //PE_4
 #define ICM42670P_I2C_MTR_SCL PF_1 //PE_3
@@ -18,6 +20,14 @@ static int icm42670p_inited = 0;
 
 static xSemaphoreHandle i2c_rx_done_sema = NULL;
 static xSemaphoreHandle i2c_tx_done_sema = NULL;
+
+static void i2c_master_err_callback(void *userdata)
+{
+      i2c_err_flag = 1;
+      // Unblock whichever semaphore is waiting so it doesn't hang!
+      xSemaphoreGiveFromISR(i2c_tx_done_sema, NULL);
+      xSemaphoreGiveFromISR(i2c_rx_done_sema, NULL);
+}
 
 static void i2c_master_rxc_callback(void *userdata)
 {
@@ -44,6 +54,10 @@ uint8_t icm42670p_i2c_init(void)
 	i2c_rx_done_sema = xSemaphoreCreateBinary();
 	i2c_tx_done_sema = xSemaphoreCreateBinary();
 	i2c_init(&i2cmaster, ICM42670P_I2C_MTR_SDA, ICM42670P_I2C_MTR_SCL);
+	if (i2cmaster.i2c_adp.status == I2CStatusUninitial) {
+		printf("ICM42670P: i2c_init failed (pin conflict or init error)\r\n");
+		return -1;
+	}
 	i2c_frequency(&i2cmaster, ICM42670P_I2C_BUS_CLK);
 	i2c_set_user_callback(&i2cmaster, I2C_RX_COMPLETE, i2c_master_rxc_callback);
 	i2c_set_user_callback(&i2cmaster, I2C_TX_COMPLETE, i2c_master_txc_callback);
@@ -105,12 +119,21 @@ uint8_t icm42670p_i2c_init_with_pin(uint32_t sda, uint32_t scl)
 	if (icm42670p_inited == 1) {
 		return 0;
 	}
-	i2c_rx_done_sema = xSemaphoreCreateBinary();
-	i2c_tx_done_sema = xSemaphoreCreateBinary();
-	i2c_init(&i2cmaster, sda, scl);
-	i2c_frequency(&i2cmaster, ICM42670P_I2C_BUS_CLK);
-	i2c_set_user_callback(&i2cmaster, I2C_RX_COMPLETE, i2c_master_rxc_callback);
-	i2c_set_user_callback(&i2cmaster, I2C_TX_COMPLETE, i2c_master_txc_callback);
+
+	if (i2c_bus_inited == 0) {
+		i2c_rx_done_sema = xSemaphoreCreateBinary();
+		i2c_tx_done_sema = xSemaphoreCreateBinary();
+		i2c_init(&i2cmaster, sda, scl);
+		if (i2cmaster.i2c_adp.status == I2CStatusUninitial) {
+			printf("ICM42670P: i2c_init failed (pin conflict or init error)\r\n");
+			return -1;
+		}
+		i2c_frequency(&i2cmaster, ICM42670P_I2C_BUS_CLK);
+		i2c_set_user_callback(&i2cmaster, I2C_RX_COMPLETE, i2c_master_rxc_callback);
+		i2c_set_user_callback(&i2cmaster, I2C_TX_COMPLETE, i2c_master_txc_callback);
+		i2c_set_user_callback(&i2cmaster, I2C_ERR_OCCURRED, i2c_master_err_callback);
+		i2c_bus_inited = 1;
+	}
 	icm_serif.serif_type = UI_I2C;
 	icm_serif.read_reg  = icm42670p_i2c_read;
 	icm_serif.write_reg = icm42670p_i2c_write;
@@ -185,17 +208,42 @@ int icm42670p_reset_fifo(void)
 
 static int icm42670p_i2c_read(struct inv_imu_serif *serif, uint8_t reg, uint8_t *rbuffer, uint32_t rlen)
 {
-	i2c_write(&i2cmaster, ICM42670P_I2C_ADDR, (char const *)&reg, 1, 1);
-	xSemaphoreTake(i2c_tx_done_sema, portMAX_DELAY);
+	hal_i2c_adapter_t *phal_i2c_adapter = (hal_i2c_adapter_t *)(&i2cmaster.i2c_adp);
 
-	i2c_read(&i2cmaster, ICM42670P_I2C_ADDR, (char *)rbuffer, rlen, 1);
-	xSemaphoreTake(i2c_rx_done_sema, portMAX_DELAY);
+	i2c_err_flag = 0;
+	xSemaphoreTake(i2c_tx_done_sema, 0);
+
+	phal_i2c_adapter->tx_dat.addr = ICM42670P_I2C_ADDR;
+	phal_i2c_adapter->tx_dat.buf = (const uint8_t *)&reg;
+	phal_i2c_adapter->tx_dat.len = 1;
+	phal_i2c_adapter->tx_dat.mst_stop = 1;
+	if (hal_i2c_send(phal_i2c_adapter) != HAL_OK) {
+		return -1;
+	}
+	if (xSemaphoreTake(i2c_tx_done_sema, pdMS_TO_TICKS(50)) != pdTRUE || i2c_err_flag) {
+		return -1;
+	}
+
+	i2c_err_flag = 0;
+	xSemaphoreTake(i2c_rx_done_sema, 0);
+
+	phal_i2c_adapter->rx_dat.addr = ICM42670P_I2C_ADDR;
+	phal_i2c_adapter->rx_dat.buf = rbuffer;
+	phal_i2c_adapter->rx_dat.len = rlen;
+	phal_i2c_adapter->rx_dat.mst_stop = 1;
+	if (hal_i2c_receive(phal_i2c_adapter) != HAL_OK) {
+		return -1;
+	}
+	if (xSemaphoreTake(i2c_rx_done_sema, pdMS_TO_TICKS(50)) != pdTRUE || i2c_err_flag) {
+		return -1;
+	}
 
 	return 0;
 }
 
 static int icm42670p_i2c_write(struct inv_imu_serif *serif, uint8_t reg, const uint8_t *wbuffer, uint32_t wlen)
 {
+	hal_i2c_adapter_t *phal_i2c_adapter = (hal_i2c_adapter_t *)(&i2cmaster.i2c_adp);
 	uint8_t data[64] = {0};
 	data[0] = reg;
 	if (wlen > 63) {
@@ -206,7 +254,18 @@ static int icm42670p_i2c_write(struct inv_imu_serif *serif, uint8_t reg, const u
 		data[i + 1] = wbuffer[i];
 	}
 
-	i2c_write(&i2cmaster, ICM42670P_I2C_ADDR, (char const *)data, wlen + 1, 1);
-	xSemaphoreTake(i2c_tx_done_sema, portMAX_DELAY);
+	i2c_err_flag = 0;
+	xSemaphoreTake(i2c_tx_done_sema, 0); // clear any stale signal
+
+	phal_i2c_adapter->tx_dat.addr = ICM42670P_I2C_ADDR;
+	phal_i2c_adapter->tx_dat.buf = (const uint8_t *)data;
+	phal_i2c_adapter->tx_dat.len = wlen + 1;
+	phal_i2c_adapter->tx_dat.mst_stop = 1;
+	if (hal_i2c_send(phal_i2c_adapter) != HAL_OK) {
+		return -1;
+	}
+	if (xSemaphoreTake(i2c_tx_done_sema, pdMS_TO_TICKS(50)) != pdTRUE || i2c_err_flag) {
+		return -1;
+	}
 	return 0;
 }
