@@ -62,17 +62,19 @@ enum param_change_option {
 	SCALE_UP_TEST,
 	ISP_INIT_TEST,
 	SENSOR_DRIVER_CHANGE_TEST,
+	FPS_CHANGE_TEST,
 	TEST_NUM
 };
 
-static const char* param_change_test_item[] = {
+static const char *param_change_test_item[] = {
 	"RESOLUTION_BPS_CHANGE_TEST",
 	"BPS_CHANGE_TEST",
 	"QP_CHANGE_TEST",
 	"FORCEI_TEST",
 	"SCALE_UP_TEST",
 	"ISP_INIT_TEST",
-	"SENSOR_DRIVER_CHANGE_TEST"
+	"SENSOR_DRIVER_CHANGE_TEST",
+	"FPS_CHANGE_TEST",
 };
 
 static void change_resolution_parameter(int parm_index)
@@ -120,7 +122,7 @@ static int scale_up_load_demo_param(void)
 
 static void scale_up_set_param(int idx)
 {
-	if(idx == 0) {
+	if (idx == 0) {
 		printf("revert video settings\n\r");
 		video_v1_params.width = sensor_params[USE_SENSOR].sensor_width;
 		video_v1_params.height = sensor_params[USE_SENSOR].sensor_height;
@@ -158,7 +160,7 @@ void mmf2_video_example_v1_param_change_init(void)
 	rtsp2_v1_params.u.v.bps = video_v1_params.bps;
 
 	//malloc video heap with scale up resolution
-	if(scale_up_load_demo_param() == 0) {
+	if (scale_up_load_demo_param() == 0) {
 		video_v1_params.width = scale_up_width;
 		video_v1_params.height = scale_up_height;
 	} else {
@@ -225,8 +227,7 @@ mmf2_video_exmaple_v1_param_change_fail:
 static void param_change_test(int idx, char *argv[MAX_ARGC])
 {
 	int i;
-	switch (idx)
-	{
+	switch (idx) {
 	case RESOLUTION_BPS_CHANGE_TEST:
 		printf("changing resolution and bps test\n\r");
 		for (i = 0; i < 2; i++) {
@@ -250,6 +251,17 @@ static void param_change_test(int idx, char *argv[MAX_ARGC])
 		printf("revert bitrate to %d\n\r", V1_BPS);
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_BPS, V1_BPS);
 		break;
+	case FPS_CHANGE_TEST: {
+		int fps_list[3] = {10, 15, 20};
+		for (i = 0; i < 3; i++) {
+			printf("changing fps test = %d\n\r", fps_list[i]);
+			mm_module_ctrl(video_v1_ctx, CMD_VIDEO_FPS, fps_list[i]);
+			vTaskDelay(3000);
+		}
+		printf("revert fps to %d\n\r", video_v1_params.fps);
+		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_FPS, video_v1_params.fps);
+		break;
+	}
 	case QP_CHANGE_TEST:
 		for (i = 0; i < 5; i++) {
 			printf("changing QP test = %d, %d\n\r", (25 + i * 2), (35 + i * 2));
@@ -271,7 +283,7 @@ static void param_change_test(int idx, char *argv[MAX_ARGC])
 		break;
 	case SCALE_UP_TEST:
 		printf("scale up test\n\r");
-		for(i = 0; i < 2; i++) {
+		for (i = 0; i < 2; i++) {
 			siso_pause(siso_video_rtsp_v1);
 			mm_module_ctrl(video_v1_ctx, CMD_VIDEO_STREAM_STOP, V1_CHANNEL);
 			scale_up_set_param(i + 1);
@@ -300,7 +312,7 @@ static void param_change_test(int idx, char *argv[MAX_ARGC])
 		//enable drop frame
 		init_params.video_drop_enable = 1;
 		init_params.video_drop_frame = 5;
-		
+
 		//isp init settings
 		init_params.isp_init_enable = 1;
 		init_params.init_isp_items.init_brightness = 0x00;
@@ -320,9 +332,9 @@ static void param_change_test(int idx, char *argv[MAX_ARGC])
 		init_params.isp_awb_enable = 1;
 		init_params.isp_awb_init_rgain = 256;
 		init_params.isp_awb_init_bgain = 867;
-		
+
 		// if require to lower sensor fps for hdr mode
-		if(init_params.init_isp_items.init_hdr_mode) {
+		if (init_params.init_isp_items.init_hdr_mode) {
 			int hdr_mode_fps = 15;
 			printf("change sensor fps change to %d\r\n", hdr_mode_fps);
 
@@ -331,7 +343,7 @@ static void param_change_test(int idx, char *argv[MAX_ARGC])
 			isp_info.sensor_fps = hdr_mode_fps;
 			isp_info.hdr_enable = 1;
 			video_set_isp_info(&isp_info);
-			
+
 			//update video and rtsp parameters
 			video_v1_params.fps  = hdr_mode_fps;
 			video_v1_params.gop  = hdr_mode_fps;
@@ -340,7 +352,7 @@ static void param_change_test(int idx, char *argv[MAX_ARGC])
 			mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_PARAMS, (int)&rtsp2_v1_params);
 			mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SELECT_STREAM, 0);
 			mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_APPLY, 0);
-			
+
 #if 0 // Avoid frequently reconfiguring VOE heap to prevent memory fragmentation.
 			video_voe_release();
 			int voe_heap_size = video_voe_presetting_by_params(&video_v1_params, 0, NULL, 0, NULL, 0, NULL);
@@ -354,25 +366,24 @@ static void param_change_test(int idx, char *argv[MAX_ARGC])
 		siso_resume(siso_video_rtsp_v1);
 		mm_module_ctrl(video_v1_ctx, CMD_VIDEO_APPLY, V1_CHANNEL);
 		break;
-	case SENSOR_DRIVER_CHANGE_TEST:
-	{
+	case SENSOR_DRIVER_CHANGE_TEST: {
 		printf("sensor driver change test\n\r");
 		int sensor_id = 0;
-		if(argv == NULL) {
+		if (argv == NULL) {
 			printf("need to input sensor driver id!\r\n");
 			break;
 		} else {
-			if(argv[2] == NULL) {
+			if (argv[2] == NULL) {
 				printf("please enter sensor id with 'PCT=%d,[sensor_id]'\r\n", SENSOR_DRIVER_CHANGE_TEST);
 				break;
 			}
 			sensor_id = strtol(argv[2], NULL, 10);
-			if(sensor_id == 0 || sensor_id >= SENSOR_MAX) {
+			if (sensor_id == 0 || sensor_id >= SENSOR_MAX) {
 				printf("invalid sensor id %d\r\n", sensor_id);
 				break;
 			}
 		}
-		
+
 		//close all video stream
 		siso_pause(siso_video_rtsp_v1);
 		mm_module_ctrl(rtsp2_v1_ctx, CMD_RTSP2_SET_STREAMMING, OFF);

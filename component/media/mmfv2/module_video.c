@@ -142,7 +142,9 @@ void video_ch4_delay_release(int ch4_release_fail_add)
 static void video_bps_cal(int ch, video_bps_stats_t *bps_stats, uint32_t frame_size)
 {
 	rate_ctrl_s cur_rc;
-	video_ctrl(ch, VIDEO_GET_RC_CTRL, (int)&cur_rc);
+	if (video_ctrl(ch, VIDEO_GET_RC_CTRL, (int)&cur_rc) != OK) {
+		return;
+	}
 	//calculate bitrate
 	bps_stats->cnt_br++;
 	bps_stats->sum_br += frame_size;
@@ -735,7 +737,11 @@ int video_control(void *p, int cmd, int arg)
 	}
 	break;
 	case CMD_VIDEO_GET_MAX_QP: {
-		*((uint32_t *)arg) = video_get_maxqp(ctx->params.stream_id);
+		int maxqp = video_get_maxqp(ctx->params.stream_id);
+		if (maxqp < 0) {
+			return NOK;
+		}
+		*((uint32_t *)arg) = maxqp;
 	}
 	break;
 	case CMD_VIDEO_SET_MAX_QP: {
@@ -997,7 +1003,7 @@ int video_voe_presetting(int v1_enable, int v1_w, int v1_h, int v1_bps, int v1_s
 		}
 #endif
 
-		
+
 #if OSD_ENABLE
 		info.osd_enable = 1;
 #endif
@@ -1010,7 +1016,7 @@ int video_voe_presetting(int v1_enable, int v1_w, int v1_h, int v1_bps, int v1_s
 	} else {
 		video_get_isp_info(&info);
 	}
-	
+
 	printf("[%s] fps:%d  w:%d  h:%d   \r\n", __FUNCTION__, info.sensor_fps, info.sensor_width, info.sensor_height);
 
 
@@ -1082,7 +1088,7 @@ int video_voe_presetting_by_params(const void *v1_params, int v1_jpg_only_shapsh
 	} else {
 		video_get_isp_info(&info);
 	}
-	
+
 	printf("[%s] fps:%d  w:%d  h:%d   \r\n", __FUNCTION__, info.sensor_fps, info.sensor_width, info.sensor_height);
 
 	int v1_enable = (v1_params == NULL ? 0 : 1);

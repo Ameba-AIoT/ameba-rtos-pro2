@@ -310,14 +310,16 @@ typedef struct video_rc_info_s {
 	uint64_t update_time;
 	atomic_bool update_flag;
 	int update_status;
+	_mutex temp_rc_ctrl_mutex;
+	int is_init; // rc_info is static, this flag marks whether the channel rc is valid
 } video_rc_info_t;
 
 typedef struct video_ch_info_s {
 	video_params_t param;
 	uint32_t isp_fps;
 	uint32_t stream_is_open;
-	video_rc_info_t *rc_info;
-	bps_stbl_ctrl_t *bps_stbl_ctrl;
+	video_rc_info_t rc_info;
+	bps_stbl_ctrl_t bps_stbl_ctrl;
 	void (*video_output_cb)(void *param1, void  *param2, uint32_t arg);
 	volatile int incb;
 	int dyn_drop_frame;
@@ -563,7 +565,7 @@ int video_open_status(void);//0:No video open 1:video open
 
 int video_get_encoder_nalu_payload_info(unsigned char *frame_buf, unsigned int frame_size, int codec_type, video_encoder_nalu_payload_info_t *info);
 
-int video_set_rc(int ch, rate_ctrl_s *rc_ctrl);
+int video_set_rc(int ch, rate_ctrl_s *rc_ctrl);	// updating fps/isp_fps via rc_ctrl triggers a force I frame on VOE
 
 int video_get_rc(int ch, rate_ctrl_s *rc_ctrl);
 
