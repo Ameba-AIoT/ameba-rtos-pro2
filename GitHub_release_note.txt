@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: bbe41f5bf63b14a206d07013552a32d77f5a6985
+* fix(video): [amebapro2] update sensor driver & setting file
+
 SHA-1: d9e0c659c6cf9a3b8a7bc66629d8d7ee27cf2afe
 * refactor(audio): [amebapro2] remove unused mp3 library and stale include
 
