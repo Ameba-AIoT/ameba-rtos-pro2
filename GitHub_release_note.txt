@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 427f64ae47524d5465bad5722a393110ca5bc8a8
+* fix(video): [amebapro2] fix force-i triggered by stale fps/isp_fps in rc update
+
 SHA-1: 85de6e645ce30069b0bef6c0f43bfc0e67b4b595
 * refactor(audio): [amebapro2] remove unused mp3 library and stale include
 
