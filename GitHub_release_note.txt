@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 1a02aee8921b8bbb010b6fd96f2aa330818018b2
+* fix(sdk): [amebapro2] increase fw1/2 partition size
+
 SHA-1: 163537d4626e0db36a680a1ffe4d4af78a2013f8
 * [amebapro2][wlan] fix ssl counter report
 
