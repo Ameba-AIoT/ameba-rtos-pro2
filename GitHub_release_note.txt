@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: d9e0c659c6cf9a3b8a7bc66629d8d7ee27cf2afe
+* refactor(audio): [amebapro2] remove unused mp3 library and stale include
+
 SHA-1: 1a02aee8921b8bbb010b6fd96f2aa330818018b2
 * fix(sdk): [amebapro2] increase fw1/2 partition size
 
