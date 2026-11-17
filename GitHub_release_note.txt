@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: c912f6fd28b640841f4b857a758e97fa2b35ca11
+* fix(wlan): [amebapro2] update TSSI ADC clock setting and efuse write
+
 SHA-1: 427f64ae47524d5465bad5722a393110ca5bc8a8
 * fix(video): [amebapro2] fix force-i triggered by stale fps/isp_fps in rc update
 
