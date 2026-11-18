@@ -109,7 +109,9 @@ extern "C" {
 
 #define USBD_UVC_IN_SLOT_CNT                 10U        /* Payload ring depth; absorbs microframe-level jitter between producer task and ISR consumer */
 #define USBD_UVC_PAYLOAD_HEADER_LEN          12U        /* UVC payload header: 2 (BFH) + 4 (PTS) + 6 (SCR: STC + SOF) */
-#define USBD_UVC_STALL_SOF_MAX               2U         /* SOF watchdog: an ISOC IN xfer must finish within 1 microframe; >= this many SOFs while armed => incompISOIN, recover */
+/* SOF watchdog: an ISOC IN xfer must finish within 1 microframe; >= this many SOFs while
+   armed => incompISOIN, recover */
+#define USBD_UVC_STALL_SOF_MAX               2U
 #define USBD_UVC_DUMP_INTERVAL_MS            2000U      /* Stats dump thread period in milliseconds */
 
 /* ISOC IN endpoint configuration */
@@ -147,6 +149,11 @@ extern "C" {
 #define USBD_UVC_OT_SOURCE_ID                    0x02U  /* Output Terminal sourced from PU (unit id 2) */
 #endif
 
+/* Multi-instance (usbd_uvc_init_multi): one UVC function per instance in one configuration */
+#define USBD_UVC_INST_NUM                    2U         /* Max UVC functions; IN EPs left for ISOC: EP1/EP3/EP5 */
+#define USBD_UVC_MAX_FORMATS                 8U         /* Max formats per instance */
+#define USBD_UVC_CFG_DESC_MAX                2048U      /* Max generated configuration descriptor */
+
 /* Exported macros -----------------------------------------------------------*/
 
 /* Exported types ------------------------------------------------------------*/
@@ -169,6 +176,19 @@ typedef struct {
 	u32 fcc;
 	usbd_uvc_frame_info_t *frames;
 } usbd_uvc_format_info_t;
+
+/**
+ * @brief Configuration of one UVC function for usbd_uvc_init_multi().
+ * @details Each instance becomes one UVC function (IAD + VideoControl + VideoStreaming) in the
+ *          configuration descriptor; the host shows one camera per instance. The descriptor is
+ *          generated from the format table, so it always matches what probe/commit accept.
+ */
+typedef struct {
+	u8 iso_in_addr;                 /**< ISOC IN endpoint: 0x81, 0x83 or 0x85 (IN-capable EPs on this core). */
+	u16 iso_in_xfer_size;           /**< Bytes per microframe: 1024, 2048 or 3072 (HS high-bandwidth). */
+	usbd_uvc_format_info_t *formats; /**< Format table; each frames[] list ends with a zero width entry. */
+	u8 nformats;                    /**< Number of entries in formats (1..USBD_UVC_MAX_FORMATS). */
+} usbd_uvc_inst_cfg_t;
 
 /**
  * @brief UVC vendor-specific command structure.
@@ -285,6 +305,7 @@ typedef struct {
 	__IO u16 sof_count;              /**< Software SOF counter (11-bit) maintained in .sof; used as SCR SOF token. */
 	__IO u8 armed;                   /**< 1 = an ISOC IN xfer is in flight (set/cleared only in ISR). */
 	__IO u8 stall_sof;               /**< SOF count since arm; watchdog for incompISOIN recovery. */
+	__IO u8 producing;               /**< 1 = the frame task took the frame and is encoding it into the ring. */
 	u8 fid;
 	u8 format;
 	u8 end_flag;
@@ -338,6 +359,15 @@ typedef struct {
 	u8 config;
 	u8 ctrl_req;
 	u8 ctrl_data_len;
+	/* Per-instance settings (usbd_uvc_init(): instance 0 with the static descriptor tables) */
+	const usbd_uvc_format_info_t *formats; /* Format table probe/commit are checked against */
+	u32 nformats;
+	u32 in_buf_size;  /* ISOC IN bytes per microframe = payload ring node size */
+	u8 inst;          /* Instance index */
+	u8 itf_base;      /* Interface number of this function's VideoControl interface */
+	u8 alt;           /* Current alternate setting of the VideoStreaming interface */
+	__IO u8 cmd_task_alive;    /* Worker tasks running; usbd_uvc_deinit() waits for both to exit */
+	__IO u8 frame_task_alive;
 } usbd_uvc_dev_t;
 
 /* Exported variables --------------------------------------------------------*/
@@ -426,6 +456,63 @@ void usbd_uvc_set_change_parm_cb(int cb);
  * @note   Do not free the returned pointer.
  */
 usbd_uvc_format_t *usbd_uvc_get_format(void);
+
+/*
+ * Multi-instance API. usbd_uvc_init() above keeps the original single-camera behaviour (instance 0,
+ * static descriptor in usbd_uvc_descriptor.c); the legacy functions all act on instance 0.
+ */
+
+/**
+ * @brief  Initialize num UVC functions in one configuration and register the class driver.
+ * @param[in]  cfg  Array of num instance configurations; must stay valid until usbd_uvc_deinit().
+ * @param[in]  num  1..USBD_UVC_INST_NUM. Instance i uses interfaces 2i (VC) and 2i+1 (VS).
+ * @retval HAL_OK on success, negative error code on failure.
+ * @note   Call after usbd_init(), and call usbd_uvc_deinit() before usbd_deinit(): a descriptor
+ *         larger than the core EP0 buffer makes the class lend the core a bigger EP0 buffer, which
+ *         usbd_uvc_deinit() hands back.
+ */
+int usbd_uvc_init_multi(const usbd_uvc_inst_cfg_t *cfg, u8 num);
+
+/**
+ * @brief  Number of initialized UVC instances (0 when not initialized).
+ */
+u8 usbd_uvc_get_inst_num(void);
+
+/** @brief  usbd_uvc_get_status() for instance inst. */
+int usbd_uvc_get_status_inst(u8 inst);
+
+/** @brief  usbd_uvc_video_out_stream_queue() for instance inst. */
+usbd_uvc_buffer_t *usbd_uvc_video_out_stream_queue_inst(u8 inst);
+
+/** @brief  usbd_uvc_video_put_in_stream_queue() for instance inst. */
+void usbd_uvc_video_put_in_stream_queue_inst(u8 inst, usbd_uvc_buffer_t *payload);
+
+/** @brief  usbd_uvc_video_put_out_stream_queue() for instance inst. */
+void usbd_uvc_video_put_out_stream_queue_inst(u8 inst, usbd_uvc_buffer_t *payload);
+
+/** @brief  usbd_uvc_wait_frame_down() for instance inst. */
+void usbd_uvc_wait_frame_down_inst(u8 inst);
+
+/**
+ * @brief  usbd_uvc_set_change_parm_cb() for instance inst.
+ * @param[in]  cb  Called in ISR context when the host starts streaming (SET_INTERFACE alt 1) with
+ *                 the instance's usbd_uvc_format_t holding the committed format/size/fps.
+ */
+void usbd_uvc_set_change_parm_cb_inst(u8 inst, void (*cb)(void *));
+
+/** @brief  usbd_uvc_get_format() for instance inst, NULL if inst is not initialized. */
+usbd_uvc_format_t *usbd_uvc_get_format_inst(u8 inst);
+
+/**
+ * @brief  Build the configuration descriptor of the given instances (usbd_uvc_descriptor.c).
+ * @retval Descriptor length, 0 if buf_len is too small or a format table is invalid.
+ */
+u16 usbd_uvc_build_config_desc(const usbd_uvc_dev_t *devs, u8 num, u8 *buf, u16 buf_len);
+
+/**
+ * @brief  Load the default probe/commit (first format, first frame) of an instance (usbd_uvc_event.c).
+ */
+void usbd_uvc_init_streaming_control(usbd_uvc_dev_t *dev);
 
 #ifdef __cplusplus
 }

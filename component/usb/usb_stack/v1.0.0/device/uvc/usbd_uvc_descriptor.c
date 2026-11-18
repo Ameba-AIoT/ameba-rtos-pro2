@@ -691,3 +691,401 @@ usbd_uvc_format_info_t uvcd_formats[] = {
 };
 const u32 uvcd_nformats = sizeof(uvcd_formats) / sizeof(uvcd_formats[0]);
 #endif
+
+/* ---------------------------------------------------------------------------
+ * Configuration descriptor generator for usbd_uvc_init_multi()
+ *
+ * One UVC function per instance, instance i on interfaces 2i (VC) and 2i+1 (VS):
+ *   IAD, VC interface, VC header, Camera IT, PU, [XU], OT,
+ *   VS interface alt 0, VS input header, format + frame descriptors, color matching,
+ *   VS interface alt 1 with the instance's ISOC IN endpoint.
+ * The VC status interrupt endpoint of the static descriptor is left out (optional in UVC 1.5,
+ * never used by this driver), so every IN endpoint stays available for video.
+ * ------------------------------------------------------------------------- */
+
+#define USBD_UVC_DESC_IAD_LEN            8U
+#define USBD_UVC_DESC_ITF_LEN            9U
+#define USBD_UVC_DESC_VC_HDR_LEN         13U
+#define USBD_UVC_DESC_IT_LEN             18U
+#define USBD_UVC_DESC_PU_LEN             12U
+#define USBD_UVC_DESC_OT_LEN             9U
+#define USBD_UVC_DESC_EP_LEN             7U
+#define USBD_UVC_DESC_COLOR_LEN          6U
+#define USBD_UVC_DESC_VS_HDR_LEN         13U    /* + bControlSize * bNumFormats */
+#define USBD_UVC_DESC_FMT_UNCOMP_LEN     27U
+#define USBD_UVC_DESC_FMT_MJPEG_LEN      11U
+#define USBD_UVC_DESC_FMT_FRAME_LEN      28U
+#define USBD_UVC_DESC_FRAME_LEN          26U    /* + 4 * bFrameIntervalType */
+
+#define USBD_UVC_DESC_CS_INTERFACE       0x24U
+#define USBD_UVC_DESC_VC_PART_LEN        (USBD_UVC_DESC_VC_HDR_LEN + USBD_UVC_DESC_IT_LEN + USBD_UVC_DESC_PU_LEN + \
+										  USBD_UVC_XU_DESC_LEN + USBD_UVC_DESC_OT_LEN)
+
+/* VS subtypes [UVC1.5 Tbl A-6] */
+#define USBD_UVC_VS_SUB_INPUT_HEADER     0x01U
+#define USBD_UVC_VS_SUB_FMT_UNCOMP       0x04U
+#define USBD_UVC_VS_SUB_FRM_UNCOMP       0x05U
+#define USBD_UVC_VS_SUB_FMT_MJPEG        0x06U
+#define USBD_UVC_VS_SUB_FRM_MJPEG        0x07U
+#define USBD_UVC_VS_SUB_COLORFORMAT      0x0DU
+#define USBD_UVC_VS_SUB_FMT_FRAME        0x10U
+#define USBD_UVC_VS_SUB_FRM_FRAME        0x11U
+
+static u16 usbd_uvc_put16(u8 *p, u32 v)
+{
+	p[0] = (u8)(v & 0xFFU);
+	p[1] = (u8)((v >> 8) & 0xFFU);
+	return 2U;
+}
+
+static u16 usbd_uvc_put32(u8 *p, u32 v)
+{
+	p[0] = (u8)(v & 0xFFU);
+	p[1] = (u8)((v >> 8) & 0xFFU);
+	p[2] = (u8)((v >> 16) & 0xFFU);
+	p[3] = (u8)((v >> 24) & 0xFFU);
+	return 4U;
+}
+
+/* Descriptor subtypes, FOURCC (NULL for MJPEG) and bBitsPerPixel of a format. 0: unknown format */
+static u8 usbd_uvc_fmt_desc_info(u32 fcc, u8 *fmt_sub, u8 *frm_sub, const u8 **fourcc)
+{
+	/* USBD_UVC_FORMAT_TYPE_YUY2 carries the ISP's YUV422 semi-planar output, advertised as NV16
+	   exactly like the static descriptor */
+	static const u8 cc_nv16[4] = {'N', 'V', '1', '6'};
+	static const u8 cc_nv12[4] = {'N', 'V', '1', '2'};
+	static const u8 cc_h264[4] = {'H', '2', '6', '4'};
+	static const u8 cc_hevc[4] = {'H', 'E', 'V', 'C'};
+
+	switch (fcc) {
+	case USBD_UVC_FORMAT_TYPE_YUY2:
+		*fmt_sub = USBD_UVC_VS_SUB_FMT_UNCOMP;
+		*frm_sub = USBD_UVC_VS_SUB_FRM_UNCOMP;
+		*fourcc = cc_nv16;
+		return 16U;
+	case USBD_UVC_FORMAT_TYPE_NV12:
+		*fmt_sub = USBD_UVC_VS_SUB_FMT_UNCOMP;
+		*frm_sub = USBD_UVC_VS_SUB_FRM_UNCOMP;
+		*fourcc = cc_nv12;
+		return 12U;
+	case USBD_UVC_FORMAT_TYPE_MJPEG:
+		*fmt_sub = USBD_UVC_VS_SUB_FMT_MJPEG;
+		*frm_sub = USBD_UVC_VS_SUB_FRM_MJPEG;
+		*fourcc = NULL;
+		return 16U;
+	case USBD_UVC_FORMAT_TYPE_H264:
+		*fmt_sub = USBD_UVC_VS_SUB_FMT_FRAME;
+		*frm_sub = USBD_UVC_VS_SUB_FRM_FRAME;
+		*fourcc = cc_h264;
+		return 12U;
+	case USBD_UVC_FORMAT_TYPE_H265:
+		*fmt_sub = USBD_UVC_VS_SUB_FMT_FRAME;
+		*frm_sub = USBD_UVC_VS_SUB_FRM_FRAME;
+		*fourcc = cc_hevc;
+		return 12U;
+	default:
+		return 0U;
+	}
+}
+
+/* Largest frame size of a format, same rule as probe/commit (usbd_uvc_event.c) */
+static u32 usbd_uvc_frame_bytes(u32 fcc, u32 w, u32 h)
+{
+	switch (fcc) {
+	case USBD_UVC_FORMAT_TYPE_YUY2:
+		return w * h * USBD_UVC_YUY2_BPP;
+	case USBD_UVC_FORMAT_TYPE_NV12:
+		return (w * h * USBD_UVC_NV12_SIZE_NUM) / USBD_UVC_NV12_SIZE_DEN;
+	default:
+		return w * h;
+	}
+}
+
+/* Video Control part of one function: IAD, VC interface, header, IT, PU, [XU], OT */
+static u16 usbd_uvc_build_vc(u8 *buf, u8 itf)
+{
+	u16 pos = 0U;
+
+	/* IAD [UVC1.5 3.6] */
+	buf[pos++] = USBD_UVC_DESC_IAD_LEN;
+	buf[pos++] = USB_DESC_TYPE_IAD;
+	buf[pos++] = itf;                               /* bFirstInterface */
+	buf[pos++] = 0x02U;                             /* bInterfaceCount: VC + VS */
+	buf[pos++] = 0x0EU;                             /* bFunctionClass: CC_VIDEO */
+	buf[pos++] = 0x03U;                             /* bFunctionSubClass: SC_VIDEO_INTERFACE_COLLECTION */
+	buf[pos++] = 0x00U;
+	buf[pos++] = 0x00U;                             /* iFunction */
+
+	/* VideoControl interface */
+	buf[pos++] = USBD_UVC_DESC_ITF_LEN;
+	buf[pos++] = USB_DESC_TYPE_INTERFACE;
+	buf[pos++] = itf;
+	buf[pos++] = 0x00U;                             /* bAlternateSetting */
+	buf[pos++] = 0x00U;                             /* bNumEndpoints: no status interrupt EP */
+	buf[pos++] = 0x0EU;                             /* CC_VIDEO */
+	buf[pos++] = 0x01U;                             /* SC_VIDEOCONTROL */
+	buf[pos++] = 0x00U;
+	buf[pos++] = 0x00U;
+
+	/* VC header [UVC1.5 Tbl 3-3] */
+	buf[pos++] = USBD_UVC_DESC_VC_HDR_LEN;
+	buf[pos++] = USBD_UVC_DESC_CS_INTERFACE;
+	buf[pos++] = 0x01U;                             /* VC_HEADER */
+	pos += usbd_uvc_put16(&buf[pos], 0x0110U);      /* bcdUVC 1.10 */
+	pos += usbd_uvc_put16(&buf[pos], USBD_UVC_DESC_VC_PART_LEN);
+	pos += usbd_uvc_put32(&buf[pos], USBD_UVC_CLOCK_FREQUENCY);
+	buf[pos++] = 0x01U;                             /* bInCollection */
+	buf[pos++] = (u8)(itf + 1U);                    /* baInterfaceNr(1): VS */
+
+	/* Camera Input Terminal [UVC1.5 Tbl 3-4], id 1 */
+	buf[pos++] = USBD_UVC_DESC_IT_LEN;
+	buf[pos++] = USBD_UVC_DESC_CS_INTERFACE;
+	buf[pos++] = 0x02U;                             /* VC_INPUT_TERMINAL */
+	buf[pos++] = 0x01U;                             /* bTerminalID */
+	pos += usbd_uvc_put16(&buf[pos], 0x0201U);      /* ITT_CAMERA */
+	buf[pos++] = 0x00U;                             /* bAssocTerminal */
+	buf[pos++] = 0x00U;                             /* iTerminal */
+	pos += usbd_uvc_put16(&buf[pos], 0U);           /* wObjectiveFocalLengthMin */
+	pos += usbd_uvc_put16(&buf[pos], 0U);           /* wObjectiveFocalLengthMax */
+	pos += usbd_uvc_put16(&buf[pos], 0U);           /* wOcularFocalLength */
+	buf[pos++] = 0x03U;                             /* bControlSize */
+	buf[pos++] = 0x00U;                             /* bmControls: none */
+	buf[pos++] = 0x00U;
+	buf[pos++] = 0x00U;
+
+	/* Processing Unit [UVC1.5 Tbl 3-8], id 2 */
+	buf[pos++] = USBD_UVC_DESC_PU_LEN;
+	buf[pos++] = USBD_UVC_DESC_CS_INTERFACE;
+	buf[pos++] = 0x05U;                             /* VC_PROCESSING_UNIT */
+	buf[pos++] = 0x02U;                             /* bUnitID */
+	buf[pos++] = 0x01U;                             /* bSourceID: IT */
+	pos += usbd_uvc_put16(&buf[pos], 0x4000U);      /* wMaxMultiplier */
+	buf[pos++] = 0x02U;                             /* bControlSize */
+	buf[pos++] = 0x00U;                             /* bmControls: none */
+	buf[pos++] = 0x00U;
+	buf[pos++] = 0x00U;                             /* iProcessing */
+	buf[pos++] = 0x00U;                             /* bmVideoStandards */
+
+#if USBD_UVC_USE_EXTENSION_UNIT
+	{
+		/* Extension Unit [UVC1.5 Tbl 3-10], id 3, same as the static descriptor */
+		static const u8 xu[USBD_UVC_XU_DESC_LEN] = {
+			USBD_UVC_XU_DESC_LEN, USBD_UVC_DESC_CS_INTERFACE, 0x06, 0x03,
+			0xCE, 0xB9, 0x55, 0x2B, 0xB0, 0x14, 0x49, 0xA8,
+			0xB2, 0x2E, 0xF6, 0xB0, 0xA0, 0x12, 0x82, 0x74,
+			0x18, 0x01, 0x02, 0x03, 0x00, 0x1E, 0x00, 0x00,
+		};
+		usb_os_memcpy((void *)&buf[pos], (const void *)xu, USBD_UVC_XU_DESC_LEN);
+		pos += USBD_UVC_XU_DESC_LEN;
+	}
+#endif
+
+	/* Output Terminal [UVC1.5 Tbl 3-5], id 4 */
+	buf[pos++] = USBD_UVC_DESC_OT_LEN;
+	buf[pos++] = USBD_UVC_DESC_CS_INTERFACE;
+	buf[pos++] = 0x03U;                             /* VC_OUTPUT_TERMINAL */
+	buf[pos++] = 0x04U;                             /* bTerminalID */
+	pos += usbd_uvc_put16(&buf[pos], 0x0101U);      /* TT_STREAMING */
+	buf[pos++] = 0x00U;
+	buf[pos++] = USBD_UVC_OT_SOURCE_ID;             /* PU(2) or XU(3) */
+	buf[pos++] = 0x00U;
+
+	return pos;
+}
+
+/* Video Streaming part of one function. Returns 0 if buf_len is too small or the table is invalid. */
+static u16 usbd_uvc_build_vs(const usbd_uvc_dev_t *dev, u8 *buf, u16 buf_len)
+{
+	static const u8 guid_tail[12] = {0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71};
+	const u8 itf = (u8)(dev->itf_base + 1U);
+	const u32 xfer = dev->in_buf_size;
+	u32 pos = 0U;
+	u32 hdr;
+	u32 f;
+
+	if (((u32)USBD_UVC_DESC_ITF_LEN + USBD_UVC_DESC_VS_HDR_LEN + dev->nformats) > buf_len) {
+		return 0U;
+	}
+
+	/* VS interface alt 0 (zero bandwidth) */
+	buf[pos++] = USBD_UVC_DESC_ITF_LEN;
+	buf[pos++] = USB_DESC_TYPE_INTERFACE;
+	buf[pos++] = itf;
+	buf[pos++] = 0x00U;                             /* bAlternateSetting */
+	buf[pos++] = 0x00U;                             /* bNumEndpoints */
+	buf[pos++] = 0x0EU;                             /* CC_VIDEO */
+	buf[pos++] = 0x02U;                             /* SC_VIDEOSTREAMING */
+	buf[pos++] = 0x00U;
+	buf[pos++] = 0x00U;
+
+	/* VS input header [UVC1.5 Tbl 3-14], wTotalLength patched below */
+	hdr = pos;
+	buf[pos++] = (u8)(USBD_UVC_DESC_VS_HDR_LEN + dev->nformats);
+	buf[pos++] = USBD_UVC_DESC_CS_INTERFACE;
+	buf[pos++] = USBD_UVC_VS_SUB_INPUT_HEADER;
+	buf[pos++] = (u8)dev->nformats;                 /* bNumFormats */
+	pos += 2U;                                      /* wTotalLength */
+	buf[pos++] = dev->ep_isoc_in.info.addr;         /* bEndpointAddress */
+	buf[pos++] = 0x00U;                             /* bmInfo */
+	buf[pos++] = 0x04U;                             /* bTerminalLink: OT */
+	buf[pos++] = 0x00U;                             /* bStillCaptureMethod */
+	buf[pos++] = 0x00U;                             /* bTriggerSupport */
+	buf[pos++] = 0x00U;                             /* bTriggerUsage */
+	buf[pos++] = 0x01U;                             /* bControlSize */
+	for (f = 0U; f < dev->nformats; f++) {
+		buf[pos++] = 0x00U;                         /* bmaControls */
+	}
+
+	for (f = 0U; f < dev->nformats; f++) {
+		const usbd_uvc_format_info_t *fmt = &dev->formats[f];
+		const u8 *fourcc = NULL;
+		u8 fmt_sub = 0U;
+		u8 frm_sub = 0U;
+		u8 bpp = usbd_uvc_fmt_desc_info(fmt->fcc, &fmt_sub, &frm_sub, &fourcc);
+		u32 nframes = 0U;
+		u32 fr;
+
+		while ((fmt->frames != NULL) && (fmt->frames[nframes].width != 0U)) {
+			nframes++;
+		}
+		if ((bpp == 0U) || (nframes == 0U) || ((pos + USBD_UVC_DESC_FMT_FRAME_LEN) > buf_len)) {
+			return 0U;
+		}
+
+		/* Format descriptor */
+		buf[pos + 1U] = USBD_UVC_DESC_CS_INTERFACE;
+		buf[pos + 2U] = fmt_sub;
+		buf[pos + 3U] = (u8)(f + 1U);              /* bFormatIndex */
+		buf[pos + 4U] = (u8)nframes;               /* bNumFrameDescriptors */
+		if (fourcc == NULL) {
+			buf[pos] = USBD_UVC_DESC_FMT_MJPEG_LEN;
+			buf[pos + 5U] = 0x01U;                 /* bmFlags: FixedSizeSamples */
+			buf[pos + 6U] = 0x01U;                 /* bDefaultFrameIndex */
+			buf[pos + 7U] = 0x00U;                 /* bAspectRatioX */
+			buf[pos + 8U] = 0x00U;                 /* bAspectRatioY */
+			buf[pos + 9U] = 0x00U;                 /* bmInterlaceFlags */
+			buf[pos + 10U] = 0x00U;                /* bCopyProtect */
+		} else {
+			buf[pos] = (fmt_sub == USBD_UVC_VS_SUB_FMT_FRAME) ? USBD_UVC_DESC_FMT_FRAME_LEN : USBD_UVC_DESC_FMT_UNCOMP_LEN;
+			usb_os_memcpy((void *)&buf[pos + 5U], (const void *)fourcc, 4U);
+			usb_os_memcpy((void *)&buf[pos + 9U], (const void *)guid_tail, (u32)sizeof(guid_tail));
+			buf[pos + 21U] = bpp;                  /* bBitsPerPixel */
+			buf[pos + 22U] = 0x01U;                /* bDefaultFrameIndex */
+			buf[pos + 23U] = 0x00U;                /* bAspectRatioX */
+			buf[pos + 24U] = 0x00U;                /* bAspectRatioY */
+			buf[pos + 25U] = 0x00U;                /* bmInterlaceFlags */
+			buf[pos + 26U] = 0x00U;                /* bCopyProtect */
+			if (fmt_sub == USBD_UVC_VS_SUB_FMT_FRAME) {
+				buf[pos + 27U] = 0x01U;            /* bVariableSize */
+			}
+		}
+		pos += buf[pos];
+
+		/* Frame descriptors */
+		for (fr = 0U; fr < nframes; fr++) {
+			const usbd_uvc_frame_info_t *frame = &fmt->frames[fr];
+			u32 frame_bytes = usbd_uvc_frame_bytes(fmt->fcc, frame->width, frame->height);
+			u32 nint = 0U;
+			u32 i;
+
+			while ((nint < USBD_UVC_FRAME_INTERVAL_CNT) && (frame->intervals[nint] != 0U)) {
+				nint++;
+			}
+			if ((nint == 0U) || ((pos + USBD_UVC_DESC_FRAME_LEN + (4U * nint)) > buf_len)) {
+				return 0U;
+			}
+			buf[pos++] = (u8)(USBD_UVC_DESC_FRAME_LEN + (4U * nint));
+			buf[pos++] = USBD_UVC_DESC_CS_INTERFACE;
+			buf[pos++] = frm_sub;
+			buf[pos++] = (u8)(fr + 1U);            /* bFrameIndex */
+			buf[pos++] = 0x00U;                    /* bmCapabilities */
+			pos += usbd_uvc_put16(&buf[pos], frame->width);
+			pos += usbd_uvc_put16(&buf[pos], frame->height);
+			/* dwMinBitRate / dwMaxBitRate at the slowest / fastest interval */
+			pos += usbd_uvc_put32(&buf[pos], frame_bytes * 8U * (USBD_UVC_FRAME_INTERVAL_UNIT / frame->intervals[nint - 1U]));
+			pos += usbd_uvc_put32(&buf[pos], frame_bytes * 8U * (USBD_UVC_FRAME_INTERVAL_UNIT / frame->intervals[0]));
+			if (frm_sub == USBD_UVC_VS_SUB_FRM_FRAME) {
+				pos += usbd_uvc_put32(&buf[pos], frame->intervals[0]);    /* dwDefaultFrameInterval */
+				buf[pos++] = (u8)nint;                                    /* bFrameIntervalType */
+				pos += usbd_uvc_put32(&buf[pos], 0U);                     /* dwBytesPerLine */
+			} else {
+				pos += usbd_uvc_put32(&buf[pos], frame_bytes);            /* dwMaxVideoFrameBufferSize */
+				pos += usbd_uvc_put32(&buf[pos], frame->intervals[0]);    /* dwDefaultFrameInterval */
+				buf[pos++] = (u8)nint;                                    /* bFrameIntervalType */
+			}
+			for (i = 0U; i < nint; i++) {
+				pos += usbd_uvc_put32(&buf[pos], frame->intervals[i]);
+			}
+		}
+	}
+
+	if ((pos + USBD_UVC_DESC_COLOR_LEN + USBD_UVC_DESC_ITF_LEN + USBD_UVC_DESC_EP_LEN) > buf_len) {
+		return 0U;
+	}
+
+	/* Color matching [UVC1.5 Tbl 3-29]: BT.709 primaries / transfer, SMPTE 170M matrix */
+	buf[pos++] = USBD_UVC_DESC_COLOR_LEN;
+	buf[pos++] = USBD_UVC_DESC_CS_INTERFACE;
+	buf[pos++] = USBD_UVC_VS_SUB_COLORFORMAT;
+	buf[pos++] = 0x01U;
+	buf[pos++] = 0x01U;
+	buf[pos++] = 0x04U;
+	(void)usbd_uvc_put16(&buf[hdr + 4U], pos - hdr);
+
+	/* VS interface alt 1 with the ISOC IN endpoint */
+	buf[pos++] = USBD_UVC_DESC_ITF_LEN;
+	buf[pos++] = USB_DESC_TYPE_INTERFACE;
+	buf[pos++] = itf;
+	buf[pos++] = 0x01U;                             /* bAlternateSetting */
+	buf[pos++] = 0x01U;                             /* bNumEndpoints */
+	buf[pos++] = 0x0EU;
+	buf[pos++] = 0x02U;
+	buf[pos++] = 0x00U;
+	buf[pos++] = 0x00U;
+
+	buf[pos++] = USBD_UVC_DESC_EP_LEN;
+	buf[pos++] = USB_DESC_TYPE_ENDPOINT;
+	buf[pos++] = dev->ep_isoc_in.info.addr;
+	buf[pos++] = 0x05U;                             /* ISOC, asynchronous */
+	/* wMaxPacketSize: bits[12:11] = additional transactions, bits[10:0] = 1024 */
+	pos += usbd_uvc_put16(&buf[pos], (((xfer / USBD_UVC_ISOC_EP_MPS) - 1U) << 11U) | USBD_UVC_ISOC_EP_MPS);
+	buf[pos++] = USBD_UVC_ISOC_EP_BINTERVAL;
+
+	return (u16)pos;
+}
+
+u16 usbd_uvc_build_config_desc(const usbd_uvc_dev_t *devs, u8 num, u8 *buf, u16 buf_len)
+{
+	const u32 vc_len = USBD_UVC_DESC_IAD_LEN + USBD_UVC_DESC_ITF_LEN + USBD_UVC_DESC_VC_PART_LEN;
+	u32 pos = USB_LEN_CFG_DESC;
+	u16 len;
+	u8 i;
+
+	if ((devs == NULL) || (buf == NULL) || (num == 0U) || (buf_len < USB_LEN_CFG_DESC)) {
+		return 0U;
+	}
+
+	for (i = 0U; i < num; i++) {
+		if ((pos + vc_len) > buf_len) {
+			return 0U;
+		}
+		pos += usbd_uvc_build_vc(&buf[pos], devs[i].itf_base);
+		len = usbd_uvc_build_vs(&devs[i], &buf[pos], (u16)(buf_len - pos));
+		if (len == 0U) {
+			return 0U;
+		}
+		pos += len;
+	}
+
+	/* Configuration descriptor [USB2.0 9.6.3] */
+	buf[0] = USB_LEN_CFG_DESC;
+	buf[1] = USB_DESC_TYPE_CONFIGURATION;
+	(void)usbd_uvc_put16(&buf[2], pos);              /* wTotalLength */
+	buf[4] = (u8)(num * 2U);                         /* bNumInterfaces */
+	buf[5] = 0x01U;                                  /* bConfigurationValue */
+	buf[6] = 0x00U;                                  /* iConfiguration */
+	buf[7] = 0x80U;                                  /* bmAttributes: bus powered */
+	buf[8] = 0x32U;                                  /* bMaxPower: 100 mA */
+
+	return (u16)pos;
+}

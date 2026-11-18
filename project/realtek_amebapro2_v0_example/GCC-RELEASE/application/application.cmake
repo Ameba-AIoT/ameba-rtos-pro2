@@ -314,6 +314,7 @@ list(
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/msc/usbd_msc.c
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/msc/usbd_scsi.c
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/hid/usbd_hid.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/dfu/usbd_dfu.c
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc/usbd_uvc.c
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc/usbd_uvc_descriptor.c
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc/usbd_uvc_event.c
@@ -351,6 +352,7 @@ set_source_files_properties(
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/msc/usbd_msc.c
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/msc/usbd_scsi.c
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/hid/usbd_hid.c
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/dfu/usbd_dfu.c
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc/usbd_uvc.c
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc/usbd_uvc_descriptor.c
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc/usbd_uvc_event.c
@@ -366,7 +368,7 @@ set_source_files_properties(
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/uvc/usbh_uvc_parse.c
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/uvc/usbh_uvc_stream.c
 	PROPERTIES COMPILE_OPTIONS
-	"-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/hal;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/common;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/core;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/cdc_acm;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/msc;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/hid;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/composite;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/core;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/cdc_acm;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/cdc_ecm;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/msc;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/uvc"
+	"-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/hal;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/common;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/core;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/cdc_acm;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/msc;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/hid;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/dfu;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/composite;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/core;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/cdc_acm;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/cdc_ecm;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/msc;-iquote;${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/uvc"
 )
 
 list(
@@ -374,6 +376,7 @@ list(
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/cdc_acm
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/msc
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/hid
+	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/dfu
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/uvc
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/device/composite
 	${sdk_root}/component/usb/usb_stack/${usb_stack_ver}/host/cdc_acm

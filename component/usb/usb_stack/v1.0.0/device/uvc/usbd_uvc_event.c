@@ -32,13 +32,15 @@
 /* Private types -------------------------------------------------------------*/
 
 /* Private macros ------------------------------------------------------------*/
+/* Interface number inside the UVC function (0: VideoControl, 1: VideoStreaming) */
+#define USBD_UVC_LOCAL_ITF(dev, windex)   ((int)((windex) & 0xFFU) - (int)(dev)->itf_base)
 
 /* Private function prototypes -----------------------------------------------*/
 static int usbd_uvc_send_response(usbd_uvc_dev_t *uvc, usbd_uvc_request_data_t *data);
 static int usbd_uvc_receive_response(usbd_uvc_dev_t *uvc, usbd_uvc_req_data_t *uvc_event);
 static void usbd_uvc_events_process_standard(usbd_uvc_dev_t *dev, usb_setup_req_t *ctrl, usbd_uvc_request_data_t *resp);
 static void usbd_uvc_events_process_control(usbd_uvc_dev_t *dev, usb_setup_req_t *ctrl, usbd_uvc_request_data_t *resp);
-static void usbd_uvc_dump_uvc_format(void);
+static void usbd_uvc_dump_uvc_format(const usbd_uvc_dev_t *dev);
 static void usbd_uvc_fill_streaming_control(usbd_uvc_dev_t *dev, usbd_uvc_streaming_control_t *ctrl, int iframe, int iformat);
 static void usbd_uvc_events_process_streaming(usbd_uvc_dev_t *dev, usb_setup_req_t *ctrl, usbd_uvc_request_data_t *resp);
 static void usbd_uvc_events_process_class(usbd_uvc_dev_t *dev, usb_setup_req_t *ctrl, usbd_uvc_request_data_t *resp);
@@ -277,7 +279,7 @@ usbd_uvc_events_process_control(usbd_uvc_dev_t *dev, usb_setup_req_t *ctrl,
 {
 	resp->length = ctrl->wLength;
 	dev->control = ctrl->wValue >> 8; //stream 0:control 1:stream ,control for selector ex:brightness
-	dev->command_interface = ctrl->wIndex & 0xff; //0 for ocntrol 1 for streaming
+	dev->command_interface = USBD_UVC_LOCAL_ITF(dev, ctrl->wIndex); //0 for control 1 for streaming
 	dev->command_entity = (ctrl->wIndex >> 8) & 0xff; //2 process unit 3 for extension unit
 	if (dev->command_entity == UVC_VC_PROCESS_UNIT) {
 		usbd_uvc_get_command_process_unit(dev, ctrl, resp);
@@ -294,9 +296,9 @@ usbd_uvc_events_process_control(usbd_uvc_dev_t *dev, usb_setup_req_t *ctrl,
   * @brief  Dump supported UVC frame intervals for debug
   * @retval None
   */
-static void usbd_uvc_dump_uvc_format(void)
+static void usbd_uvc_dump_uvc_format(const usbd_uvc_dev_t *dev)
 {
-	const usbd_uvc_format_info_t *format = &uvcd_formats[0];
+	const usbd_uvc_format_info_t *format = &dev->formats[0];
 	int i = 0;
 
 	for (i = 0; i < (int)USBD_UVC_FRAME_INTERVAL_CNT; i++) {
@@ -323,10 +325,12 @@ usbd_uvc_fill_streaming_control(usbd_uvc_dev_t *dev,
 	const usbd_uvc_format_info_t *format;
 	const usbd_uvc_frame_info_t *frame;
 	u32 nframes;
-	(void)dev;
 
-	format = &uvcd_formats[iformat];
-	usbd_uvc_dump_uvc_format();
+	if ((iformat < 0) || ((u32)iformat >= dev->nformats)) {
+		return;
+	}
+	format = &dev->formats[iformat];
+	usbd_uvc_dump_uvc_format(dev);
 
 	nframes = 0;
 	while (format->frames[nframes].width != 0) {
@@ -364,7 +368,9 @@ usbd_uvc_fill_streaming_control(usbd_uvc_dev_t *dev,
 		ctrl->dwMaxVideoFrameSize = frame->width * frame->height;
 		break;
 	}
-	ctrl->dwMaxPayloadTransferSize = USBD_UVC_IN_BUF_SIZE; /* FIX UVC1.5 4.3.1.1: GET_MIN/MAX/DEF path must also report valid max payload (=isoc mps 1024), not 0 */
+	/* UVC1.5 4.3.1.1: GET_MIN/MAX/DEF must report the ISOC bytes per microframe, not 0 */
+	ctrl->dwMaxPayloadTransferSize = dev->in_buf_size;
+	ctrl->dwClockFrequency = USBD_UVC_CLOCK_FREQUENCY;
 	RTK_LOGS(TAG, RTK_LOG_INFO, "Type %d\r\n", format->fcc);
 }
 /**
@@ -450,11 +456,11 @@ usbd_uvc_events_process_class(usbd_uvc_dev_t *dev, usb_setup_req_t *ctrl,
 	if ((ctrl->bmRequestType & USB_REQ_RECIPIENT_MASK) != USB_REQ_RECIPIENT_INTERFACE) {
 		return;
 	}
-	dev->command_interface = ctrl->wIndex & 0xff; //0 for ocntrol 1 for streaming
+	dev->command_interface = USBD_UVC_LOCAL_ITF(dev, ctrl->wIndex); //0 for control 1 for streaming
 	dev->command_entity = (ctrl->wIndex >> 8) & 0xff; //2 process unit 3 for extension unit
 	dev->control = ctrl->wValue >> 8;
 
-	switch (ctrl->wIndex & 0xff) {
+	switch (USBD_UVC_LOCAL_ITF(dev, ctrl->wIndex)) {
 	case USBD_UVC_INTF_CONTROL:
 		usbd_uvc_events_process_control(dev, ctrl, resp);
 		break;
@@ -569,17 +575,12 @@ usbd_uvc_streaming_process_data(usbd_uvc_dev_t *dev, usbd_uvc_request_data_t *da
 
 	ctrl = (usbd_uvc_streaming_control_t *)(void *)data->data;
 	iformat = ctrl->bFormatIndex;
-	if (iformat < 1U || iformat > uvcd_nformats) {
+	if (iformat < 1U || iformat > dev->nformats) {
 		RTK_LOGS(TAG, RTK_LOG_WARN, "Invalid bFormatIndex %u\r\n", iformat);
 		return;
 	}
 
-	format = &uvcd_formats[iformat - 1];
-	if (format->fcc != USBD_UVC_FORMAT_TYPE_H264) {
-		RTK_LOGS(TAG, RTK_LOG_WARN,
-				 "Host selected format %u (fcc=%d); this device only streams H.264 1080p 30fps - please reselect the H.264 format\r\n",
-				 iformat, format->fcc);
-	}
+	format = &dev->formats[iformat - 1];
 	nframes = 0;
 	while (format->frames[nframes].width != 0) {
 		++nframes;
@@ -610,15 +611,16 @@ usbd_uvc_streaming_process_data(usbd_uvc_dev_t *dev, usbd_uvc_request_data_t *da
 		target->dwMaxVideoFrameSize = frame->width * frame->height;
 		break;
 	case USBD_UVC_FORMAT_TYPE_H264:
-		target->dwMaxVideoFrameSize = frame->width *
-									  frame->height;  /* FIX: was ctrl-> (host input buf); must write target(dev->probe/commit), else committed H264/H265 dwMaxVideoFrameSize stays 0 */
+		/* Was ctrl-> (host input buf); must write target (dev->probe/commit), or the
+		   committed H264/H265 dwMaxVideoFrameSize stays 0 */
+		target->dwMaxVideoFrameSize = frame->width * frame->height;
 		break;
 	case USBD_UVC_FORMAT_TYPE_H265:
-		target->dwMaxVideoFrameSize = frame->width *
-									  frame->height;  /* FIX: was ctrl-> (host input buf); must write target(dev->probe/commit), else committed H264/H265 dwMaxVideoFrameSize stays 0 */
+		/* Same as H264 above */
+		target->dwMaxVideoFrameSize = frame->width * frame->height;
 		break;
 	}
-	RTK_LOGS(TAG, RTK_LOG_INFO, "Format = %d w = %d h = %d fps = %d\r\n", format->fcc, frame->width, frame->height, *interval);
+	RTK_LOGS(TAG, RTK_LOG_INFO, "UVC%d format = %d w = %d h = %d interval = %d\r\n", dev->inst, format->fcc, frame->width, frame->height, *interval);
 
 	fmt->format = format->fcc;
 	fmt->width = frame->width;
@@ -629,7 +631,7 @@ usbd_uvc_streaming_process_data(usbd_uvc_dev_t *dev, usbd_uvc_request_data_t *da
 	/* HS high-bandwidth ISOC IN sends up to 3 x 1024 per microframe = one payload.
 	   Must match the committed transfer size the device actually emits (was 1024,
 	   inconsistent with the GET_MIN/MAX/DEF path which reports USBD_UVC_IN_BUF_SIZE). */
-	target->dwMaxPayloadTransferSize = USBD_UVC_IN_BUF_SIZE;
+	target->dwMaxPayloadTransferSize = dev->in_buf_size;
 
 	if (dev->control == USBD_UVC_VS_COMMIT_CONTROL) {
 		video->fcc = format->fcc;
@@ -702,5 +704,27 @@ void usbd_uvc_events_process(usbd_uvc_dev_t *dev, usbd_uvc_req_data_t *uvc_event
 	if (ret < 0) {
 		RTK_LOGS(TAG, RTK_LOG_INFO, "UVCIOC_S_EVENT failed:\r\n");
 		return;
+	}
+}
+
+/**
+  * @brief  Load the default probe/commit of an instance: first format, first frame, first interval
+  * @param  dev  UVC device context
+  * @retval None
+  */
+void usbd_uvc_init_streaming_control(usbd_uvc_dev_t *dev)
+{
+	const usbd_uvc_format_info_t *format = &dev->formats[0];
+	const usbd_uvc_frame_info_t *frame = &format->frames[0];
+	usbd_uvc_format_t *fmt = dev->uvc_format_ptr;
+
+	usbd_uvc_fill_streaming_control(dev, &dev->probe, 0, 0);
+	dev->commit = dev->probe;
+
+	if ((fmt != NULL) && (frame->intervals[0] != 0U)) {
+		fmt->format = format->fcc;
+		fmt->width = frame->width;
+		fmt->height = frame->height;
+		fmt->fps = USBD_UVC_FRAME_INTERVAL_UNIT / frame->intervals[0];
 	}
 }
