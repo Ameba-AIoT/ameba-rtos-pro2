@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: e8c44c2ba519b4c6a6006978c16ad6eafd8f374a
+* feat(usb): [amebapro2] add multi-instance UVC and USB DFU support
+
 SHA-1: c912f6fd28b640841f4b857a758e97fa2b35ca11
 * fix(wlan): [amebapro2] update TSSI ADC clock setting and efuse write
 
