@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: f12b3f0be8c7e1203d90bbda9ae59ecbe2712550
+* fix(video): [amebapro2] update GC4663 default IQ to validated e3757a v30
+
 SHA-1: e8c44c2ba519b4c6a6006978c16ad6eafd8f374a
 * feat(usb): [amebapro2] add multi-instance UVC and USB DFU support
 
