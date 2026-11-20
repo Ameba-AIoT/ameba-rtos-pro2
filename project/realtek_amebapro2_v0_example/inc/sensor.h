@@ -111,7 +111,7 @@ struct sensor_params_t {
 #define SENSOR_OV50A40          0x60  //  |   v    |   -    |   v    |   -    |    -   |
 #define SENSOR_OV50A40_50M      0x61  //  |   v    |   -    |   v    |   -    |    -   |
 #define SENSOR_OS04D10          0x62  //  |   v    |   -    |   -    |   -    |    -   |
-#define SENSOR_OS04E10          0x63  //  |   v    |   -    |   -    |   -    |    -   |
+#define SENSOR_OS04E10          0x63  //  |   v    |   -    |   -    |   v    |    -   |
 /* PRIMESENSOR */
 #define SENSOR_PS5258           0x70  //  |   v    |   -    |   v    |   -    |    -   |
 #define SENSOR_PS5262           0x71  //  |   v    |   -    |   v    |   -    |    -   |
@@ -216,7 +216,7 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_OV50A40]          = {2048, 1536, 30},
 	[SENSOR_OV50A40_50M]      = {2048, 1536, 30},
 	[SENSOR_OS04D10]          = {2560, 1440, 24},
-	[SENSOR_OS04E10]          = {1944, 1944, 20},
+	[SENSOR_OS04E10]          = {1944, 1944, 20},  //HDR Mode fps=15
 	/* PRIMESENSOR */
 	[SENSOR_PS5258]           = {1920, 1080, 30},
 	[SENSOR_PS5262]           = {1920, 1080, 30},
