@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 521d4ddd89b4c5f327d26698f417b4d188b238f0
+* feat(video): [amebapro2] update os04e10 sensor driver with HDR mode
+
 SHA-1: f12b3f0be8c7e1203d90bbda9ae59ecbe2712550
 * fix(video): [amebapro2] update GC4663 default IQ to validated e3757a v30
 
