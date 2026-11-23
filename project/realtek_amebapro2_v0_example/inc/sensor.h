@@ -162,7 +162,7 @@ static const struct sensor_params_t sensor_params[] = {
 	[SENSOR_GC2093]           = {1920, 1080, 30},
 	[SENSOR_GC3003]           = {2304, 1296, 30},
 	[SENSOR_GC4023]           = {2560, 1440, 24},
-	[SENSOR_GC4103]           = {2000, 2000, 25},
+	[SENSOR_GC4103]           = {2000, 2000, 25},  //HDR Mode fps=15
 	[SENSOR_GC4653]           = {2560, 1440, 24},
 	[SENSOR_GC4663]           = {2560, 1440, 24},  //HDR Mode fps=20
 	[SENSOR_GC4693]           = {2560, 1440, 24},
