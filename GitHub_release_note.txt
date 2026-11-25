@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 020ff4e0855a9c5672427716dad3e4979176be60
+* feat(video): [amebapro2] update gc4103 sensor driver with HDR mode
+
 SHA-1: 521d4ddd89b4c5f327d26698f417b4d188b238f0
 * feat(video): [amebapro2] update os04e10 sensor driver with HDR mode
 
