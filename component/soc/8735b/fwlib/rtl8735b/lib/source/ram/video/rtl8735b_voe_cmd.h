@@ -155,6 +155,8 @@
 //I2C
 #define VOE_I2C_READ                     0x270
 #define VOE_I2C_WRITE                    0x271
+#define VOE_I2C_WRITE_DAT                0x272
+#define VOE_I2C_READ_DAT                 0x273
 
 //SENSOR MODE
 #define VOE_SENSOR_SET_OPEN_MODE         0x275

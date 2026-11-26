@@ -319,6 +319,17 @@ struct rts_isp_i2c_reg {
 	u16 data;
 };
 
+struct rts_isp_i2c_bytes {
+	uint8_t slave_addr;
+	uint32_t count;
+	uint32_t tx_single_len;
+	uint8_t *tx_buffer;
+	uint32_t rx_single_len;
+	uint8_t *rx_buffer;
+	uint32_t udelay;
+	uint8_t rsv[7];
+};
+
 #endif
 
 typedef struct fcs_peri_info_ram_s {
@@ -491,7 +502,7 @@ int hal_video_get_no_video_time(void);
 u32 hal_video_get_video_timer_cur_time(void);
 int hal_video_config_isp_calibration(int iq_cali_flag);
 int hal_video_set_isp_stream_fps(int ch, uint32_t fps);
-int hal_video_isp_zoom_filter_coef_init(int ch, u8* buf);
+int hal_video_isp_zoom_filter_coef_init(int ch, u8 *buf);
 int hal_video_isp_verify_info(int ch, struct verify_ctrl_config v_cfg);
 int hal_video_get_dir_wdr_level(int ch, u8 *level);
 int hal_video_get_max_dyn_region_idx(int ch, enum hal_isp_ae_region *idx);
@@ -838,7 +849,7 @@ static __inline__ int hal_video_fcs_en(int ch, int en)
 	return OK;
 }
 
-static __inline__ int hal_video_isp_axi_buf_init(int ch, u32* buf)
+static __inline__ int hal_video_isp_axi_buf_init(int ch, u32 *buf)
 {
 	hal_video_adapter_t *v_adp = &vv_adapter;
 	commandLine_s *cml;

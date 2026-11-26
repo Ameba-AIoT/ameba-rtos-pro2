@@ -56,7 +56,7 @@ extern "C" {
 
 #define TM_SRAM_S       VOE_DRAM_S + REMAP_S7_DTCM
 #define TM_DRAM_S		VOE_DDR_S + VOE_CODE_SHIFT
-#define VOE_ERR_OFFSET	0x3e0
+#define VOE_ERR_OFFSET	0x400
 
 #define VOE_STATUS_DIS  0
 #define VOE_STATUS_EN   1

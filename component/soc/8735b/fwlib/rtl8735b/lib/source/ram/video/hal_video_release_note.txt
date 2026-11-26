@@ -1,3 +1,24 @@
+<11/27/2026 12:00 Juling>
+Version : RTL8735B_VOE_1.7.3.0
+Modified Files:
+All
+Change Notes:
+
+	ISP/sensor related
+	1. Remove isp_ctrl debug message
+
+--------------------------------------------------------------------------
+<10/28/2026 12:00 Juling>
+Version : RTL8735B_VOE_1.7.2.0
+Modified Files:
+All
+Change Notes:
+
+	ISP/sensor related
+	1. Remove check 12M rule
+	2. Support multiple i2c slaves
+
+--------------------------------------------------------------------------
 <04/21/2026 12:00 Juling>
 Version : RTL8735B_VOE_1.7.1.0
 Modified Files:
