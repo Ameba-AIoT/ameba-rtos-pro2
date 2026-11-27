@@ -659,22 +659,47 @@ int wifi_set_tcp_keep_alive_offload(int socket_fd, uint8_t *content, size_t len,
 #ifdef CONFIG_WOWLAN_ICMP_REPLY_OFFLOAD
 extern void rtw_set_retention_icmp_ip(uint8_t *peer_ip);
 extern int rtw_get_retention_icmp_ip(uint8_t *retention_ip);
+
+/* return 1 if ip can not be a public internet host (private/reserved range or inside local subnet) */
+static int wifi_connectivity_ip_is_local(uint8_t *ip)
+{
+	uint8_t *local_ip = LwIP_GetIP(0);
+	uint8_t *mask = LwIP_GetMASK(0);
+
+	if ((ip[0] == 0) ||                                         // 0.0.0.0/8
+		(ip[0] == 10) ||                                        // 10.0.0.0/8
+		(ip[0] == 127) ||                                       // 127.0.0.0/8 loopback
+		(ip[0] == 100 && (ip[1] & 0xC0) == 64) ||               // 100.64.0.0/10 CGNAT
+		(ip[0] == 169 && ip[1] == 254) ||                       // 169.254.0.0/16 link-local
+		(ip[0] == 172 && (ip[1] & 0xF0) == 16) ||               // 172.16.0.0/12
+		(ip[0] == 192 && ip[1] == 168) ||                       // 192.168.0.0/16
+		(ip[0] == 198 && (ip[1] & 0xFE) == 18) ||               // 198.18.0.0/15 benchmark (used by some fake-ip DNS)
+		(ip[0] >= 224)) {                                       // multicast / reserved / broadcast
+		return 1;
+	}
+
+	// same subnet as device, e.g. AP DNS redirect to its own public-range address
+	if (ip4_addr_netcmp((ip4_addr_t *)ip, (ip4_addr_t *)local_ip, (ip4_addr_t *)mask)) {
+		return 1;
+	}
+
+	return 0;
+}
+
 void wifi_set_connectivity_ip(void)
 {
-	int ret = 0;
-
 	char server_name[] = "connectivitycheck.gstatic.com";
 	struct hostent *server_host;
 	uint8_t server_addrs[4] = {0};
-	uint8_t default_server_addrs[4] = {8, 8, 8, 8};
-	uint8_t *peer_ip = (uint8_t *) server_addrs;
 
+	// only update retention ip with a valid public ip, otherwise keep the previous one
+	// (retention ip is cleared on each new connection, 0 means fallback to 8.8.8.8 in offload)
 	server_host = gethostbyname(server_name);
 	if (server_host) {
-		//printf("[wifi_set_connectivity_offload] Get host ip success\n");
 		memcpy(server_addrs, server_host->h_addr, 4);
-		peer_ip = (uint8_t *) server_addrs;
-		rtw_set_retention_icmp_ip(peer_ip);
+		if (!wifi_connectivity_ip_is_local(server_addrs)) {
+			rtw_set_retention_icmp_ip(server_addrs);
+		}
 	}
 }
 
@@ -693,7 +718,7 @@ int wifi_set_connectivity_offload(uint32_t interval_s, uint32_t timeout_s)
 		peer_ip = (uint8_t *) default_server_addrs;
 	}
 
-	//printf("[wifi_set_connectivity_offload] %d.%d.%d.%d\n\r",peer_ip[0],peer_ip[1],peer_ip[2],peer_ip[3]);
+	RTW_API_INFO("[%s] peer_ip: %d.%d.%d.%d\n\r", __FUNCTION__, peer_ip[0], peer_ip[1], peer_ip[2], peer_ip[3]);
 
 	uint8_t eth_mac[6] = {0};
 	ip4_addr_t *dst_ip, *dst_ip_ret = NULL;
