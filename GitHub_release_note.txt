@@ -1,6 +1,9 @@
 
 GitHub Update Note, sync with 9.6_r
 
+SHA-1: 526c0da278f287ddd95afa18501cd72abb91429a
+* fix(wlan): [amebapro2] filter private/reserved ip for wowlan connectivity check
+
 SHA-1: f0bff534734a431d7c0bf9c658d9f9c3e2e301e7
 * feat(video): [amebapro2] sync voe to 1.7.3.0
 
